@@ -133,3 +133,10 @@ C:\Users\ngkie\Dev\AutoCreateImage\obj\Debug\net10.0-windows\AutoCreateImage.pdb
 C:\Users\ngkie\Dev\AutoCreateImage\obj\Debug\net10.0-windows\AutoCreateImage.genruntimeconfig.cache
 C:\Users\ngkie\Dev\AutoCreateImage\obj\Debug\net10.0-windows\ref\AutoCreateImage.dll
 C:\Users\ngkie\Dev\AutoCreateImage\obj\Debug\net10.0-windows\GeneratedInternalTypeHelper.g.cs
+C:\Users\ngkie\Dev\AutoCreateImage\bin\Debug\net10.0-windows\AngleSharp.dll
+C:\Users\ngkie\Dev\AutoCreateImage\bin\Debug\net10.0-windows\JsonExtensions.dll
+C:\Users\ngkie\Dev\AutoCreateImage\bin\Debug\net10.0-windows\YoutubeExplode.dll
+C:\Users\ngkie\Dev\AutoCreateImage\obj\Debug\net10.0-windows\VoiceSelectorWindow.baml
+C:\Users\ngkie\Dev\AutoCreateImage\obj\Debug\net10.0-windows\VoiceSelectorWindow.g.cs
+C:\Users\ngkie\Dev\AutoCreateImage\obj\Debug\net10.0-windows\BulkTaskWindow.baml
+C:\Users\ngkie\Dev\AutoCreateImage\obj\Debug\net10.0-windows\BulkTaskWindow.g.cs

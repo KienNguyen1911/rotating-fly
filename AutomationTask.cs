@@ -10,8 +10,8 @@ namespace AutoCreateImage
     {
         private Guid _id = Guid.NewGuid();
         private string _videoUrl = string.Empty;
-        private string _targetLanguage = "Vietnamese";
-        private string _voiceId = "25";
+        private string _targetLanguage = string.Empty;
+        private string _voiceId = string.Empty;
         private bool _step1 = true;
         private bool _step2 = true;
         private bool _step3 = true;

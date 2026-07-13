@@ -7,6 +7,8 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using Microsoft.Playwright;
+using YoutubeExplode;
+using YoutubeExplode.Videos.ClosedCaptions;
 
 namespace AutoCreateImage
 {
@@ -15,10 +17,7 @@ namespace AutoCreateImage
         private async Task RunSingleVideoFlowAsync(AutomationTask task)
         {
             task.Status = "Running";
-            LogTask(task, $"[FLOW] Starting flow for video: {task.VideoId}");
-
-            string tempProfilePath = "";
-            IBrowserContext? context = null;
+            LogTask(task, $"[FLOW] Starting parallel flow for video: {task.VideoId}");
 
             try
             {
@@ -32,140 +31,240 @@ namespace AutoCreateImage
                 return;
             }
 
-            try
+            // We will track the status of the two pipelines to update the overall Task status dynamically
+            string pipeline1Status = task.Step1 ? "Pending Thumbnail" : "Done";
+            string pipeline2Status = (task.Step2 || task.Step3 || task.Step4) ? "Pending Script" : "Done";
+
+            var updateOverallStatus = new Action(() =>
             {
-                // Step 1: Thumbnail Download (Direct HTTP)
-                if (task.Step1)
+                if (pipeline1Status == "Failed" || pipeline2Status == "Failed")
                 {
-                    task.Status = "Step 1: Thumbnail";
-                    await RunStep1Async(task);
+                    task.Status = "Failed";
                 }
-
-                // Playwright steps check (Only steps 2 and 3 require browser automation)
-                if (task.Step2 || task.Step3)
+                else if (pipeline1Status == "Done" && pipeline2Status == "Done")
                 {
-                    string originalProfilePath = Path.Combine(GetProfilesBaseDir(), task.SelectedProfile);
-                    tempProfilePath = Path.Combine(Path.GetTempPath(), "AutoCreateImage", $"TempProfile_{task.VideoId}_{Guid.NewGuid()}");
+                    task.Status = "Done";
+                }
+                else
+                {
+                    task.Status = $"{pipeline1Status} | {pipeline2Status}";
+                }
+            });
 
-                    LogTask(task, $"[FLOW] Cloning Chrome Profile '{task.SelectedProfile}' to temporary folder...");
-                    try
+            // Pipeline 1: Get Thumbnail => Create Images at Step 5
+            var pipeline1Task = Task.Run(async () =>
+            {
+                try
+                {
+                    // Step 1: Thumbnail Download (Direct HTTP)
+                    if (task.Step1)
                     {
-                        if (Directory.Exists(originalProfilePath))
+                        pipeline1Status = "Step 1: Thumbnail";
+                        updateOverallStatus();
+                        LogTask(task, "[IMAGE-BRANCH] Starting Step 1: Download Thumbnail...");
+                        await RunStep1Async(task);
+                    }
+
+                    // Step 5: Generate Images (Image Edits API)
+                    if (task.Step5)
+                    {
+                        pipeline1Status = "Step 5: Image Gen";
+                        updateOverallStatus();
+                        LogTask(task, "[IMAGE-BRANCH] Starting Step 5: Image Generation...");
+                        await RunStep5Async(task);
+                    }
+
+                    pipeline1Status = "Done";
+                    updateOverallStatus();
+                }
+                catch (Exception ex)
+                {
+                    pipeline1Status = "Failed";
+                    updateOverallStatus();
+                    LogTask(task, $"[IMAGE-BRANCH] [ERROR] Branch failed: {ex.Message}");
+                    throw;
+                }
+            });
+
+            // Pipeline 2: Get Script => Rewrite Script => Voice-over
+            var pipeline2Task = Task.Run(async () =>
+            {
+                string tempProfilePath = "";
+                IBrowserContext? context = null;
+
+                try
+                {
+                    // Playwright initialization (Only steps 2 and 3 require browser automation)
+                    if (task.Step2 || task.Step3)
+                    {
+                        string originalProfilePath = Path.Combine(GetProfilesBaseDir(), task.SelectedProfile);
+                        tempProfilePath = Path.Combine(Path.GetTempPath(), "AutoCreateImage", $"TempProfile_{task.VideoId}_{Guid.NewGuid()}");
+
+                        LogTask(task, $"[SCRIPT-BRANCH] Cloning Chrome Profile '{task.SelectedProfile}' to temporary folder...");
+                        try
                         {
-                            CopyProfileDirectory(originalProfilePath, tempProfilePath);
+                            if (Directory.Exists(originalProfilePath))
+                            {
+                                CopyProfileDirectory(originalProfilePath, tempProfilePath);
+                            }
+                            else
+                            {
+                                Directory.CreateDirectory(tempProfilePath);
+                            }
                         }
-                        else
+                        catch (Exception ex)
                         {
+                            LogTask(task, $"[SCRIPT-BRANCH] [WARNING] Profile cloning failed: {ex.Message}. Running with fresh profile.");
                             Directory.CreateDirectory(tempProfilePath);
                         }
+
+                        context = await EnsureBrowserInitializedAsync(tempProfilePath);
                     }
-                    catch (Exception ex)
+
+                    // Step 2: Extract Transcript
+                    string? transcript = null;
+                    string? rewrittenScript = null;
+                    if (task.Step2)
                     {
-                        LogTask(task, $"[WARNING] Profile cloning failed: {ex.Message}. Running with fresh profile.");
-                        Directory.CreateDirectory(tempProfilePath);
+                        pipeline2Status = "Step 2: Transcript";
+                        updateOverallStatus();
+                        LogTask(task, "[SCRIPT-BRANCH] Starting Step 2: Transcript Extraction...");
+                        transcript = await RunStep2Async(task, context!);
                     }
-
-                    context = await EnsureBrowserInitializedAsync(tempProfilePath);
-                }
-
-                // Step 2: Extract Transcript
-                string? transcript = null;
-                if (task.Step2)
-                {
-                    task.Status = "Step 2: Transcript";
-                    transcript = await RunStep2Async(task, context!);
-                }
-                else if (task.Step3)
-                {
-                    // Fallback to load transcript from file
-                    string path = Path.Combine(task.OutputDir, "transcript.txt");
-                    if (File.Exists(path))
+                    else if (task.Step3)
                     {
-                        LogTask(task, "[STEP 3] Loading transcript from file transcript.txt...");
-                        transcript = await File.ReadAllTextAsync(path);
+                        // Fallback to load transcript from file
+                        string path = Path.Combine(task.OutputDir, "transcript.txt");
+                        if (File.Exists(path))
+                        {
+                            LogTask(task, "[SCRIPT-BRANCH] Loading transcript from file transcript.txt...");
+                            transcript = await File.ReadAllTextAsync(path);
+                        }
                     }
-                }
 
-                // Step 3: Rewrite Script (ChatGPT)
-                string? rewrittenScript = null;
-                if (task.Step3)
-                {
-                    if (string.IsNullOrWhiteSpace(transcript))
+                    // Step 3: Rewrite Script (ChatGPT)
+                    if (task.Step3)
                     {
-                        task.Status = "Failed";
-                        LogTask(task, "[STEP 3] [ERROR] Transcript is empty. Cannot run Step 3.");
-                        return;
+                        if (string.IsNullOrWhiteSpace(transcript))
+                        {
+                            throw new Exception("Transcript is empty. Cannot run Step 3.");
+                        }
+                        pipeline2Status = "Step 3: ChatGPT";
+                        updateOverallStatus();
+                        LogTask(task, "[SCRIPT-BRANCH] Starting Step 3: ChatGPT Rewrite...");
+                        rewrittenScript = await RunStep3Async(task.TargetLanguage, task.OutputDir, transcript, task.VideoId, task, context!);
                     }
-                    task.Status = "Step 3: ChatGPT";
-                    rewrittenScript = await RunStep3Async(task.TargetLanguage, task.OutputDir, transcript, task.VideoId, task, context!);
-                }
-                else if (task.Step4)
-                {
-                    // Fallback to load rewritten script from file
-                    string path = Path.Combine(task.OutputDir, "rewritten_script.txt");
-                    if (File.Exists(path))
+                    else if (task.Step4)
                     {
-                        LogTask(task, "[STEP 4] Loading script from rewritten_script.txt...");
-                        rewrittenScript = await File.ReadAllTextAsync(path);
+                        // Fallback to load rewritten script from file
+                        string path = Path.Combine(task.OutputDir, "rewritten_script.txt");
+                        if (File.Exists(path))
+                        {
+                            LogTask(task, "[SCRIPT-BRANCH] Loading script from rewritten_script.txt...");
+                            rewrittenScript = await File.ReadAllTextAsync(path);
+                        }
                     }
-                }
 
-                // Step 4: Generate Voiceover (ai84.pro)
-                if (task.Step4)
-                {
-                    if (string.IsNullOrWhiteSpace(rewrittenScript))
+                    // Done with browser now
+                    if (context != null)
                     {
-                        task.Status = "Failed";
-                        LogTask(task, "[STEP 4] [ERROR] Rewritten script is empty. Cannot run Step 4.");
-                        return;
+                        LogTask(task, "[SCRIPT-BRANCH] Closing browser instance...");
+                        // Remove from dictionary first to prevent Close event handler interference
+                        _browserContexts.TryRemove(tempProfilePath, out _);
+                        try
+                        {
+                            // Use timeout to prevent hanging if browser is unresponsive
+                            var closeTask = context.CloseAsync();
+                            if (await Task.WhenAny(closeTask, Task.Delay(15000)) != closeTask)
+                            {
+                                LogTask(task, "[SCRIPT-BRANCH] Browser close timed out after 15s, continuing anyway...");
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            LogTask(task, $"[SCRIPT-BRANCH] Browser close error (non-fatal): {ex.Message}");
+                        }
+                        context = null;
+                        LogTask(task, "[SCRIPT-BRANCH] Browser instance closed successfully.");
                     }
-                    task.Status = "Step 4: Voiceover";
-                    string apiKey = "";
-                    Dispatcher.Invoke(() => apiKey = TxtAi84ApiKey.Text.Trim());
-                    await RunStep4Async(task.VoiceId, task.OutputDir, rewrittenScript, task.VideoId, task, apiKey);
-                }
 
-                // Step 5: Generate Images (Image Edits API)
-                if (task.Step5)
+                    if (!string.IsNullOrEmpty(tempProfilePath) && Directory.Exists(tempProfilePath))
+                    {
+                        LogTask(task, "[SCRIPT-BRANCH] Cleaning up temporary profile folder...");
+                        try
+                        {
+                            Directory.Delete(tempProfilePath, true);
+                        }
+                        catch { }
+                        tempProfilePath = "";
+                    }
+
+                    // Step 4: Generate Voiceover (ai84.pro)
+                    if (task.Step4)
+                    {
+                        if (string.IsNullOrWhiteSpace(rewrittenScript))
+                        {
+                            throw new Exception("Rewritten script is empty. Cannot run Step 4.");
+                        }
+                        pipeline2Status = "Step 4: Voiceover";
+                        updateOverallStatus();
+                        LogTask(task, "[SCRIPT-BRANCH] Starting Step 4: Voiceover Generation...");
+                        string apiKey = "";
+                        Dispatcher.Invoke(() => apiKey = TxtAi84ApiKey.Text.Trim());
+                        await RunStep4Async(task.VoiceId, task.OutputDir, rewrittenScript, task.VideoId, task, apiKey);
+                    }
+
+                    pipeline2Status = "Done";
+                    updateOverallStatus();
+                }
+                catch (Exception ex)
                 {
-                    task.Status = "Step 5: Image Gen";
-                    await RunStep5Async(task);
+                    pipeline2Status = "Failed";
+                    updateOverallStatus();
+                    LogTask(task, $"[SCRIPT-BRANCH] [ERROR] Branch failed: {ex.Message}");
+                    throw;
                 }
+                finally
+                {
+                    if (context != null)
+                    {
+                        LogTask(task, "[SCRIPT-BRANCH] Closing browser instance in finally...");
+                        _browserContexts.TryRemove(tempProfilePath, out _);
+                        try
+                        {
+                            var closeTask = context.CloseAsync();
+                            if (await Task.WhenAny(closeTask, Task.Delay(15000)) != closeTask)
+                            {
+                                LogTask(task, "[SCRIPT-BRANCH] Browser close timed out in finally, continuing...");
+                            }
+                        }
+                        catch { }
+                    }
 
+                    if (!string.IsNullOrEmpty(tempProfilePath) && Directory.Exists(tempProfilePath))
+                    {
+                        LogTask(task, "[SCRIPT-BRANCH] Cleaning up temporary profile folder in finally...");
+                        try
+                        {
+                            Directory.Delete(tempProfilePath, true);
+                        }
+                        catch { }
+                    }
+                }
+            });
+
+            // Wait for both pipelines to complete
+            await Task.WhenAll(pipeline1Task, pipeline2Task);
+
+            if (pipeline1Status == "Done" && pipeline2Status == "Done")
+            {
                 task.Status = "Done";
-                LogTask(task, "[FLOW] Task completed successfully!");
+                LogTask(task, "[FLOW] Parallel flow completed successfully!");
             }
-            catch (Exception ex)
+            else
             {
                 task.Status = "Failed";
-                LogTask(task, $"[ERROR] Flow failed: {ex.Message}");
-                throw;
-            }
-            finally
-            {
-                if (context != null)
-                {
-                    LogTask(task, "[FLOW] Closing browser instance...");
-                    try
-                    {
-                        await context.CloseAsync();
-                    }
-                    catch { }
-                    _browserContexts.TryRemove(tempProfilePath, out _);
-                }
-
-                if (!string.IsNullOrEmpty(tempProfilePath) && Directory.Exists(tempProfilePath))
-                {
-                    LogTask(task, "[FLOW] Cleaning up temporary profile folder...");
-                    try
-                    {
-                        Directory.Delete(tempProfilePath, true);
-                    }
-                    catch (Exception ex)
-                    {
-                        LogTask(task, $"[WARNING] Failed to delete temporary folder: {ex.Message}");
-                    }
-                }
+                LogTask(task, "[FLOW] Parallel flow finished with failures.");
             }
         }
 
@@ -246,17 +345,6 @@ namespace AutoCreateImage
                       {
                           Log($"Browser window closed for profile: {Path.GetFileName(profilePath)}. Cleaning up resources...");
                           _browserContexts.TryRemove(profilePath, out _);
-                          
-                          // If there are no more active browser contexts, dispose Playwright
-                          if (_browserContexts.IsEmpty && _playwright != null)
-                          {
-                              try
-                              {
-                                  _playwright.Dispose();
-                              }
-                              catch {}
-                              _playwright = null;
-                          }
                       };
       
                       _browserContexts[profilePath] = browserContext;
@@ -312,51 +400,48 @@ namespace AutoCreateImage
 
         private async Task<string?> RunStep2Async(AutomationTask task, IBrowserContext context)
         {
-            LogTask(task, "[STEP 2] Starting transcript extraction...");
-            if (context == null) throw new InvalidOperationException("Browser not initialized.");
-
-            // Grant permissions for reading/writing clipboard
-            await context.GrantPermissionsAsync(new[] { "clipboard-read", "clipboard-write" });
-
-            var page = await context.NewPageAsync();
+            LogTask(task, "[STEP 2] Starting transcript extraction via YoutubeExplode...");
             string? transcriptText = null;
             try
             {
-                LogTask(task, "Navigating to https://youtubetotranscript.com/...");
-                await page.GotoAsync("https://youtubetotranscript.com/");
-                await Task.Delay(2000); // Delay after navigation
+                var youtube = new YoutubeClient();
+                LogTask(task, $"Fetching caption manifest for video: {task.VideoId}");
+                var trackManifest = await youtube.Videos.ClosedCaptions.GetManifestAsync(task.VideoId);
 
-                LogTask(task, "Inputting YouTube URL...");
-                var inputLocator = page.Locator("input[placeholder*='YouTube'], input[type='text']").First;
-                await inputLocator.WaitForAsync(new LocatorWaitForOptions { State = WaitForSelectorState.Visible });
-                await HumanBehaviourHelper.TypeLikeHumanAsync(page, inputLocator, task.VideoUrl);
-                await Task.Delay(1500); // Human delay after typing
-
-                LogTask(task, "Submitting search request...");
-                var btnLocator = page.Locator("button:has-text('Go'), button:has-text('Transcript'), button[type='submit']").First;
-                await btnLocator.ClickAsync();
-                await Task.Delay(3000); // Delay for page to start processing search
-
-                LogTask(task, "Waiting for Copy Button (button#copy-transcript) to load...");
-                var copyBtn = page.Locator("button#copy-transcript").First;
-                await copyBtn.WaitForAsync(new LocatorWaitForOptions { State = WaitForSelectorState.Visible, Timeout = 30000 });
-                await Task.Delay(2000); // Human delay before click
-
-                LogTask(task, "Locking clipboard and copying transcript...");
-                await _clipboardSemaphore.WaitAsync();
-                try
+                if (trackManifest == null || !trackManifest.Tracks.Any())
                 {
-                    LogTask(task, "Clicking the copy button...");
-                    await copyBtn.ClickAsync();
-                    await Task.Delay(2500); // Delay to let the browser execute copy to clipboard
+                    LogTask(task, "[ERROR] No closed caption tracks found for this video.");
+                    return null;
+                }
 
-                    LogTask(task, "Extracting transcript from clipboard...");
-                    transcriptText = await page.EvaluateAsync<string>("navigator.clipboard.readText()");
-                }
-                finally
+                // Try to find target language or default tracks
+                LogTask(task, "Selecting best caption track...");
+                string targetLangCode = "en";
+                if (task.TargetLanguage.Contains(" - "))
                 {
-                    _clipboardSemaphore.Release();
+                    targetLangCode = task.TargetLanguage.Split(new[] { " - " }, StringSplitOptions.None)[1].Trim();
                 }
+                else if (task.TargetLanguage.StartsWith("Viet", StringComparison.OrdinalIgnoreCase))
+                {
+                    targetLangCode = "vi";
+                }
+                var trackInfo = trackManifest.Tracks.FirstOrDefault(t => t.Language.Code.Equals(targetLangCode, StringComparison.OrdinalIgnoreCase))
+                             ?? trackManifest.Tracks.FirstOrDefault(t => t.Language.Name.Contains(task.TargetLanguage.Contains(" - ") ? task.TargetLanguage.Split(new[] { " - " }, StringSplitOptions.None)[0].Trim() : task.TargetLanguage, StringComparison.OrdinalIgnoreCase))
+                             ?? trackManifest.Tracks.FirstOrDefault(t => t.Language.Code.Equals("vi", StringComparison.OrdinalIgnoreCase))
+                             ?? trackManifest.Tracks.FirstOrDefault(t => t.Language.Code.Equals("en", StringComparison.OrdinalIgnoreCase))
+                             ?? trackManifest.Tracks.FirstOrDefault();
+
+                if (trackInfo == null)
+                {
+                    LogTask(task, "[ERROR] Could not find any suitable caption track.");
+                    return null;
+                }
+
+                LogTask(task, $"Selected caption track: {trackInfo.Language.Name} ({trackInfo.Language.Code})");
+                var track = await youtube.Videos.ClosedCaptions.GetAsync(trackInfo);
+                
+                var segments = track.Captions.Select(c => c.Text);
+                transcriptText = string.Join(" ", segments);
 
                 if (!string.IsNullOrWhiteSpace(transcriptText))
                 {
@@ -367,17 +452,13 @@ namespace AutoCreateImage
                 }
                 else
                 {
-                    LogTask(task, "[ERROR] Clipboard was empty or read action was blocked.");
+                    LogTask(task, "[ERROR] Transcript was empty.");
                 }
             }
             catch (Exception ex)
             {
                 LogTask(task, $"[ERROR] Transcript extraction failed: {ex.Message}");
                 throw;
-            }
-            finally
-            {
-                await page.CloseAsync();
             }
 
             return transcriptText;
@@ -676,113 +757,6 @@ namespace AutoCreateImage
             }
         }
 
-        private async void BtnCloseBrowser_Click(object sender, RoutedEventArgs e)
-        {
-            BtnCloseBrowser.IsEnabled = false;
-            try
-            {
-                await Task.Run(async () =>
-                {
-                    Log("Closing all active browser sessions...");
-                    foreach (var key in _browserContexts.Keys)
-                    {
-                        if (_browserContexts.TryRemove(key, out var context))
-                        {
-                            try
-                            {
-                                await context.CloseAsync();
-                            }
-                            catch { }
-                        }
-                    }
-                    if (_playwright != null)
-                    {
-                        _playwright.Dispose();
-                        _playwright = null;
-                    }
-                    Log("All browser sessions closed cleanly.");
-                });
-            }
-            catch (Exception ex)
-            {
-                Log($"[ERROR] Failed to close browser cleanly: {ex.Message}");
-            }
-            finally
-            {
-                BtnCloseBrowser.IsEnabled = true;
-            }
-        }
-
-        private async void BtnTestCopy_Click(object sender, RoutedEventArgs e)
-        {
-            if (Tasks.Count == 0)
-            {
-                MessageBox.Show("Please add a task first to define an output directory.", "No Tasks", MessageBoxButton.OK, MessageBoxImage.Warning);
-                return;
-            }
-
-            var task = (DgridTasks.SelectedItem as AutomationTask) ?? Tasks[0];
-            string savePath = Path.Combine(task.OutputDir, "test_copy.png");
-
-            Log("Starting Test ChatGPT Copy...");
-
-            string testProfileName = "ngkien1911@gmail.com";
-            string profilePath = Path.Combine(GetProfilesBaseDir(), testProfileName);
-
-            BtnTestCopy.IsEnabled = false;
-            try
-            {
-                Log($"Initializing/Reusing browser for profile: {testProfileName}");
-                var context = await EnsureBrowserInitializedAsync(profilePath);
-
-                IPage? targetPage = null;
-                string targetUrl = "https://chatgpt.com/c/6a534822-c4cc-83ec-b985-4e2084dcc8f4";
-
-                foreach (var page in context.Pages)
-                {
-                    if (page.Url.Contains("6a534822-c4cc-83ec-b985-4e2084dcc8f4"))
-                    {
-                        targetPage = page;
-                        break;
-                    }
-                }
-
-                if (targetPage == null)
-                {
-                    Log($"Opening test URL: {targetUrl}");
-                    targetPage = await context.NewPageAsync();
-                    await targetPage.GotoAsync(targetUrl);
-                }
-                else
-                {
-                    Log($"Reusing already open test page: {targetPage.Url}");
-                    await targetPage.BringToFrontAsync();
-                }
-
-                Log($"Testing Copy on page: {targetPage.Url}");
-                bool success = await CopyAndSaveFromClipboardAsync(targetPage, savePath, task);
-                if (success)
-                {
-                    MessageBox.Show($"Success! Copied and saved test image to:\n{savePath}", "Test Copy Success", MessageBoxButton.OK, MessageBoxImage.Information);
-                    if (Directory.Exists(task.OutputDir))
-                    {
-                        System.Diagnostics.Process.Start("explorer.exe", task.OutputDir);
-                    }
-                }
-                else
-                {
-                    MessageBox.Show("Test Copy failed. Clipboard did not contain an image, or Copy button was not found.", "Test Copy Failed", MessageBoxButton.OK, MessageBoxImage.Warning);
-                }
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"Error running test copy: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
-            }
-            finally
-            {
-                BtnTestCopy.IsEnabled = true;
-            }
-        }
 
         private async Task RunStep5Async(AutomationTask task)
         {
@@ -827,48 +801,44 @@ namespace AutoCreateImage
                 apiKey = "chatgpt2api";
             }
 
-            // Run API requests concurrently in parallel
-            var task1 = Task.Run(async () =>
+            // Run API requests sequentially: Image 1 first, then Image 2
+            // Image 1: Translation
+            string prompt1 = $"tạo một bức ảnh tương tự với phần văn bản được dịch sang ngôn ngữ '{task.TargetLanguage}', kích thước ảnh 16:9";
+            string savePath1 = Path.Combine(task.OutputDir, "translated_thumbnail.png");
+            LogTask(task, "[STEP 5] Sending Image 1 (Translation) request to API...");
+            try
             {
-                string prompt1 = $"tạo một bức ảnh tương tự với phần văn bản được dịch sang ngôn ngữ '{task.TargetLanguage}', kích thước ảnh 16:9";
-                string savePath = Path.Combine(task.OutputDir, "translated_thumbnail.png");
-                LogTask(task, "[STEP 5] Sending Image 1 (Translation) request to API...");
-
-                try
-                {
-                    await EditImageViaApiAsync(apiUrl, apiKey, thumbnailPath, prompt1, savePath, task);
-                    LogTask(task, $"[STEP 5] Success! Saved translated thumbnail to: {savePath}");
-                }
-                catch (Exception ex)
-                {
-                    LogTask(task, $"[STEP 5] [ERROR] Failed to generate Image 1: {ex.Message}");
-                }
-            });
-
-            var task2 = Task.Run(async () =>
+                await EditImageViaApiAsync(apiUrl, apiKey, thumbnailPath, prompt1, savePath1, task);
+                LogTask(task, $"[STEP 5] Success! Saved translated thumbnail to: {savePath1}");
+            }
+            catch (Exception ex)
             {
-                string prompt2 = "tạo một bức ảnh tương tự với phần văn bản, biểu tượng mũi tên, vòng tròn (nếu có) được xóa, kích thước ảnh 16:9";
-                string savePath = Path.Combine(task.OutputDir, "cleaned_thumbnail.png");
-                LogTask(task, "[STEP 5] Sending Image 2 (Clean/Remove elements) request to API...");
+                LogTask(task, $"[STEP 5] [ERROR] Failed to generate Image 1: {ex.Message}");
+            }
 
-                try
-                {
-                    await EditImageViaApiAsync(apiUrl, apiKey, thumbnailPath, prompt2, savePath, task);
-                    LogTask(task, $"[STEP 5] Success! Saved cleaned thumbnail to: {savePath}");
-                }
-                catch (Exception ex)
-                {
-                    LogTask(task, $"[STEP 5] [ERROR] Failed to generate Image 2: {ex.Message}");
-                }
-            });
+            // Delay for 30 seconds to allow local server / API to cooldown
+            LogTask(task, "[STEP 5] Waiting 30 seconds before sending Image 2 request to prevent API overload...");
+            await Task.Delay(30000);
 
-            await Task.WhenAll(task1, task2);
+            // Image 2: Clean/Remove elements
+            string prompt2 = "tạo một bức ảnh tương tự với phần văn bản, biểu tượng mũi tên, vòng tròn (nếu có) được xóa, kích thước ảnh 16:9";
+            string savePath2 = Path.Combine(task.OutputDir, "cleaned_thumbnail.png");
+            LogTask(task, "[STEP 5] Sending Image 2 (Clean/Remove elements) request to API...");
+            try
+            {
+                await EditImageViaApiAsync(apiUrl, apiKey, thumbnailPath, prompt2, savePath2, task);
+                LogTask(task, $"[STEP 5] Success! Saved cleaned thumbnail to: {savePath2}");
+            }
+            catch (Exception ex)
+            {
+                LogTask(task, $"[STEP 5] [ERROR] Failed to generate Image 2: {ex.Message}");
+            }
         }
 
         private async Task EditImageViaApiAsync(string apiUrl, string apiKey, string imagePath, string prompt, string savePath, AutomationTask task)
         {
             using var httpClient = new HttpClient();
-            httpClient.Timeout = TimeSpan.FromMinutes(5);
+            httpClient.Timeout = TimeSpan.FromMinutes(10);
 
             if (!string.IsNullOrWhiteSpace(apiKey))
             {

@@ -270,19 +270,18 @@
                                 <TextBlock Text="Img Key:" VerticalAlignment="Center" Foreground="#F8FAFC" FontSize="12" FontWeight="SemiBold" Margin="0,0,4,0"/>
                                 <TextBox x:Name="TxtImageApiKey" Width="100" Height="25" VerticalContentAlignment="Center" Padding="4,2"/>
                             </StackPanel>
-
+                            
                             <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
                                 <Button x:Name="BtnAddTask" Content="Tạo Task" Height="28" Width="100" Background="#10B981" Foreground="White" BorderThickness="0" FontSize="12" FontWeight="Bold" Click="BtnAddTask_Click" Margin="0,0,10,0"/>
-                                <Button x:Name="BtnRun" Content="Chạy Toàn Bộ Task" Height="28" Width="140" Background="#2563EB" Foreground="White" BorderThickness="0" FontSize="12" FontWeight="Bold" Click="BtnRun_Click" Margin="0,0,10,0"/>
-                                <Button x:Name="BtnTestCopy" Content="Test ChatGPT Copy" Height="28" Width="130" Background="#F59E0B" Foreground="White" BorderThickness="0" FontSize="11" FontWeight="SemiBold" Click="BtnTestCopy_Click" Margin="0,0,10,0"/>
-                                <Button x:Name="BtnCloseBrowser" Content="Close All Browsers" Height="28" Width="130" Background="#EF4444" Foreground="White" BorderThickness="0" FontSize="11" FontWeight="SemiBold" Click="BtnCloseBrowser_Click"/>
+                                <Button x:Name="BtnAddBulkTasks" Content="Tạo Nhiều" Height="28" Width="100" Background="#8B5CF6" Foreground="White" BorderThickness="0" FontSize="12" FontWeight="Bold" Click="BtnAddBulkTasks_Click" Margin="0,0,10,0"/>
+                                <Button x:Name="BtnRun" Content="Chạy Toàn Bộ Task" Height="28" Width="140" Background="#2563EB" Foreground="White" BorderThickness="0" FontSize="12" FontWeight="Bold" Click="BtnRun_Click"/>
                             </StackPanel>
                         </Grid>
                     </Border>
 
                     <!-- Tasks Table & Logs Sidebar -->
                     <Grid Grid.Row="1">
-                        <!-- Main Area: DataGrid of Tasks -->
+                        <!-- Main Area: DataGrid of Tasks (always fills full width) -->
                         <Border Background="#1E293B" CornerRadius="8" Padding="15" BorderBrush="#334155" BorderThickness="1">
                             <Grid>
                                 <Grid.RowDefinitions>
@@ -312,6 +311,16 @@
                                         </Style>
                                     </DataGrid.RowStyle>
                                     <DataGrid.Columns>
+                                        <DataGridTextColumn Header="Ngày tạo" Binding="{Binding CreatedAtFormatted}" Width="1.4*" IsReadOnly="True">
+                                            <DataGridTextColumn.ElementStyle>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="HorizontalAlignment" Value="Left"/>
+                                                    <Setter Property="VerticalAlignment" Value="Center"/>
+                                                    <Setter Property="Padding" Value="5,0"/>
+                                                </Style>
+                                            </DataGridTextColumn.ElementStyle>
+                                        </DataGridTextColumn>
+
                                         <DataGridTextColumn Header="Link Video" Binding="{Binding VideoUrl, Converter={StaticResource YoutubeUrlConverter}, UpdateSourceTrigger=PropertyChanged}" Width="2*" IsReadOnly="False">
                                             <DataGridTextColumn.ElementStyle>
                                                 <Style TargetType="TextBlock">
@@ -321,126 +330,145 @@
                                             </DataGridTextColumn.ElementStyle>
                                         </DataGridTextColumn>
                                         
-                                        <DataGridTextColumn Header="Ngày tạo" Binding="{Binding CreatedAtFormatted}" Width="1.4*" IsReadOnly="True">
+                                        <DataGridTextColumn Header="Ngôn ngữ" Binding="{Binding TargetLanguage}" Width="1.2*" IsReadOnly="True">
                                             <DataGridTextColumn.ElementStyle>
                                                 <Style TargetType="TextBlock">
-                                                    <Setter Property="HorizontalAlignment" Value="Center"/>
+                                                    <Setter Property="HorizontalAlignment" Value="Left"/>
                                                     <Setter Property="VerticalAlignment" Value="Center"/>
+                                                    <Setter Property="Padding" Value="5,0"/>
                                                 </Style>
                                             </DataGridTextColumn.ElementStyle>
                                         </DataGridTextColumn>
-                                        
-                                        <DataGridTemplateColumn Header="Ngôn ngữ" Width="1.2*">
+
+                                        <DataGridTemplateColumn Header="Voice ID" Width="1.5*">
                                             <DataGridTemplateColumn.CellTemplate>
                                                 <DataTemplate>
-                                                    <ComboBox ItemsSource="{Binding RelativeSource={RelativeSource AncestorType=Window}, Path=LanguageList}"
-                                                              SelectedItem="{Binding TargetLanguage, UpdateSourceTrigger=PropertyChanged}"
-                                                              IsEditable="True"
-                                                              Height="28" VerticalAlignment="Center" VerticalContentAlignment="Center"/>
+                                                    <Grid Margin="2,0">
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="*"/>
+                                                            <ColumnDefinition Width="Auto"/>
+                                                        </Grid.ColumnDefinitions>
+                                                        <TextBox Grid.Column="0" Text="{Binding VoiceId, UpdateSourceTrigger=PropertyChanged}" Height="28" VerticalAlignment="Center" VerticalContentAlignment="Center" BorderThickness="1" BorderBrush="#334155" Background="#1E293B" Foreground="White" CaretBrush="White"/>
+                                                        <Button Grid.Column="1" Content="🔍" Width="28" Height="28" Margin="4,0,0,0" VerticalAlignment="Center" Click="BtnBrowseVoice_Click" ToolTip="Browse shared voices" Background="#3B82F6" Foreground="White" BorderThickness="0">
+                                                            <Button.Resources>
+                                                                <Style TargetType="Border">
+                                                                    <Setter Property="CornerRadius" Value="4"/>
+                                                                </Style>
+                                                            </Button.Resources>
+                                                        </Button>
+                                                    </Grid>
                                                 </DataTemplate>
                                             </DataGridTemplateColumn.CellTemplate>
                                         </DataGridTemplateColumn>
-                                        
-                                        <DataGridTextColumn Header="Voice ID" Binding="{Binding VoiceId, UpdateSourceTrigger=PropertyChanged}" Width="0.8*" IsReadOnly="False">
-                                            <DataGridTextColumn.ElementStyle>
-                                                <Style TargetType="TextBlock">
-                                                    <Setter Property="HorizontalAlignment" Value="Center"/>
-                                                    <Setter Property="VerticalAlignment" Value="Center"/>
-                                                </Style>
-                                            </DataGridTextColumn.ElementStyle>
-                                        </DataGridTextColumn>
-                                        
+
                                         <DataGridTemplateColumn Header="Chrome Profile" Width="1.5*">
                                             <DataGridTemplateColumn.CellTemplate>
                                                 <DataTemplate>
                                                     <ComboBox ItemsSource="{Binding RelativeSource={RelativeSource AncestorType=Window}, Path=ProfileList}"
                                                               SelectedItem="{Binding SelectedProfile, UpdateSourceTrigger=PropertyChanged}"
-                                                              IsEditable="True"
+                                                              IsEditable="False"
                                                               Height="28" VerticalAlignment="Center" VerticalContentAlignment="Center"/>
                                                 </DataTemplate>
                                             </DataGridTemplateColumn.CellTemplate>
                                         </DataGridTemplateColumn>
-                                        <DataGridTemplateColumn Header="Steps" Width="1.7*" Visibility="Collapsed">
-                                             <DataGridTemplateColumn.CellTemplate>
-                                                 <DataTemplate>
-                                                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
-                                                         <CheckBox IsChecked="{Binding Step1, UpdateSourceTrigger=PropertyChanged}" Content="1" Margin="2,0" IsEnabled="True"/>
-                                                         <CheckBox IsChecked="{Binding Step2, UpdateSourceTrigger=PropertyChanged}" Content="2" Margin="2,0" IsEnabled="True"/>
-                                                         <CheckBox IsChecked="{Binding Step3, UpdateSourceTrigger=PropertyChanged}" Content="3" Margin="2,0" IsEnabled="True"/>
-                                                         <CheckBox IsChecked="{Binding Step4, UpdateSourceTrigger=PropertyChanged}" Content="4" Margin="2,0" IsEnabled="True"/>
-                                                         <CheckBox IsChecked="{Binding Step5, UpdateSourceTrigger=PropertyChanged}" Content="5" Margin="2,0" IsEnabled="True"/>
-                                                     </StackPanel>
-                                                 </DataTemplate>
-                                             </DataGridTemplateColumn.CellTemplate>
-                                         </DataGridTemplateColumn>
-                                         
-                                         <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="1.2*" IsReadOnly="True">
-                                             <DataGridTextColumn.HeaderStyle>
-                                                 <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}">
-                                                     <Setter Property="HorizontalContentAlignment" Value="Center"/>
-                                                 </Style>
-                                             </DataGridTextColumn.HeaderStyle>
-                                             <DataGridTextColumn.ElementStyle>
-                                                 <Style TargetType="TextBlock">
-                                                     <Setter Property="FontWeight" Value="SemiBold"/>
-                                                     <Setter Property="HorizontalAlignment" Value="Center"/>
-                                                     <Setter Property="VerticalAlignment" Value="Center"/>
-                                                     <Style.Triggers>
-                                                         <Trigger Property="Text" Value="Done">
-                                                             <Setter Property="Foreground" Value="#10B981"/>
-                                                         </Trigger>
-                                                         <Trigger Property="Text" Value="Failed">
-                                                             <Setter Property="Foreground" Value="#EF4444"/>
-                                                         </Trigger>
-                                                         <Trigger Property="Text" Value="Pending">
-                                                             <Setter Property="Foreground" Value="#94A3B8"/>
-                                                         </Trigger>
-                                                     </Style.Triggers>
-                                                 </Style>
-                                             </DataGridTextColumn.ElementStyle>
-                                         </DataGridTextColumn>
-                                         
-                                         <DataGridTemplateColumn Header="Action" Width="2.7*" IsReadOnly="True">
-                                             <DataGridTemplateColumn.HeaderStyle>
-                                                 <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}">
-                                                     <Setter Property="HorizontalContentAlignment" Value="Center"/>
-                                                 </Style>
-                                             </DataGridTemplateColumn.HeaderStyle>
-                                             <DataGridTemplateColumn.CellTemplate>
-                                                 <DataTemplate>
-                                                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
-                                                         <Button Content="Run" Padding="6,3" Margin="2,0" Click="BtnRunSingleTask_Click" Background="#2563EB" Foreground="White" BorderThickness="0" FontSize="11" FontWeight="SemiBold"/>
-                                                         <Button Content="Logs" Padding="6,3" Margin="2,0" Click="BtnViewTaskLog_Click" Background="#475569" Foreground="White" BorderThickness="0" FontSize="11"/>
-                                                         <Button Content="Assets" Padding="6,3" Margin="2,0" Click="BtnViewTaskAssets_Click" Background="#10B981" Foreground="White" BorderThickness="0" FontSize="11"/>
-                                                         <Button Content="Delete" Padding="6,3" Margin="2,0" Click="BtnDeleteTask_Click" Background="#EF4444" Foreground="White" BorderThickness="0" FontSize="11" FontWeight="SemiBold"/>
-                                                     </StackPanel>
-                                                 </DataTemplate>
-                                             </DataGridTemplateColumn.CellTemplate>
-                                         </DataGridTemplateColumn>
+
+                                        <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="1.2*" IsReadOnly="True">
+                                            <DataGridTextColumn.HeaderStyle>
+                                                <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}">
+                                                    <Setter Property="HorizontalContentAlignment" Value="Center"/>
+                                                </Style>
+                                            </DataGridTextColumn.HeaderStyle>
+                                            <DataGridTextColumn.ElementStyle>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="FontWeight" Value="SemiBold"/>
+                                                    <Setter Property="HorizontalAlignment" Value="Center"/>
+                                                    <Setter Property="VerticalAlignment" Value="Center"/>
+                                                    <Style.Triggers>
+                                                        <Trigger Property="Text" Value="Done">
+                                                            <Setter Property="Foreground" Value="#10B981"/>
+                                                        </Trigger>
+                                                        <Trigger Property="Text" Value="Failed">
+                                                            <Setter Property="Foreground" Value="#EF4444"/>
+                                                        </Trigger>
+                                                        <Trigger Property="Text" Value="Pending">
+                                                            <Setter Property="Foreground" Value="#94A3B8"/>
+                                                        </Trigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </DataGridTextColumn.ElementStyle>
+                                        </DataGridTextColumn>
+
+                                        <DataGridTemplateColumn Header="Action" Width="2.2*" IsReadOnly="True">
+                                            <DataGridTemplateColumn.HeaderStyle>
+                                                <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}">
+                                                    <Setter Property="HorizontalContentAlignment" Value="Center"/>
+                                                </Style>
+                                            </DataGridTemplateColumn.HeaderStyle>
+                                            <DataGridTemplateColumn.CellTemplate>
+                                                <DataTemplate>
+                                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                        <Button Content="Run" Padding="6,3" Margin="2,0" Click="BtnRunSingleTask_Click" Background="#2563EB" Foreground="White" BorderThickness="0" FontSize="11" FontWeight="SemiBold"/>
+                                                        <Button Content="Logs" Padding="6,3" Margin="2,0" Click="BtnViewTaskLog_Click" Background="#475569" Foreground="White" BorderThickness="0" FontSize="11"/>
+                                                        <Button Content="Assets" Padding="6,3" Margin="2,0" Click="BtnViewTaskAssets_Click" Background="#10B981" Foreground="White" BorderThickness="0" FontSize="11"/>
+                                                        <Button Content="Delete" Padding="6,3" Margin="2,0" Click="BtnDeleteTask_Click" Background="#EF4444" Foreground="White" BorderThickness="0" FontSize="11" FontWeight="SemiBold"/>
+                                                    </StackPanel>
+                                                </DataTemplate>
+                                            </DataGridTemplateColumn.CellTemplate>
+                                        </DataGridTemplateColumn>
                                     </DataGrid.Columns>
                                 </DataGrid>
                             </Grid>
                         </Border>
 
-                        <!-- Sidebar overlay for Logs (right to left) -->
-                        <Grid x:Name="SidebarLogs" HorizontalAlignment="Right" Width="400" Background="#1E293B" Visibility="Collapsed" Margin="5,0,0,0">
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="*"/>
-                            </Grid.RowDefinitions>
-                            
-                            <Grid Grid.Row="0" Margin="15,15,15,10">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="Auto"/>
-                                </Grid.ColumnDefinitions>
-                                <TextBlock Text="Task Live Logs" Foreground="White" FontSize="14" FontWeight="Bold" VerticalAlignment="Center"/>
-                                <Button Grid.Column="1" Content="✕" Width="30" Height="30" Background="Transparent" Foreground="White" BorderThickness="0" FontSize="16" Click="BtnCloseSidebar_Click"/>
-                            </Grid>
+                        <!-- Sidebar Drawer Overlay (slides from right, resizable via drag handle) -->
+                        <Grid x:Name="SidebarLogs" HorizontalAlignment="Right" Visibility="Collapsed">
+                            <Grid.ColumnDefinitions>
+                                <!-- Drag handle column -->
+                                <ColumnDefinition Width="Auto"/>
+                                <!-- Sidebar content column -->
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
 
-                            <TextBox Grid.Row="1" x:Name="TxtSidebarLog" Background="Transparent" Foreground="#F8FAFC" BorderThickness="0" 
-                                      Margin="15,0,15,15" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" IsReadOnly="True" 
-                                      FontSize="12" FontFamily="Consolas" AcceptsReturn="True"/>
+                            <!-- Drag handle for resizing -->
+                            <Border Grid.Column="0" Width="6" Background="#334155" Cursor="SizeWE"
+                                    MouseLeftButtonDown="SidebarDragHandle_MouseLeftButtonDown"
+                                    MouseMove="SidebarDragHandle_MouseMove"
+                                    MouseLeftButtonUp="SidebarDragHandle_MouseLeftButtonUp">
+                                <Border.Style>
+                                    <Style TargetType="Border">
+                                        <Style.Triggers>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter Property="Background" Value="#3B82F6"/>
+                                            </Trigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Border.Style>
+                            </Border>
+
+                            <!-- Sidebar content -->
+                            <Border Grid.Column="1" Background="#0B0F19" BorderBrush="#3B82F6" BorderThickness="1,0,0,0">
+                                <Grid>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="*"/>
+                                    </Grid.RowDefinitions>
+
+                                    <!-- Header with close button -->
+                                    <Grid Grid.Row="0" Margin="15,15,15,10">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Text="Task Live Logs" Foreground="White" FontSize="14" FontWeight="Bold" VerticalAlignment="Center"/>
+                                        <Button Grid.Column="1" Content="✕" Width="30" Height="30" Background="Transparent" Foreground="White" BorderThickness="0" FontSize="16" Click="BtnCloseSidebar_Click"/>
+                                    </Grid>
+
+                                    <!-- Log content (stretches to fill sidebar width) -->
+                                    <TextBox Grid.Row="1" x:Name="TxtSidebarLog" Background="Transparent" Foreground="#F8FAFC" BorderThickness="0" 
+                                              Margin="15,0,15,15" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" IsReadOnly="True" 
+                                              FontSize="12" FontFamily="Consolas" AcceptsReturn="True"/>
+                                </Grid>
+                            </Border>
                         </Grid>
                     </Grid>
                 </Grid>

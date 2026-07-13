@@ -214,4 +214,60 @@ namespace AutoCreateImage
             "Zimbabwe"
         };
     }
+
+    public static class LanguageHelper
+    {
+        private static readonly Dictionary<string, string> CodeToName = new Dictionary<string, string>(System.StringComparer.OrdinalIgnoreCase)
+        {
+            { "vi", "Vietnamese" },
+            { "en", "English" },
+            { "fr", "French" },
+            { "de", "German" },
+            { "es", "Spanish" },
+            { "it", "Italian" },
+            { "pt", "Portuguese" },
+            { "ru", "Russian" },
+            { "ja", "Japanese" },
+            { "ko", "Korean" },
+            { "zh", "Chinese" },
+            { "th", "Thai" },
+            { "ro", "Romanian" },
+            { "pl", "Polish" },
+            { "nl", "Dutch" },
+            { "tr", "Turkish" },
+            { "sv", "Swedish" },
+            { "id", "Indonesian" },
+            { "hi", "Hindi" },
+            { "uk", "Ukrainian" },
+            { "cs", "Czech" },
+            { "da", "Danish" },
+            { "fi", "Finnish" },
+            { "el", "Greek" },
+            { "he", "Hebrew" },
+            { "hu", "Hungarian" },
+            { "no", "Norwegian" },
+            { "sk", "Slovak" },
+            { "ar", "Arabic" },
+            { "bg", "Bulgarian" },
+            { "hr", "Croatian" },
+            { "lt", "Lithuanian" },
+            { "ms", "Malay" },
+            { "sl", "Slovenian" },
+            { "et", "Estonian" },
+            { "fa", "Persian" },
+            { "lv", "Latvian" },
+            { "sr", "Serbian" },
+            { "ur", "Urdu" }
+        };
+
+        public static string FormatLanguage(string code)
+        {
+            if (string.IsNullOrWhiteSpace(code)) return string.Empty;
+            if (CodeToName.TryGetValue(code.Trim(), out string? name))
+            {
+                return $"{name} - {code.ToLower()}";
+            }
+            return $"{code.ToUpper()} - {code.ToLower()}";
+        }
+    }
 }

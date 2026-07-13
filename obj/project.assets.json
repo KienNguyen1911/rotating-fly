@@ -2,6 +2,32 @@
   "version": 3,
   "targets": {
     "net10.0-windows7.0": {
+      "AngleSharp/1.4.0": {
+        "type": "package",
+        "compile": {
+          "lib/net10.0/AngleSharp.dll": {
+            "related": ".xml"
+          }
+        },
+        "runtime": {
+          "lib/net10.0/AngleSharp.dll": {
+            "related": ".xml"
+          }
+        }
+      },
+      "JsonExtensions/1.2.0": {
+        "type": "package",
+        "compile": {
+          "lib/net5.0/JsonExtensions.dll": {
+            "related": ".xml"
+          }
+        },
+        "runtime": {
+          "lib/net5.0/JsonExtensions.dll": {
+            "related": ".xml"
+          }
+        }
+      },
       "Microsoft.Bcl.AsyncInterfaces/6.0.0": {
         "type": "package",
         "compile": {
@@ -47,10 +73,68 @@
             "related": ".xml"
           }
         }
+      },
+      "YoutubeExplode/6.6.0": {
+        "type": "package",
+        "dependencies": {
+          "AngleSharp": "1.4.0",
+          "JsonExtensions": "1.2.0"
+        },
+        "compile": {
+          "lib/net10.0/YoutubeExplode.dll": {
+            "related": ".xml"
+          }
+        },
+        "runtime": {
+          "lib/net10.0/YoutubeExplode.dll": {
+            "related": ".xml"
+          }
+        }
       }
     }
   },
   "libraries": {
+    "AngleSharp/1.4.0": {
+      "sha512": "6ph8mpaQx0KL0COYRt0kI8MB9gSp1PtKijKMhJU//+aVFgKAJLKDesG/+26JSaVCOrHNgPf12wpfoyRcMYOeXg==",
+      "type": "package",
+      "path": "anglesharp/1.4.0",
+      "files": [
+        ".nupkg.metadata",
+        ".signature.p7s",
+        "README.md",
+        "anglesharp.1.4.0.nupkg.sha512",
+        "anglesharp.nuspec",
+        "lib/net10.0/AngleSharp.dll",
+        "lib/net10.0/AngleSharp.xml",
+        "lib/net462/AngleSharp.dll",
+        "lib/net462/AngleSharp.xml",
+        "lib/net472/AngleSharp.dll",
+        "lib/net472/AngleSharp.xml",
+        "lib/net8.0/AngleSharp.dll",
+        "lib/net8.0/AngleSharp.xml",
+        "lib/netstandard2.0/AngleSharp.dll",
+        "lib/netstandard2.0/AngleSharp.xml",
+        "logo.png"
+      ]
+    },
+    "JsonExtensions/1.2.0": {
+      "sha512": "ujtrK6m5BQVQLEteLfl54upN7Z59c1ZqEKmU3OlYriqnV74dIgIlNM2vkcgn2AuZEItQDNORD/2H1biI/asOdg==",
+      "type": "package",
+      "path": "jsonextensions/1.2.0",
+      "files": [
+        ".nupkg.metadata",
+        ".signature.p7s",
+        "Readme.md",
+        "jsonextensions.1.2.0.nupkg.sha512",
+        "jsonextensions.nuspec",
+        "lib/net5.0/JsonExtensions.dll",
+        "lib/net5.0/JsonExtensions.xml",
+        "lib/netcoreapp3.0/JsonExtensions.dll",
+        "lib/netcoreapp3.0/JsonExtensions.xml",
+        "lib/netstandard2.0/JsonExtensions.dll",
+        "lib/netstandard2.0/JsonExtensions.xml"
+      ]
+    },
     "Microsoft.Bcl.AsyncInterfaces/6.0.0": {
       "sha512": "UcSjPsst+DfAdJGVDsu346FX0ci0ah+lw3WRtn18NUwEqRt70HaOQ7lI72vy3+1LxtqI3T5GWwV39rQSrCzAeg==",
       "type": "package",
@@ -292,11 +376,32 @@
         "useSharedDesignerContext.txt",
         "version.txt"
       ]
+    },
+    "YoutubeExplode/6.6.0": {
+      "sha512": "DCFAmPvADs/ZB3pB24kLFzVY/1o6iECqJ7IL9LKi4zkSZLgcXDwFbOJe3vd2K3FBw36Xa3O/QMv10zelT7hjfA==",
+      "type": "package",
+      "path": "youtubeexplode/6.6.0",
+      "files": [
+        ".nupkg.metadata",
+        ".signature.p7s",
+        "favicon.png",
+        "lib/net10.0/YoutubeExplode.dll",
+        "lib/net10.0/YoutubeExplode.xml",
+        "lib/net6.0/YoutubeExplode.dll",
+        "lib/net6.0/YoutubeExplode.xml",
+        "lib/net7.0/YoutubeExplode.dll",
+        "lib/net7.0/YoutubeExplode.xml",
+        "lib/netstandard2.0/YoutubeExplode.dll",
+        "lib/netstandard2.0/YoutubeExplode.xml",
+        "youtubeexplode.6.6.0.nupkg.sha512",
+        "youtubeexplode.nuspec"
+      ]
     }
   },
   "projectFileDependencyGroups": {
     "net10.0-windows7.0": [
-      "Microsoft.Playwright >= 1.61.0"
+      "Microsoft.Playwright >= 1.61.0",
+      "YoutubeExplode >= 6.6.0"
     ]
   },
   "packageFolders": {
@@ -345,6 +450,10 @@
           "Microsoft.Playwright": {
             "target": "Package",
             "version": "[1.61.0, )"
+          },
+          "YoutubeExplode": {
+            "target": "Package",
+            "version": "[6.6.0, )"
           }
         },
         "imports": [
