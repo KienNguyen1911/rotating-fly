@@ -667,6 +667,116 @@
                     </Border>
                 </Grid>
             </TabItem>
+
+            <!-- TAB 4: CHATGPT API SERVER -->
+            <TabItem Header="ChatGPT API Server" Padding="15,6" FontSize="12" FontWeight="SemiBold">
+                <Grid Margin="0,15,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="400"/>
+                        <ColumnDefinition Width="20"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+
+                    <!-- Left: API Server Control & Log -->
+                    <Border Grid.Column="0" Background="#1E293B" CornerRadius="8" Padding="15" BorderBrush="#334155" BorderThickness="1">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                            </Grid.RowDefinitions>
+                            
+                            <TextBlock Grid.Row="0" Text="API Server Control" FontSize="14" FontWeight="Bold" Foreground="#F8FAFC" Margin="0,0,0,10"/>
+                            
+                            <!-- Status Panel -->
+                            <Border Grid.Row="1" Background="#0F172A" Padding="10" CornerRadius="4" Margin="0,0,0,15" BorderBrush="#334155" BorderThickness="1">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="Trạng thái:" Foreground="#94A3B8" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                                    <Ellipse x:Name="ApiStatusIndicator" Width="10" Height="10" Fill="#EF4444" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                    <TextBlock x:Name="TxtApiServerStatus" Text="Đã dừng" Foreground="#EF4444" FontWeight="Bold" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Control Buttons -->
+                            <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,0,0,15">
+                                <Button x:Name="BtnStartApi" Content="Khởi động Server" Width="170" Height="30" Background="#10B981" Foreground="White" BorderThickness="0" FontWeight="Bold" Margin="0,0,10,0" Click="BtnStartApi_Click"/>
+                                <Button x:Name="BtnStopApi" Content="Dừng Server" Width="170" Height="30" Background="#EF4444" Foreground="White" BorderThickness="0" FontWeight="Bold" Click="BtnStopApi_Click"/>
+                            </StackPanel>
+
+                            <!-- Live Logs -->
+                            <Grid Grid.Row="3">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="*"/>
+                                </Grid.RowDefinitions>
+                                <TextBlock Grid.Row="0" Text="Logs thực tế (Console)" FontSize="12" Foreground="#94A3B8" Margin="0,0,0,5"/>
+                                <TextBox Grid.Row="1" x:Name="TxtApiLogs" Background="#0F172A" Foreground="#34D399" BorderThickness="1" BorderBrush="#334155"
+                                         TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" IsReadOnly="True" FontSize="11" FontFamily="Consolas" AcceptsReturn="True"/>
+                            </Grid>
+                        </Grid>
+                    </Border>
+
+                    <!-- Right: ChatGPT Accounts -->
+                    <Border Grid.Column="2" Background="#1E293B" CornerRadius="8" Padding="15" BorderBrush="#334155" BorderThickness="1">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                            </Grid.RowDefinitions>
+                            
+                            <TextBlock Grid.Row="0" Text="Quản lý tài khoản ChatGPT" FontSize="14" FontWeight="Bold" Foreground="#F8FAFC" Margin="0,0,0,15"/>
+
+                            <!-- Toolbar -->
+                            <Grid Grid.Row="1" Margin="0,0,0,15">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Orientation="Horizontal" Grid.Column="0">
+                                    <TextBlock Text="Gợi ý Email (nếu có):" VerticalAlignment="Center" Foreground="#94A3B8" FontSize="12" Margin="0,0,5,0"/>
+                                    <TextBox x:Name="TxtEmailHint" Width="180" Height="26" VerticalContentAlignment="Center"/>
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" Grid.Column="1">
+                                    <Button x:Name="BtnRefreshAccounts" Content="🔄 Làm mới" Width="100" Height="26" Background="#3B82F6" Foreground="White" BorderThickness="0" FontWeight="Bold" Margin="0,0,8,0" Click="BtnRefreshAccounts_Click"/>
+                                    <Button x:Name="BtnAddAccount" Content="🔑 Đăng nhập ChatGPT" Width="160" Height="26" Background="#8B5CF6" Foreground="White" BorderThickness="0" FontWeight="Bold" Click="BtnAddAccount_Click"/>
+                                </StackPanel>
+                            </Grid>
+
+                            <!-- Accounts Table -->
+                            <DataGrid Grid.Row="2" x:Name="DgridAccounts" AutoGenerateColumns="False" CanUserAddRows="False"
+                                      Background="Transparent" BorderThickness="0" HeadersVisibility="Column" GridLinesVisibility="Horizontal"
+                                      RowHeaderWidth="0" IsReadOnly="True" RowHeight="34" FontSize="12">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="Email / Account" Binding="{Binding Email}" Width="2*"/>
+                                    <DataGridTextColumn Header="Loại gói" Binding="{Binding Type}" Width="1*"/>
+                                    <DataGridTextColumn Header="Trạng thái" Binding="{Binding Status}" Width="1*">
+                                        <DataGridTextColumn.ElementStyle>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="FontWeight" Value="Bold"/>
+                                                <Style.Triggers>
+                                                    <Trigger Property="Text" Value="normal">
+                                                        <Setter Property="Foreground" Value="#10B981"/>
+                                                    </Trigger>
+                                                    <Trigger Property="Text" Value="limited">
+                                                        <Setter Property="Foreground" Value="#F59E0B"/>
+                                                    </Trigger>
+                                                    <Trigger Property="Text" Value="invalid">
+                                                        <Setter Property="Foreground" Value="#EF4444"/>
+                                                    </Trigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </DataGridTextColumn.ElementStyle>
+                                    </DataGridTextColumn>
+                                    <DataGridTextColumn Header="Hạn ngạch (Quota)" Binding="{Binding Quota}" Width="1*"/>
+                                    <DataGridTextColumn Header="Lần cuối refresh" Binding="{Binding RefreshedAt}" Width="1.5*"/>
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </Grid>
+                    </Border>
+                </Grid>
+            </TabItem>
         </TabControl>
     </Grid>
 </Window>
