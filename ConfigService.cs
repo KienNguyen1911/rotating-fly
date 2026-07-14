@@ -9,10 +9,15 @@ namespace AutoCreateImage
         public string Ai84ApiKey { get; set; } = string.Empty;
         public string ImageApiUrl { get; set; } = "http://localhost:8000/v1/images/edits";
         public string ImageApiKey { get; set; } = "chatgpt2api";
+        public string SupabaseDbUrl { get; set; } = string.Empty;
+        public string ChromeProfilesDir { get; set; } = string.Empty;
+        public string OutputsDir { get; set; } = string.Empty;
+        public int MaxConcurrentTasks { get; set; } = 4;
     }
 
     public static class ConfigService
     {
+        public static AppSettings CurrentSettings { get; set; } = new AppSettings();
         private static readonly string ConfigPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "appsettings.json");
 
         public static AppSettings LoadSettings()
@@ -61,11 +66,13 @@ namespace AutoCreateImage
                 settings.ImageApiKey = envImageKey.Trim();
             }
 
+            CurrentSettings = settings;
             return settings;
         }
 
         public static void SaveSettings(AppSettings settings)
         {
+            CurrentSettings = settings;
             try
             {
                 var options = new JsonSerializerOptions { WriteIndented = true };

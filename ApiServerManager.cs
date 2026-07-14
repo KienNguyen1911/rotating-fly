@@ -53,51 +53,110 @@ namespace AutoCreateImage
 
         public bool IsRunning => _apiProcess != null && !_apiProcess.HasExited;
 
+        private void KillPortOwner(int port)
+        {
+            try
+            {
+                ProcessStartInfo killStartInfo = new ProcessStartInfo
+                {
+                    FileName = "cmd.exe",
+                    Arguments = $"/c \"for /f \"tokens=5\" %a in ('netstat -aon ^| findstr :{port}') do taskkill /F /PID %a\"",
+                    CreateNoWindow = true,
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true
+                };
+                using var proc = Process.Start(killStartInfo);
+                proc?.WaitForExit();
+                LogReceived?.Invoke($"[INFO] Đã giải phóng cổng {port} thành công.");
+            }
+            catch (Exception ex)
+            {
+                LogReceived?.Invoke($"[WARNING] Không thể giải phóng cổng {port}: {ex.Message}");
+            }
+        }
+
         public void StartServer()
         {
             if (IsRunning) return;
 
+            // Giải phóng cổng 8000 để tránh xung đột với các tiến trình chạy ngầm cũ (kể cả python dev)
+            KillPortOwner(8000);
+
+            // Kill any leftover Chatgpt2Server processes to free up port 8000
+            try
+            {
+                foreach (var proc in Process.GetProcessesByName("Chatgpt2Server"))
+                {
+                    LogReceived?.Invoke($"[INFO] Đang tắt tiến trình Chatgpt2Server cũ (PID: {proc.Id}) để giải phóng cổng...");
+                    proc.Kill(true);
+                }
+            }
+            catch (Exception ex)
+            {
+                LogReceived?.Invoke($"[WARNING] Không thể tắt tiến trình Chatgpt2Server cũ: {ex.Message}");
+            }
+
             string appDir = AppDomain.CurrentDomain.BaseDirectory;
-            // Development path or base execution path
-            string chatgpt2apiDir = Path.GetFullPath(Path.Combine(appDir, "Chatgpt2Api"));
-            if (!Directory.Exists(chatgpt2apiDir))
-            {
-                // Try relative to project root in dev mode
-                chatgpt2apiDir = Path.GetFullPath(Path.Combine(appDir, "..\\..\\..\\Chatgpt2Api"));
-            }
+            string prodExe = Path.Combine(appDir, "Chatgpt2Server", "Chatgpt2Server.exe");
 
-            if (!Directory.Exists(chatgpt2apiDir))
+            ProcessStartInfo startInfo;
+            if (File.Exists(prodExe))
             {
-                LogReceived?.Invoke($"[ERROR] Không tìm thấy thư mục Chatgpt2Api tại: {chatgpt2apiDir}");
-                return;
+                LogReceived?.Invoke($"[INFO] Phát hiện bản build production. Đang khởi động API Server từ: {prodExe}");
+                startInfo = new ProcessStartInfo
+                {
+                    FileName = prodExe,
+                    WorkingDirectory = Path.Combine(appDir, "Chatgpt2Server"),
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true
+                };
             }
-
-            string pythonExe = Path.Combine(chatgpt2apiDir, ".venv", "Scripts", "python.exe");
-            if (!File.Exists(pythonExe))
+            else
             {
-                // Fallback to system python
-                pythonExe = "python";
-                LogReceived?.Invoke("[WARNING] Không tìm thấy .venv/Scripts/python.exe, sử dụng 'python' hệ thống.");
+                // Development path or base execution path
+                string chatgpt2apiDir = Path.GetFullPath(Path.Combine(appDir, "Chatgpt2Api"));
+                if (!Directory.Exists(chatgpt2apiDir))
+                {
+                    // Try relative to project root in dev mode
+                    chatgpt2apiDir = Path.GetFullPath(Path.Combine(appDir, "..\\..\\..\\Chatgpt2Api"));
+                }
+
+                if (!Directory.Exists(chatgpt2apiDir))
+                {
+                    LogReceived?.Invoke($"[ERROR] Không tìm thấy thư mục Chatgpt2Api tại: {chatgpt2apiDir}");
+                    return;
+                }
+
+                string pythonExe = Path.Combine(chatgpt2apiDir, ".venv", "Scripts", "python.exe");
+                if (!File.Exists(pythonExe))
+                {
+                    // Fallback to system python
+                    pythonExe = "python";
+                    LogReceived?.Invoke("[WARNING] Không tìm thấy .venv/Scripts/python.exe, sử dụng 'python' hệ thống.");
+                }
+
+                string mainScript = Path.Combine(chatgpt2apiDir, "main.py");
+                if (!File.Exists(mainScript))
+                {
+                    LogReceived?.Invoke($"[ERROR] Không tìm thấy file script chính tại: {mainScript}");
+                    return;
+                }
+
+                LogReceived?.Invoke($"[INFO] Đang khởi động API Server từ: {chatgpt2apiDir}");
+                startInfo = new ProcessStartInfo
+                {
+                    FileName = pythonExe,
+                    Arguments = $"\"{mainScript}\"",
+                    WorkingDirectory = chatgpt2apiDir,
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true
+                };
             }
-
-            string mainScript = Path.Combine(chatgpt2apiDir, "main.py");
-            if (!File.Exists(mainScript))
-            {
-                LogReceived?.Invoke($"[ERROR] Không tìm thấy file script chính tại: {mainScript}");
-                return;
-            }
-
-            LogReceived?.Invoke($"[INFO] Đang khởi động API Server từ: {chatgpt2apiDir}");
-            ProcessStartInfo startInfo = new ProcessStartInfo
-            {
-                FileName = pythonExe,
-                Arguments = $"\"{mainScript}\"",
-                WorkingDirectory = chatgpt2apiDir,
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true
-            };
 
             _apiProcess = new Process { StartInfo = startInfo };
             _apiProcess.OutputDataReceived += (s, e) =>

@@ -262,14 +262,7 @@
 
                             <TextBlock Grid.Column="0" Text="Manage tasks configuration directly inside the table rows below. Press 'Tạo Task' to add a new row." VerticalAlignment="Center" Foreground="#94A3B8" FontSize="12" FontStyle="Italic"/>
 
-                            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,15,0">
-                                <TextBlock Text="AI84 Key:" VerticalAlignment="Center" Foreground="#F8FAFC" FontSize="12" FontWeight="SemiBold" Margin="0,0,4,0"/>
-                                <TextBox x:Name="TxtAi84ApiKey" Width="100" Height="25" VerticalContentAlignment="Center" Padding="4,2" Margin="0,0,10,0"/>
-                                <TextBlock Text="Img URL:" VerticalAlignment="Center" Foreground="#F8FAFC" FontSize="12" FontWeight="SemiBold" Margin="0,0,4,0"/>
-                                <TextBox x:Name="TxtImageApiUrl" Width="180" Height="25" VerticalContentAlignment="Center" Padding="4,2" Margin="0,0,10,0"/>
-                                <TextBlock Text="Img Key:" VerticalAlignment="Center" Foreground="#F8FAFC" FontSize="12" FontWeight="SemiBold" Margin="0,0,4,0"/>
-                                <TextBox x:Name="TxtImageApiKey" Width="100" Height="25" VerticalContentAlignment="Center" Padding="4,2"/>
-                            </StackPanel>
+                            <!-- Image API UI removed - managed via Settings -->
                             
                             <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
                                 <Button x:Name="BtnAddTask" Content="Tạo Task" Height="28" Width="100" Background="#10B981" Foreground="White" BorderThickness="0" FontSize="12" FontWeight="Bold" Click="BtnAddTask_Click" Margin="0,0,10,0"/>
@@ -774,6 +767,97 @@
                                 </DataGrid.Columns>
                             </DataGrid>
                         </Grid>
+                    </Border>
+                </Grid>
+            </TabItem>
+            <!-- TAB 5: SETTINGS -->
+            <TabItem Header="Settings" Padding="15,6" FontSize="12" FontWeight="SemiBold">
+                <Grid Margin="0,15,0,0">
+                    <Border Background="#1E293B" CornerRadius="8" Padding="20" BorderBrush="#334155" BorderThickness="1" VerticalAlignment="Top">
+                        <StackPanel>
+                            <TextBlock Text="Cấu Hình Hệ Thống (Settings)" FontSize="16" FontWeight="Bold" Foreground="#F8FAFC" Margin="0,0,0,20"/>
+
+                            <!-- AI84 Key -->
+                            <TextBlock Text="AI84 API Key:" Foreground="#94A3B8" FontSize="12" Margin="0,0,0,5"/>
+                            <Grid Margin="0,0,0,15">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <PasswordBox x:Name="PbSettingsAi84ApiKey" Height="30" VerticalContentAlignment="Center" Background="#1E293B" Foreground="White" BorderBrush="#334155" BorderThickness="1" Padding="6,4"/>
+                                <Button x:Name="BtnCheckAi84Key" Grid.Column="1" Content="Kiểm tra Key" Width="120" Height="30" Margin="10,0,0,0" Click="BtnCheckAi84Key_Click" Background="#2563EB" Foreground="White" BorderThickness="0" FontWeight="SemiBold">
+                                    <Button.Resources>
+                                        <Style TargetType="Border">
+                                            <Setter Property="CornerRadius" Value="4"/>
+                                        </Style>
+                                    </Button.Resources>
+                                </Button>
+                            </Grid>
+
+                            <!-- Supabase DB Url -->
+                            <TextBlock Text="Supabase PostgreSQL URL (DATABASE_URL):" Foreground="#94A3B8" FontSize="12" Margin="0,0,0,5"/>
+                            <Grid Margin="0,0,0,15">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <PasswordBox x:Name="PbSettingsSupabaseDbUrl" Height="30" VerticalContentAlignment="Center" Background="#1E293B" Foreground="White" BorderBrush="#334155" BorderThickness="1" Padding="6,4"/>
+                                <Button x:Name="BtnCheckSupabaseDb" Grid.Column="1" Content="Kiểm tra Kết nối" Width="120" Height="30" Margin="10,0,0,0" Click="BtnCheckSupabaseDb_Click" Background="#2563EB" Foreground="White" BorderThickness="0" FontWeight="SemiBold">
+                                    <Button.Resources>
+                                        <Style TargetType="Border">
+                                            <Setter Property="CornerRadius" Value="4"/>
+                                        </Style>
+                                    </Button.Resources>
+                                </Button>
+                            </Grid>
+
+                            <!-- Chrome Profiles Dir -->
+                            <TextBlock Text="Chrome Profiles Folder Path:" Foreground="#94A3B8" FontSize="12" Margin="0,0,0,5"/>
+                            <Grid Margin="0,0,0,15">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBox x:Name="TxtSettingsChromeProfilesDir" Height="30" VerticalContentAlignment="Center"/>
+                                <Button x:Name="BtnBrowseChromeProfilesDir" Grid.Column="1" Content="Browse..." Width="80" Height="30" Margin="10,0,0,0" Click="BtnBrowseChromeProfilesDir_Click" Background="#475569" Foreground="White" BorderThickness="0">
+                                    <Button.Resources>
+                                        <Style TargetType="Border">
+                                            <Setter Property="CornerRadius" Value="4"/>
+                                        </Style>
+                                    </Button.Resources>
+                                </Button>
+                            </Grid>
+
+                            <!-- Outputs Dir -->
+                            <TextBlock Text="Outputs Folder Path:" Foreground="#94A3B8" FontSize="12" Margin="0,0,0,5"/>
+                            <Grid Margin="0,0,0,15">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBox x:Name="TxtSettingsOutputsDir" Height="30" VerticalContentAlignment="Center"/>
+                                <Button x:Name="BtnBrowseOutputsDir" Grid.Column="1" Content="Browse..." Width="80" Height="30" Margin="10,0,0,0" Click="BtnBrowseOutputsDir_Click" Background="#475569" Foreground="White" BorderThickness="0">
+                                    <Button.Resources>
+                                        <Style TargetType="Border">
+                                            <Setter Property="CornerRadius" Value="4"/>
+                                        </Style>
+                                    </Button.Resources>
+                                </Button>
+                            </Grid>
+
+                            <!-- Concurrent Tasks -->
+                            <TextBlock Text="Số lượng task chạy song song tối đa (Max Concurrent Tasks):" Foreground="#94A3B8" FontSize="12" Margin="0,0,0,5"/>
+                            <TextBox x:Name="TxtSettingsMaxConcurrentTasks" Height="30" Width="80" HorizontalAlignment="Left" Margin="0,0,0,20" VerticalContentAlignment="Center" Text="4"/>
+
+                            <!-- Save Button -->
+                            <Button x:Name="BtnSaveSettings" Content="Lưu Cấu Hình" Width="150" Height="35" HorizontalAlignment="Left" Click="BtnSaveSettings_Click" Background="#10B981" Foreground="White" BorderThickness="0" FontWeight="Bold">
+                                <Button.Resources>
+                                    <Style TargetType="Border">
+                                        <Setter Property="CornerRadius" Value="4"/>
+                                    </Style>
+                                </Button.Resources>
+                            </Button>
+                        </StackPanel>
                     </Border>
                 </Grid>
             </TabItem>

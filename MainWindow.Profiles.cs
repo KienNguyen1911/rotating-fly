@@ -10,8 +10,11 @@ namespace AutoCreateImage
     {
         private string GetProfilesBaseDir()
         {
-            string desktopPath = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
-            string baseDir = Path.Combine(desktopPath, "ChromeProfiles");
+            string baseDir = ConfigService.CurrentSettings.ChromeProfilesDir;
+            if (string.IsNullOrEmpty(baseDir))
+            {
+                baseDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ChromeProfiles");
+            }
             if (!Directory.Exists(baseDir))
             {
                 Directory.CreateDirectory(baseDir);

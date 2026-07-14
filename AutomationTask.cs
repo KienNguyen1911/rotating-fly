@@ -109,7 +109,19 @@ namespace AutoCreateImage
 
         public string VideoId => ExtractVideoId(VideoUrl);
 
-        public string OutputDir => Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Outputs", VideoId);
+        public string OutputDir
+        {
+            get
+            {
+                string baseDir = ConfigService.CurrentSettings.OutputsDir;
+                if (string.IsNullOrEmpty(baseDir))
+                {
+                    string desktopPath = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
+                    baseDir = Path.Combine(desktopPath, "Outputs");
+                }
+                return Path.Combine(baseDir, VideoId);
+            }
+        }
 
         public event PropertyChangedEventHandler? PropertyChanged;
 

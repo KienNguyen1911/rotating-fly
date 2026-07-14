@@ -209,8 +209,7 @@ namespace AutoCreateImage
                         pipeline2Status = "Step 4: Voiceover";
                         updateOverallStatus();
                         LogTask(task, "[SCRIPT-BRANCH] Starting Step 4: Voiceover Generation...");
-                        string apiKey = "";
-                        Dispatcher.Invoke(() => apiKey = TxtAi84ApiKey.Text.Trim());
+                        string apiKey = ConfigService.CurrentSettings.Ai84ApiKey;
                         await RunStep4Async(task.VoiceId, task.OutputDir, rewrittenScript, task.VideoId, task, apiKey);
                     }
 
@@ -768,13 +767,8 @@ namespace AutoCreateImage
                 throw new FileNotFoundException($"[STEP 5] [ERROR] Thumbnail file not found: {thumbnailPath}. Please run Step 1 first.");
             }
 
-            string apiUrl = "";
-            string apiKey = "";
-            Dispatcher.Invoke(() =>
-            {
-                apiUrl = TxtImageApiUrl.Text.Trim();
-                apiKey = TxtImageApiKey.Text.Trim();
-            });
+            string apiUrl = ConfigService.CurrentSettings.ImageApiUrl;
+            string apiKey = ConfigService.CurrentSettings.ImageApiKey;
 
             if (string.IsNullOrWhiteSpace(apiUrl))
             {

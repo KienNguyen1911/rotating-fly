@@ -13,3 +13,7 @@
 # OS files
 .DS_Store
 Thumbs.db
+
+# Build outputs and packaged archives
+dist_package/
+*.zip

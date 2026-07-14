@@ -75,7 +75,7 @@ namespace AutoCreateImage
             if (dialog.ShowDialog() == true)
             {
                 string selectedProfile = ProfileList.Count > 0 ? ProfileList[0] : string.Empty;
-                string apiKey = TxtAi84ApiKey.Text.Trim();
+                string apiKey = ConfigService.CurrentSettings.Ai84ApiKey;
 
                 int count = 0;
                 foreach (var entry in dialog.TasksToCreate)
@@ -202,11 +202,13 @@ namespace AutoCreateImage
             BtnAddTask.IsEnabled = false;
             try
             {
-                Log($"[FLOW] Starting batch execution for {pendingTasks.Length} tasks (Max 4 concurrent threads)...");
+                int maxConcurrent = ConfigService.CurrentSettings.MaxConcurrentTasks;
+                if (maxConcurrent <= 0) maxConcurrent = 4;
+                Log($"[FLOW] Starting batch execution for {pendingTasks.Length} tasks (Max {maxConcurrent} concurrent threads)...");
 
                 await Task.Run(async () =>
                 {
-                    using var concurrencySemaphore = new System.Threading.SemaphoreSlim(4, 4);
+                    using var concurrencySemaphore = new System.Threading.SemaphoreSlim(maxConcurrent, maxConcurrent);
                     var tasks = pendingTasks.Select(async task =>
                     {
                         await concurrencySemaphore.WaitAsync();
@@ -333,7 +335,7 @@ namespace AutoCreateImage
         {
             if (sender is Button btn && btn.DataContext is AutomationTask task)
             {
-                string apiKey = TxtAi84ApiKey.Text.Trim();
+                string apiKey = ConfigService.CurrentSettings.Ai84ApiKey;
                 if (string.IsNullOrEmpty(apiKey))
                 {
                     MessageBox.Show("Please enter your AI84 API Key first.", "API Key Required", MessageBoxButton.OK, MessageBoxImage.Warning);
