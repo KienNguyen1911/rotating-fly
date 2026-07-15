@@ -19,8 +19,6 @@ namespace AutoCreateImage
         public ObservableCollection<string> HistoryDates { get; set; } = new ObservableCollection<string>();
         public ObservableCollection<HistoryTaskModel> HistoryTasks { get; set; } = new ObservableCollection<HistoryTaskModel>();
 
-        private readonly ApiServerManager _apiManager = new ApiServerManager();
-
         // Chrome window slots
         private static readonly bool[] _activeBrowserSlots = new bool[32];
         private static readonly object _browserSlotsLock = new object();
@@ -42,88 +40,15 @@ namespace AutoCreateImage
             LoadApplicationSettings();
             LoadHistoryDates();
 
-            // Set up API Server Management
-            _apiManager.LogReceived += ApiManager_LogReceived;
-            _apiManager.StatusChanged += ApiManager_StatusChanged;
             Closing += MainWindow_Closing;
-
-            // Start API Server automatically on startup
-            // _apiManager.StartServer();
-        }
-
-        private void ApiManager_LogReceived(string log)
-        {
-            _ = Dispatcher.BeginInvoke(new Action(() =>
-            {
-                string decodedLog = log;
-                try
-                {
-                    decodedLog = System.Text.RegularExpressions.Regex.Unescape(log);
-                }
-                catch { }
-
-                // Translate Chinese statuses
-                decodedLog = decodedLog.Replace("\"正常\"", "\"Normal\"")
-                                       .Replace("\"限流\"", "\"Limited\"")
-                                       .Replace("\"异常\"", "\"Abnormal\"")
-                                       .Replace("\"禁用\"", "\"Disabled\"")
-                                       .Replace("正常", "Normal")
-                                       .Replace("限流", "Limited")
-                                       .Replace("异常", "Abnormal")
-                                       .Replace("禁用", "Disabled");
-
-                // Translate Chinese descriptions
-                decodedLog = decodedLog.Replace("refresh_token 刷新 access_token 失败", "refresh_token refreshed access_token failed")
-                                       .Replace("refresh_token 已刷新 access_token", "refresh_token refreshed access_token successfully")
-                                       .Replace("自动移除异常账号", "Automatically removed abnormal account")
-                                       .Replace("更新账号", "Update account")
-                                       .Replace("账号已停用-标记禁用", "Account deactivated - marked disabled")
-                                       .Replace("号池状态", "Account pool status");
-
-                TxtApiLogs.AppendText($"[{DateTime.Now:HH:mm:ss}] {decodedLog}\n");
-                if (TxtApiLogs.Text.Length > 30000)
-                {
-                    TxtApiLogs.Text = TxtApiLogs.Text.Substring(15000);
-                }
-                TxtApiLogs.ScrollToEnd();
-            }));
-        }
-
-        private void ApiManager_StatusChanged()
-        {
-            _ = Dispatcher.BeginInvoke(new Action(() =>
-            {
-                bool isRunning = _apiManager.IsRunning;
-                TxtApiServerStatus.Text = isRunning ? "Đang chạy" : "Đã dừng";
-                
-                var color = isRunning ? System.Windows.Media.Colors.LightGreen : System.Windows.Media.Colors.Tomato;
-                var brush = new System.Windows.Media.SolidColorBrush(color);
-                
-                TxtApiServerStatus.Foreground = brush;
-                ApiStatusIndicator.Fill = brush;
-
-                if (isRunning)
-                {
-                    _ = Task.Run(async () => await RefreshAccountsListAsync());
-                }
-            }));
         }
 
         private void MainWindow_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
         {
             SaveApplicationSettings();
-            _apiManager.StopServer();
         }
 
-        private async Task RefreshAccountsListAsync()
-        {
-            if (!_apiManager.IsRunning) return;
-            var accounts = await _apiManager.GetAccountsAsync();
-            _ = Dispatcher.BeginInvoke(new Action(() =>
-            {
-                DgridAccounts.ItemsSource = accounts;
-            }));
-        }        public async Task EnqueueImageRequestAsync(ImageGenRequest request)
+        public async Task EnqueueImageRequestAsync(ImageGenRequest request)
         {
             try
             {
@@ -281,93 +206,7 @@ namespace AutoCreateImage
         {
             UpdatePoolUi();
         }
-        private void BtnStartApi_Click(object sender, RoutedEventArgs e)
-        {
-            if (!_apiManager.IsRunning)
-            {
-                _apiManager.StartServer();
-            }
-        }
 
-        private void BtnStopApi_Click(object sender, RoutedEventArgs e)
-        {
-            if (_apiManager.IsRunning)
-            {
-                _apiManager.StopServer();
-            }
-        }
-
-        private async void BtnRefreshAccounts_Click(object sender, RoutedEventArgs e)
-        {
-            await RefreshAccountsListAsync();
-        }
-
-        private async void BtnAddAccount_Click(object sender, RoutedEventArgs e)
-        {
-            if (!_apiManager.IsRunning)
-            {
-                MessageBox.Show("Vui lòng khởi động API Server trước.", "Server chưa chạy", MessageBoxButton.OK, MessageBoxImage.Warning);
-                return;
-            }
-
-            string emailHint = TxtEmailHint.Text.Trim();
-            var startResult = await _apiManager.StartOAuthLoginAsync(emailHint);
-            if (startResult == null)
-            {
-                MessageBox.Show("Không thể bắt đầu phiên đăng nhập OAuth. Kiểm tra log API để biết thêm chi tiết.", "Lỗi OAuth", MessageBoxButton.OK, MessageBoxImage.Error);
-                return;
-            }
-
-            var loginWin = new WebViewLoginWindow(startResult.SessionId, startResult.AuthorizeUrl, startResult.RedirectUriPrefix)
-            {
-                Owner = this
-            };
-
-            if (loginWin.ShowDialog() == true)
-            {
-                string callbackUrl = loginWin.CallbackUrl;
-                bool success = await _apiManager.FinishOAuthLoginAsync(startResult.SessionId, callbackUrl);
-                if (success)
-                {
-                    MessageBox.Show("Đăng nhập và tích hợp tài khoản ChatGPT thành công!", "Thành công", MessageBoxButton.OK, MessageBoxImage.Information);
-                    await RefreshAccountsListAsync();
-                }
-                else
-                {
-                    MessageBox.Show("Có lỗi xảy ra khi đồng bộ Token ChatGPT từ Callback URL.", "Lỗi đồng bộ", MessageBoxButton.OK, MessageBoxImage.Error);
-                }
-            }
-        }
-
-        private async void BtnDeleteAccount_Click(object sender, RoutedEventArgs e)
-        {
-            if (!_apiManager.IsRunning)
-            {
-                MessageBox.Show("Vui lòng khởi động API Server trước.", "Server chưa chạy", MessageBoxButton.OK, MessageBoxImage.Warning);
-                return;
-            }
-
-            var selectedAccount = DgridAccounts.SelectedItem as ChatGptAccount;
-            if (selectedAccount == null)
-            {
-                MessageBox.Show("Vui lòng chọn tài khoản muốn xóa từ danh sách.", "Chưa chọn tài khoản", MessageBoxButton.OK, MessageBoxImage.Warning);
-                return;
-            }
-
-            var confirmResult = MessageBox.Show($"Bạn có chắc chắn muốn xóa tài khoản '{selectedAccount.Email}' khỏi API server không?", "Xác nhận xóa", MessageBoxButton.YesNo, MessageBoxImage.Question);
-            if (confirmResult != MessageBoxResult.Yes) return;
-
-            bool success = await _apiManager.DeleteAccountAsync(selectedAccount.AccessToken);
-            if (success)
-            {
-                MessageBox.Show("Xóa tài khoản thành công!", "Thành công", MessageBoxButton.OK, MessageBoxImage.Information);
-                await RefreshAccountsListAsync();
-            }
-            else
-            {
-                MessageBox.Show("Xóa tài khoản thất bại. Vui lòng kiểm tra log để biết thêm chi tiết.", "Thất bại", MessageBoxButton.OK, MessageBoxImage.Error);
-            }
-        }
 
         private void LoadApplicationSettings()
         {
@@ -405,69 +244,10 @@ namespace AutoCreateImage
                 settings.MaxConcurrentTasks = maxTasks;
 
                 ConfigService.SaveSettings(settings);
-
-                // Update python .env file in background
-                _ = Task.Run(() => UpdatePythonEnvFile(settings.SupabaseDbUrl));
             }
             catch (Exception ex)
             {
                 Log($"[ERROR] Failed to save application settings: {ex.Message}");
-            }
-        }
-
-        private void UpdatePythonEnvFile(string databaseUrl)
-        {
-            try
-            {
-                string appDir = AppDomain.CurrentDomain.BaseDirectory;
-                string chatgpt2apiDir = Path.GetFullPath(Path.Combine(appDir, "Chatgpt2Api"));
-                if (!Directory.Exists(chatgpt2apiDir))
-                {
-                    chatgpt2apiDir = Path.GetFullPath(Path.Combine(appDir, "..\\..\\..\\Chatgpt2Api"));
-                }
-
-                if (!Directory.Exists(chatgpt2apiDir)) return;
-
-                string envPath = Path.Combine(chatgpt2apiDir, ".env");
-                if (!File.Exists(envPath)) return;
-
-                var lines = File.ReadAllLines(envPath);
-                bool found = false;
-                for (int i = 0; i < lines.Length; i++)
-                {
-                    if (lines[i].Trim().StartsWith("DATABASE_URL="))
-                    {
-                        lines[i] = $"DATABASE_URL={databaseUrl}";
-                        found = true;
-                        break;
-                    }
-                }
-                if (!found)
-                {
-                    for (int i = 0; i < lines.Length; i++)
-                    {
-                        if (lines[i].Trim().StartsWith("# DATABASE_URL="))
-                        {
-                            lines[i] = $"DATABASE_URL={databaseUrl}";
-                            found = true;
-                            break;
-                        }
-                    }
-                }
-                if (!found)
-                {
-                    var newLines = new System.Collections.Generic.List<string>(lines) { $"DATABASE_URL={databaseUrl}" };
-                    File.WriteAllLines(envPath, newLines);
-                }
-                else
-                {
-                    File.WriteAllLines(envPath, lines);
-                }
-                Log("[INFO] Python .env database connection updated.");
-            }
-            catch (Exception ex)
-            {
-                Log($"[ERROR] Failed to update python .env: {ex.Message}");
             }
         }
 
@@ -524,7 +304,6 @@ namespace AutoCreateImage
                     {
                         ConfigService.SaveSettings(imported);
                         LoadApplicationSettings();
-                        _ = Task.Run(() => UpdatePythonEnvFile(imported.SupabaseDbUrl));
                         LoadProfiles();
                         MessageBox.Show("Nhập cấu hình hệ thống thành công và đã áp dụng cấu hình mới!", "Nhập thành công", MessageBoxButton.OK, MessageBoxImage.Information);
                     }
@@ -599,95 +378,7 @@ namespace AutoCreateImage
             }
         }
 
-        private async void BtnCheckSupabaseDb_Click(object sender, RoutedEventArgs e)
-        {
-            string dbUrl = PbSettingsSupabaseDbUrl.Password.Trim();
-            if (string.IsNullOrEmpty(dbUrl))
-            {
-                MessageBox.Show("Vui lòng nhập Supabase Database URL trước khi kiểm tra.", "Yêu cầu thông tin", MessageBoxButton.OK, MessageBoxImage.Warning);
-                return;
-            }
 
-            BtnCheckSupabaseDb.IsEnabled = false;
-            BtnCheckSupabaseDb.Content = "Đang kết nối...";
-
-            try
-            {
-                bool success = await Task.Run(() => RunDatabaseConnectionTest(dbUrl));
-                if (success)
-                {
-                    MessageBox.Show("Kết nối tới Supabase Database thành công!", "Hợp lệ", MessageBoxButton.OK, MessageBoxImage.Information);
-                }
-                else
-                {
-                    MessageBox.Show("Kết nối tới Database thất bại. Vui lòng kiểm tra lại URL hoặc kết nối Internet.", "Không hợp lệ", MessageBoxButton.OK, MessageBoxImage.Error);
-                }
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"Lỗi trong quá trình kiểm tra database:\n{ex.Message}", "Lỗi kiểm tra", MessageBoxButton.OK, MessageBoxImage.Error);
-            }
-            finally
-            {
-                BtnCheckSupabaseDb.IsEnabled = true;
-                BtnCheckSupabaseDb.Content = "Kiểm tra Kết nối";
-            }
-        }
-
-        private bool RunDatabaseConnectionTest(string dbUrl)
-        {
-            try
-            {
-                string appDir = AppDomain.CurrentDomain.BaseDirectory;
-                string chatgpt2apiDir = Path.GetFullPath(Path.Combine(appDir, "Chatgpt2Api"));
-                if (!Directory.Exists(chatgpt2apiDir))
-                {
-                    chatgpt2apiDir = Path.GetFullPath(Path.Combine(appDir, "..\\..\\..\\Chatgpt2Api"));
-                }
-
-                if (!Directory.Exists(chatgpt2apiDir))
-                {
-                    return false;
-                }
-
-                string pythonExe = Path.Combine(chatgpt2apiDir, ".venv", "Scripts", "python.exe");
-                if (!File.Exists(pythonExe))
-                {
-                    pythonExe = "python";
-                }
-
-                string testScript = Path.Combine(chatgpt2apiDir, "scripts", "test_storage.py");
-                if (!File.Exists(testScript))
-                {
-                    return false;
-                }
-
-                var startInfo = new System.Diagnostics.ProcessStartInfo
-                {
-                    FileName = pythonExe,
-                    Arguments = $"\"{testScript}\"",
-                    WorkingDirectory = chatgpt2apiDir,
-                    UseShellExecute = false,
-                    CreateNoWindow = true,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true
-                };
-
-                startInfo.EnvironmentVariables["DATABASE_URL"] = dbUrl;
-                startInfo.EnvironmentVariables["STORAGE_BACKEND"] = "postgres";
-                startInfo.EnvironmentVariables["PYTHONIOENCODING"] = "utf-8";
-
-                using var process = System.Diagnostics.Process.Start(startInfo);
-                if (process == null) return false;
-
-                process.WaitForExit();
-                return process.ExitCode == 0;
-            }
-            catch
-            {
-                return false;
-            }
-        }
 
         private void Log(string message)
         {
