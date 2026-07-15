@@ -195,9 +195,22 @@ def _image_error_response(exc: Exception) -> JSONResponse:
             },
             429,
         )
+    account_email = getattr(exc, "account_email", "")
     if hasattr(exc, "to_openai_error") and hasattr(exc, "status_code"):
-        return JSONResponse(status_code=int(exc.status_code), content=exc.to_openai_error())
-    return openai_error_response(message, 502)
+        err_body = exc.to_openai_error()
+        if account_email and isinstance(err_body, dict) and "error" in err_body:
+            err_body["error"]["account_email"] = account_email
+        return JSONResponse(status_code=int(exc.status_code), content=err_body)
+    err_body = {
+        "error": {
+            "message": message,
+            "type": "server_error",
+            "param": None,
+            "code": None,
+            "account_email": account_email
+        }
+    }
+    return JSONResponse(status_code=502, content=err_body)
 
 
 def _protocol_error_response(exc: Exception, status_code: int, sse: str) -> JSONResponse:
@@ -245,7 +258,7 @@ class LoggedCall:
         if isinstance(result, dict):
             self.log("调用完成", result)
             response = dict(result)
-            response.pop("_account_email", None)
+            # Keep _account_email so the client can display which account created the image
             return response
 
         sender = anthropic_sse_stream if sse == "anthropic" else sse_json_stream

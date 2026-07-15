@@ -20,6 +20,10 @@ namespace AutoCreateImage
         {
             if (sender is AutomationTask task)
             {
+                if (e.PropertyName == nameof(AutomationTask.Logs))
+                {
+                    return;
+                }
                 _ = Task.Run(() => SaveTaskToHistoryAsync(task));
             }
         }
@@ -30,19 +34,21 @@ namespace AutoCreateImage
             task.Logs += formattedMessage;
 
             // If the sidebar is open and showing this task's logs, append to it in real-time
-            Dispatcher.Invoke(() =>
+            Dispatcher.BeginInvoke(new Action(() =>
             {
                 if (SidebarLogs.Visibility == Visibility.Visible && TxtSidebarLog.DataContext == task)
                 {
                     TxtSidebarLog.AppendText(formattedMessage);
                     TxtSidebarLog.ScrollToEnd();
                 }
-            });
+            }));
         }
-
         private void BtnAddTask_Click(object sender, RoutedEventArgs e)
         {
-            string selectedProfile = ProfileList.Count > 0 ? ProfileList[0] : string.Empty;
+            string defaultProf = ConfigService.CurrentSettings.DefaultChromeProfile;
+            string selectedProfile = !string.IsNullOrEmpty(defaultProf) && ProfileList.Contains(defaultProf)
+                ? defaultProf
+                : (ProfileList.Count > 0 ? ProfileList[0] : string.Empty);
 
             var task = new AutomationTask
             {
@@ -74,7 +80,10 @@ namespace AutoCreateImage
 
             if (dialog.ShowDialog() == true)
             {
-                string selectedProfile = ProfileList.Count > 0 ? ProfileList[0] : string.Empty;
+                string defaultProf = ConfigService.CurrentSettings.DefaultChromeProfile;
+                string selectedProfile = !string.IsNullOrEmpty(defaultProf) && ProfileList.Contains(defaultProf)
+                    ? defaultProf
+                    : (ProfileList.Count > 0 ? ProfileList[0] : string.Empty);
                 string apiKey = ConfigService.CurrentSettings.Ai84ApiKey;
 
                 int count = 0;

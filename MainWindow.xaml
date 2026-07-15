@@ -504,6 +504,9 @@
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="20"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="20"/>
+                            <RowDefinition Height="Auto"/>
                             <RowDefinition Height="*"/>
                         </Grid.RowDefinitions>
 
@@ -512,12 +515,25 @@
                             <StackPanel>
                                 <TextBlock Text="Selected Profile Management" FontSize="14" FontWeight="Bold" Foreground="#F8FAFC" Margin="0,0,0,15"/>
                                 
-                                <TextBlock Text="Selected Profile:" FontSize="12" Foreground="#94A3B8"/>
-                                <TextBlock Text="{Binding ElementName=LboxProfiles, Path=SelectedItem}" FontSize="18" FontWeight="Bold" Foreground="#60A5FA" Margin="0,2,0,20"/>
+                                <Grid Margin="0,0,0,15">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel>
+                                        <TextBlock Text="Selected Profile:" FontSize="12" Foreground="#94A3B8"/>
+                                        <TextBlock Text="{Binding ElementName=LboxProfiles, Path=SelectedItem}" FontSize="18" FontWeight="Bold" Foreground="#60A5FA" Margin="0,2,0,0"/>
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Orientation="Horizontal">
+                                        <TextBlock Text="Mặc định: " FontSize="12" Foreground="#94A3B8" VerticalAlignment="Center"/>
+                                        <TextBlock x:Name="TxtDefaultProfileName" Text="None" FontSize="14" FontWeight="Bold" Foreground="#FBBF24" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </Grid>
 
                                 <StackPanel Orientation="Horizontal">
-                                    <Button x:Name="BtnOpenProfileBrowser" Content="🌐 Open Browser (ChatGPT Login)" Width="230" Height="35" Background="#2563EB" Foreground="White" BorderThickness="0" FontWeight="SemiBold" Click="BtnOpenProfileBrowser_Click" Margin="0,0,10,0"/>
-                                    <Button x:Name="BtnOpenProfileFolder" Content="📂 Open Folder in Explorer" Width="180" Height="35" Background="#475569" Foreground="White" BorderThickness="0" FontWeight="SemiBold" Click="BtnOpenProfileFolder_Click" Margin="0,0,10,0"/>
+                                    <Button x:Name="BtnOpenProfileBrowser" Content="🌐 Open Browser" Width="150" Height="35" Background="#2563EB" Foreground="White" BorderThickness="0" FontWeight="SemiBold" Click="BtnOpenProfileBrowser_Click" Margin="0,0,10,0"/>
+                                    <Button x:Name="BtnOpenProfileFolder" Content="📂 Open Folder" Width="130" Height="35" Background="#475569" Foreground="White" BorderThickness="0" FontWeight="SemiBold" Click="BtnOpenProfileFolder_Click" Margin="0,0,10,0"/>
+                                    <Button x:Name="BtnSetDefaultProfile" Content="⭐ Đặt làm mặc định" Width="150" Height="35" Background="#D97706" Foreground="White" BorderThickness="0" FontWeight="SemiBold" Click="BtnSetDefaultProfile_Click" Margin="0,0,10,0"/>
                                     <Button x:Name="BtnDeleteProfile" Content="🗑️ Delete Profile" Width="130" Height="35" Background="#EF4444" Foreground="White" BorderThickness="0" FontWeight="SemiBold" Click="BtnDeleteProfile_Click"/>
                                 </StackPanel>
                             </StackPanel>
@@ -535,6 +551,22 @@
                                     </Grid.ColumnDefinitions>
                                     <TextBox x:Name="TxtNewProfileName" Height="30" VerticalContentAlignment="Center" Padding="5" />
                                     <Button x:Name="BtnCreateProfile" Grid.Column="1" Content="Create &amp; Initialize Profile" Width="180" Height="30" Margin="10,0,0,0" Click="BtnCreateProfile_Click" Background="#10B981" Foreground="White" BorderThickness="0" FontWeight="Bold"/>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Custom GPT settings Card -->
+                        <Border Grid.Row="4" Background="#1E293B" CornerRadius="8" Padding="20" BorderBrush="#334155" BorderThickness="1" VerticalAlignment="Top">
+                            <StackPanel>
+                                <TextBlock Text="Cấu hình Custom GPT (Dịch Chay)" FontSize="14" FontWeight="Bold" Foreground="#F8FAFC" Margin="0,0,0,15"/>
+                                <TextBlock Text="Custom GPT URL (Đường dẫn dùng ở Step 3):" FontSize="12" Foreground="#94A3B8" Margin="0,0,0,5"/>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBox x:Name="TxtCustomGptUrl" Height="30" VerticalContentAlignment="Center" Padding="5" />
+                                    <Button x:Name="BtnSaveCustomGptUrl" Grid.Column="1" Content="Lưu URL" Width="120" Height="30" Margin="10,0,0,0" Click="BtnSaveCustomGptUrl_Click" Background="#2563EB" Foreground="White" BorderThickness="0" FontWeight="Bold"/>
                                 </Grid>
                             </StackPanel>
                         </Border>
@@ -733,6 +765,7 @@
                                 </StackPanel>
                                 <StackPanel Orientation="Horizontal" Grid.Column="1">
                                     <Button x:Name="BtnRefreshAccounts" Content="🔄 Làm mới" Width="100" Height="26" Background="#3B82F6" Foreground="White" BorderThickness="0" FontWeight="Bold" Margin="0,0,8,0" Click="BtnRefreshAccounts_Click"/>
+                                    <Button x:Name="BtnDeleteAccount" Content="🗑️ Xóa tài khoản" Width="120" Height="26" Background="#EF4444" Foreground="White" BorderThickness="0" FontWeight="Bold" Margin="0,0,8,0" Click="BtnDeleteAccount_Click"/>
                                     <Button x:Name="BtnAddAccount" Content="🔑 Đăng nhập ChatGPT" Width="160" Height="26" Background="#8B5CF6" Foreground="White" BorderThickness="0" FontWeight="Bold" Click="BtnAddAccount_Click"/>
                                 </StackPanel>
                             </Grid>
@@ -811,6 +844,14 @@
                                 </Button>
                             </Grid>
 
+                            <!-- Image API URL -->
+                            <TextBlock Text="Image API URL (G-Labs / ChatGPT2API):" Foreground="#94A3B8" FontSize="12" Margin="0,0,0,5"/>
+                            <TextBox x:Name="TxtSettingsImageApiUrl" Height="30" VerticalContentAlignment="Center" Margin="0,0,0,15"/>
+
+                            <!-- Image API Key -->
+                            <TextBlock Text="Image API Key (X-API-Key / Bearer Token):" Foreground="#94A3B8" FontSize="12" Margin="0,0,0,5"/>
+                            <PasswordBox x:Name="PbSettingsImageApiKey" Height="30" VerticalContentAlignment="Center" Background="#1E293B" Foreground="White" BorderBrush="#334155" BorderThickness="1" Padding="6,4" Margin="0,0,0,15"/>
+
                             <!-- Chrome Profiles Dir -->
                             <TextBlock Text="Chrome Profiles Folder Path:" Foreground="#94A3B8" FontSize="12" Margin="0,0,0,5"/>
                             <Grid Margin="0,0,0,15">
@@ -849,15 +890,150 @@
                             <TextBlock Text="Số lượng task chạy song song tối đa (Max Concurrent Tasks):" Foreground="#94A3B8" FontSize="12" Margin="0,0,0,5"/>
                             <TextBox x:Name="TxtSettingsMaxConcurrentTasks" Height="30" Width="80" HorizontalAlignment="Left" Margin="0,0,0,20" VerticalContentAlignment="Center" Text="4"/>
 
-                            <!-- Save Button -->
-                            <Button x:Name="BtnSaveSettings" Content="Lưu Cấu Hình" Width="150" Height="35" HorizontalAlignment="Left" Click="BtnSaveSettings_Click" Background="#10B981" Foreground="White" BorderThickness="0" FontWeight="Bold">
-                                <Button.Resources>
-                                    <Style TargetType="Border">
-                                        <Setter Property="CornerRadius" Value="4"/>
-                                    </Style>
-                                </Button.Resources>
-                            </Button>
+                            <!-- Action Buttons -->
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,20">
+                                <Button x:Name="BtnSaveSettings" Content="Lưu Cấu Hình" Width="130" Height="35" Click="BtnSaveSettings_Click" Background="#10B981" Foreground="White" BorderThickness="0" FontWeight="Bold" Margin="0,0,10,0">
+                                    <Button.Resources>
+                                        <Style TargetType="Border">
+                                            <Setter Property="CornerRadius" Value="4"/>
+                                        </Style>
+                                    </Button.Resources>
+                                </Button>
+                                <Button x:Name="BtnExportSettings" Content="Xuất Cấu Hình" Width="130" Height="35" Click="BtnExportSettings_Click" Background="#2563EB" Foreground="White" BorderThickness="0" FontWeight="Bold" Margin="0,0,10,0">
+                                    <Button.Resources>
+                                        <Style TargetType="Border">
+                                            <Setter Property="CornerRadius" Value="4"/>
+                                        </Style>
+                                    </Button.Resources>
+                                </Button>
+                                <Button x:Name="BtnImportSettings" Content="Nhập Cấu Hình" Width="130" Height="35" Click="BtnImportSettings_Click" Background="#475569" Foreground="White" BorderThickness="0" FontWeight="Bold">
+                                    <Button.Resources>
+                                        <Style TargetType="Border">
+                                            <Setter Property="CornerRadius" Value="4"/>
+                                        </Style>
+                                    </Button.Resources>
+                                </Button>
+                            </StackPanel>
                         </StackPanel>
+                    </Border>
+                </Grid>
+            </TabItem>
+
+            <!-- TAB 5: IMAGE GENERATION REQUEST POOL -->
+            <TabItem Header="Image Pool" Padding="15,6" FontSize="12" FontWeight="SemiBold">
+                <Grid Margin="15,15,15,15">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <!-- Top Stats Panel -->
+                    <Border Grid.Row="0" Background="#1E293B" CornerRadius="8" Padding="15" BorderBrush="#334155" BorderThickness="1" Margin="0,0,0,15">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+
+                            <StackPanel Grid.Column="0" HorizontalAlignment="Center">
+                                <TextBlock Text="Luồng Đang Chạy" Foreground="#94A3B8" FontSize="11" Margin="0,0,0,4" HorizontalAlignment="Center"/>
+                                <TextBlock x:Name="TxtPoolRunningWorkers" Text="0" Foreground="#F8FAFC" FontSize="20" FontWeight="Bold" HorizontalAlignment="Center"/>
+                            </StackPanel>
+
+                            <StackPanel Grid.Column="1" HorizontalAlignment="Center">
+                                <TextBlock Text="Luồng Tối Đa" Foreground="#94A3B8" FontSize="11" Margin="0,0,0,4" HorizontalAlignment="Center"/>
+                                <TextBlock x:Name="TxtPoolMaxWorkers" Text="0" Foreground="#F8FAFC" FontSize="20" FontWeight="Bold" HorizontalAlignment="Center"/>
+                            </StackPanel>
+
+                            <StackPanel Grid.Column="2" HorizontalAlignment="Center">
+                                <TextBlock Text="Waiting" Foreground="#94A3B8" FontSize="11" Margin="0,0,0,4" HorizontalAlignment="Center"/>
+                                <TextBlock x:Name="TxtPoolWaitingRequests" Text="0" Foreground="#FBBF24" FontSize="20" FontWeight="Bold" HorizontalAlignment="Center"/>
+                            </StackPanel>
+
+                            <StackPanel Grid.Column="3" HorizontalAlignment="Center">
+                                <TextBlock Text="Processing" Foreground="#94A3B8" FontSize="11" Margin="0,0,0,4" HorizontalAlignment="Center"/>
+                                <TextBlock x:Name="TxtPoolProcessingRequests" Text="0" Foreground="#60A5FA" FontSize="20" FontWeight="Bold" HorizontalAlignment="Center"/>
+                            </StackPanel>
+
+                            <StackPanel Grid.Column="4" HorizontalAlignment="Center">
+                                <TextBlock Text="Finished" Foreground="#94A3B8" FontSize="11" Margin="0,0,0,4" HorizontalAlignment="Center"/>
+                                <TextBlock x:Name="TxtPoolFinishedRequests" Text="0" Foreground="#34D399" FontSize="20" FontWeight="Bold" HorizontalAlignment="Center"/>
+                            </StackPanel>
+
+                            <StackPanel Grid.Column="5" HorizontalAlignment="Center">
+                                <TextBlock Text="Thời Gian TB (s)" Foreground="#94A3B8" FontSize="11" Margin="0,0,0,4" HorizontalAlignment="Center"/>
+                                <TextBlock x:Name="TxtPoolAvgTime" Text="0.0" Foreground="#F8FAFC" FontSize="20" FontWeight="Bold" HorizontalAlignment="Center"/>
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+
+                    <!-- Table List -->
+                    <Border Grid.Row="1" Background="#1E293B" CornerRadius="8" Padding="15" BorderBrush="#334155" BorderThickness="1">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                            </Grid.RowDefinitions>
+                            
+                            <Grid Grid.Row="0" Margin="0,0,0,10">
+                                <TextBlock Text="Danh sách Request Tạo Ảnh trong Pool" FontSize="14" FontWeight="Bold" Foreground="#F8FAFC" VerticalAlignment="Center"/>
+                                <Button x:Name="BtnRefreshPool" Content="Tải lại" Width="80" Height="25" HorizontalAlignment="Right" Click="BtnRefreshPool_Click" Background="#475569" Foreground="White" BorderThickness="0" FontSize="11" FontWeight="SemiBold">
+                                    <Button.Resources>
+                                        <Style TargetType="Border">
+                                            <Setter Property="CornerRadius" Value="4"/>
+                                        </Style>
+                                    </Button.Resources>
+                                </Button>
+                            </Grid>
+
+                            <DataGrid Grid.Row="1" x:Name="DgridPoolRequests" AutoGenerateColumns="False" CanUserAddRows="False" 
+                                      Background="Transparent" RowBackground="#0F172A" AlternatingRowBackground="#1E293B" 
+                                      BorderThickness="0" GridLinesVisibility="Horizontal" HorizontalGridLinesBrush="#334155" 
+                                      Foreground="#F1F5F9" RowHeaderWidth="0">
+                                <DataGrid.Resources>
+                                    <Style TargetType="DataGridColumnHeader">
+                                        <Setter Property="Background" Value="#334155"/>
+                                        <Setter Property="Foreground" Value="White"/>
+                                        <Setter Property="Padding" Value="10,6"/>
+                                        <Setter Property="FontWeight" Value="SemiBold"/>
+                                        <Setter Property="BorderThickness" Value="0"/>
+                                    </Style>
+                                    <Style TargetType="DataGridCell">
+                                        <Setter Property="Padding" Value="10,8"/>
+                                        <Setter Property="BorderThickness" Value="0"/>
+                                        <Setter Property="Template">
+                                            <Setter.Value>
+                                                <ControlTemplate TargetType="DataGridCell">
+                                                    <Border Padding="{TemplateBinding Padding}" Background="{TemplateBinding Background}">
+                                                        <ContentPresenter VerticalAlignment="Center"/>
+                                                    </Border>
+                                                </ControlTemplate>
+                                            </Setter.Value>
+                                        </Setter>
+                                        <Style.Triggers>
+                                            <Trigger Property="IsSelected" Value="True">
+                                                <Setter Property="Background" Value="#3B82F6"/>
+                                                <Setter Property="Foreground" Value="White"/>
+                                            </Trigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </DataGrid.Resources>
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="Task ID" Binding="{Binding TaskId}" Width="Auto"/>
+                                    <DataGridTextColumn Header="Video ID" Binding="{Binding VideoId}" Width="Auto"/>
+                                    <DataGridTextColumn Header="Account Email" Binding="{Binding AccountName}" Width="Auto"/>
+                                    <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="100"/>
+                                    <DataGridTextColumn Header="Created Time" Binding="{Binding CreatedTimeFormatted}" Width="Auto"/>
+                                    <DataGridTextColumn Header="Finished Time" Binding="{Binding FinishedTimeFormatted}" Width="Auto"/>
+                                    <DataGridTextColumn Header="Error Message" Binding="{Binding ErrorMessage}" Width="*"/>
+                                    <DataGridTextColumn Header="Prompt" Binding="{Binding Prompt}" Width="*"/>
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </Grid>
                     </Border>
                 </Grid>
             </TabItem>

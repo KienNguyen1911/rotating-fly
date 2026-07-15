@@ -50,7 +50,6 @@ namespace AutoCreateImage
                     task.Status = $"{pipeline1Status} | {pipeline2Status}";
                 }
             });
-
             // Pipeline 1: Get Thumbnail => Create Images at Step 5
             var pipeline1Task = Task.Run(async () =>
             {
@@ -59,10 +58,18 @@ namespace AutoCreateImage
                     // Step 1: Thumbnail Download (Direct HTTP)
                     if (task.Step1)
                     {
-                        pipeline1Status = "Step 1: Thumbnail";
-                        updateOverallStatus();
-                        LogTask(task, "[IMAGE-BRANCH] Starting Step 1: Download Thumbnail...");
-                        await RunStep1Async(task);
+                        string thumbnailPath = Path.Combine(task.OutputDir, $"{task.VideoId}_thumbnail.jpg");
+                        if (File.Exists(thumbnailPath))
+                        {
+                            LogTask(task, "[IMAGE-BRANCH] Thumbnail already exists. Skipping Step 1.");
+                        }
+                        else
+                        {
+                            pipeline1Status = "Step 1: Thumbnail";
+                            updateOverallStatus();
+                            LogTask(task, "[IMAGE-BRANCH] Starting Step 1: Download Thumbnail...");
+                            await RunStep1Async(task);
+                        }
                     }
 
                     // Step 5: Generate Images (Image Edits API)
@@ -94,8 +101,11 @@ namespace AutoCreateImage
 
                 try
                 {
-                    // Playwright initialization (Only steps 2 and 3 require browser automation)
-                    if (task.Step2 || task.Step3)
+                    // Playwright initialization (Only steps 2 and 3 require browser automation if file not already exist)
+                    bool needStep2 = task.Step2 && !File.Exists(Path.Combine(task.OutputDir, "transcript.txt"));
+                    bool needStep3 = task.Step3 && !File.Exists(Path.Combine(task.OutputDir, "rewritten_script.txt"));
+
+                    if (needStep2 || needStep3)
                     {
                         string originalProfilePath = Path.Combine(GetProfilesBaseDir(), task.SelectedProfile);
                         tempProfilePath = Path.Combine(Path.GetTempPath(), "AutoCreateImage", $"TempProfile_{task.VideoId}_{Guid.NewGuid()}");
@@ -126,10 +136,19 @@ namespace AutoCreateImage
                     string? rewrittenScript = null;
                     if (task.Step2)
                     {
-                        pipeline2Status = "Step 2: Transcript";
-                        updateOverallStatus();
-                        LogTask(task, "[SCRIPT-BRANCH] Starting Step 2: Transcript Extraction...");
-                        transcript = await RunStep2Async(task, context!);
+                        string path = Path.Combine(task.OutputDir, "transcript.txt");
+                        if (File.Exists(path))
+                        {
+                            LogTask(task, "[SCRIPT-BRANCH] transcript.txt already exists. Skipping extraction.");
+                            transcript = await File.ReadAllTextAsync(path);
+                        }
+                        else
+                        {
+                            pipeline2Status = "Step 2: Transcript";
+                            updateOverallStatus();
+                            LogTask(task, "[SCRIPT-BRANCH] Starting Step 2: Transcript Extraction...");
+                            transcript = await RunStep2Async(task, context!);
+                        }
                     }
                     else if (task.Step3)
                     {
@@ -145,14 +164,31 @@ namespace AutoCreateImage
                     // Step 3: Rewrite Script (ChatGPT)
                     if (task.Step3)
                     {
-                        if (string.IsNullOrWhiteSpace(transcript))
+                        string path = Path.Combine(task.OutputDir, "rewritten_script.txt");
+                        if (File.Exists(path))
                         {
-                            throw new Exception("Transcript is empty. Cannot run Step 3.");
+                            LogTask(task, "[SCRIPT-BRANCH] rewritten_script.txt already exists. Skipping ChatGPT rewrite.");
+                            rewrittenScript = await File.ReadAllTextAsync(path);
                         }
-                        pipeline2Status = "Step 3: ChatGPT";
-                        updateOverallStatus();
-                        LogTask(task, "[SCRIPT-BRANCH] Starting Step 3: ChatGPT Rewrite...");
-                        rewrittenScript = await RunStep3Async(task.TargetLanguage, task.OutputDir, transcript, task.VideoId, task, context!);
+                        else
+                        {
+                            if (string.IsNullOrWhiteSpace(transcript))
+                            {
+                                string transPath = Path.Combine(task.OutputDir, "transcript.txt");
+                                if (File.Exists(transPath))
+                                {
+                                    transcript = await File.ReadAllTextAsync(transPath);
+                                }
+                            }
+                            if (string.IsNullOrWhiteSpace(transcript))
+                            {
+                                throw new Exception("Transcript is empty. Cannot run Step 3.");
+                            }
+                            pipeline2Status = "Step 3: ChatGPT";
+                            updateOverallStatus();
+                            LogTask(task, "[SCRIPT-BRANCH] Starting Step 3: ChatGPT Rewrite...");
+                            rewrittenScript = await RunStep3Async(task.TargetLanguage, task.OutputDir, transcript, task.VideoId, task, context!);
+                        }
                     }
                     else if (task.Step4)
                     {
@@ -202,15 +238,31 @@ namespace AutoCreateImage
                     // Step 4: Generate Voiceover (ai84.pro)
                     if (task.Step4)
                     {
-                        if (string.IsNullOrWhiteSpace(rewrittenScript))
+                        string voiceoverPath = Path.Combine(task.OutputDir, "voiceover.mp3");
+                        if (File.Exists(voiceoverPath))
                         {
-                            throw new Exception("Rewritten script is empty. Cannot run Step 4.");
+                            LogTask(task, "[SCRIPT-BRANCH] voiceover.mp3 already exists. Skipping Voiceover generation.");
                         }
-                        pipeline2Status = "Step 4: Voiceover";
-                        updateOverallStatus();
-                        LogTask(task, "[SCRIPT-BRANCH] Starting Step 4: Voiceover Generation...");
-                        string apiKey = ConfigService.CurrentSettings.Ai84ApiKey;
-                        await RunStep4Async(task.VoiceId, task.OutputDir, rewrittenScript, task.VideoId, task, apiKey);
+                        else
+                        {
+                            if (string.IsNullOrWhiteSpace(rewrittenScript))
+                            {
+                                string rewPath = Path.Combine(task.OutputDir, "rewritten_script.txt");
+                                if (File.Exists(rewPath))
+                                {
+                                    rewrittenScript = await File.ReadAllTextAsync(rewPath);
+                                }
+                            }
+                            if (string.IsNullOrWhiteSpace(rewrittenScript))
+                            {
+                                throw new Exception("Rewritten script is empty. Cannot run Step 4.");
+                            }
+                            pipeline2Status = "Step 4: Voiceover";
+                            updateOverallStatus();
+                            LogTask(task, "[SCRIPT-BRANCH] Starting Step 4: Voiceover Generation...");
+                            string apiKey = ConfigService.CurrentSettings.Ai84ApiKey;
+                            await RunStep4Async(task.VoiceId, task.OutputDir, rewrittenScript, task.VideoId, task, apiKey);
+                        }
                     }
 
                     pipeline2Status = "Done";
@@ -317,6 +369,48 @@ namespace AutoCreateImage
                     Directory.CreateDirectory(profilePath);
                 }
 
+                // Allocate a window position slot
+                int windowSlot = -1;
+                lock (_browserSlotsLock)
+                {
+                    for (int i = 0; i < _activeBrowserSlots.Length; i++)
+                    {
+                        if (!_activeBrowserSlots[i])
+                        {
+                            _activeBrowserSlots[i] = true;
+                            windowSlot = i;
+                            break;
+                        }
+                    }
+                }
+
+                double screenWidth = SystemParameters.PrimaryScreenWidth;
+                double screenHeight = SystemParameters.PrimaryScreenHeight;
+                int cols = 2;
+                int rows = 2;
+                int w = (int)(screenWidth / cols);
+                int h = (int)(screenHeight / rows) - 40;
+                int x = 0;
+                int y = 0;
+                if (windowSlot >= 0)
+                {
+                    x = (windowSlot % cols) * w;
+                    y = (windowSlot / cols) * h;
+                }
+
+                var launchArgs = new System.Collections.Generic.List<string>
+                {
+                    "--disable-blink-features=AutomationControlled",
+                    "--no-sandbox",
+                    "--disable-infobars"
+                };
+
+                if (windowSlot >= 0)
+                {
+                    launchArgs.Add($"--window-position={x},{y}");
+                    launchArgs.Add($"--window-size={w},{h}");
+                }
+
                 try
                 {
                     var browserContext = await _playwright.Chromium.LaunchPersistentContextAsync(
@@ -325,11 +419,7 @@ namespace AutoCreateImage
                         {
                             Headless = false,
                             Channel = "chrome",
-                            Args = new[] { 
-                                "--disable-blink-features=AutomationControlled",
-                                "--no-sandbox",
-                                "--disable-infobars"
-                            }
+                            Args = launchArgs.ToArray()
                         });
 
                      // Anti-bot detection script injection
@@ -344,15 +434,35 @@ namespace AutoCreateImage
                       {
                           Log($"Browser window closed for profile: {Path.GetFileName(profilePath)}. Cleaning up resources...");
                           _browserContexts.TryRemove(profilePath, out _);
+                          if (windowSlot >= 0)
+                          {
+                              lock (_browserSlotsLock)
+                              {
+                                  if (windowSlot < _activeBrowserSlots.Length)
+                                  {
+                                      _activeBrowserSlots[windowSlot] = false;
+                                  }
+                              }
+                          }
                       };
       
                       _browserContexts[profilePath] = browserContext;
-                      Log("Browser session initialized successfully.");
+                      Log($"Browser session initialized successfully in slot {windowSlot} at ({x},{y}).");
                       return browserContext;
                 }
                 catch (Exception ex)
                 {
                     Log($"[ERROR] Failed to start browser. Make sure Chrome is closed if using a personal profile. Detail: {ex.Message}");
+                    if (windowSlot >= 0)
+                    {
+                        lock (_browserSlotsLock)
+                        {
+                            if (windowSlot < _activeBrowserSlots.Length)
+                            {
+                                _activeBrowserSlots[windowSlot] = false;
+                            }
+                        }
+                    }
                     throw;
                 }
             }
@@ -472,10 +582,14 @@ namespace AutoCreateImage
             string? scriptText = null;
             try
             {
-                LogTask(task, "Navigating to ChatGPT 'Dịch chay' Custom GPT...");
-                await page.GotoAsync("https://chatgpt.com/g/g-6a4083a0e37081919a248ef7721dae3d-dich-chay");
+                string customGptUrl = ConfigService.CurrentSettings.CustomGptUrl;
+                if (string.IsNullOrWhiteSpace(customGptUrl))
+                {
+                    customGptUrl = "https://chatgpt.com/g/g-6a4083a0e37081919a248ef7721dae3d-dich-chay";
+                }
+                LogTask(task, $"Navigating to Custom GPT URL: {customGptUrl} ...");
+                await page.GotoAsync(customGptUrl);
                 await Task.Delay(4000); // Delay to allow full load
-
                 LogTask(task, "Preparing transcript file for drag & drop...");
                 string transcriptPath = Path.Combine(outputDir, "transcript.txt");
                 if (!File.Exists(transcriptPath))
@@ -755,11 +869,9 @@ namespace AutoCreateImage
                 throw;
             }
         }
-
-
         private async Task RunStep5Async(AutomationTask task)
         {
-            LogTask(task, "[STEP 5] Starting Image Generation via Image Edits API...");
+            LogTask(task, "[STEP 5] Starting Image Generation via Image Edits API Request Pool...");
 
             string thumbnailPath = Path.Combine(task.OutputDir, $"{task.VideoId}_thumbnail.jpg");
             if (!File.Exists(thumbnailPath))
@@ -776,7 +888,13 @@ namespace AutoCreateImage
             }
             else
             {
-                if (!apiUrl.EndsWith("/images/edits"))
+                // Check if the URL is for G-Labs Webhook API (runs on port 8765 by default, ngrok, or explicitly contains api)
+                bool isGlabs = apiUrl.Contains("8765") || 
+                               apiUrl.Contains("ngrok-free.dev") || 
+                               apiUrl.Contains("/api/") || 
+                               apiUrl.Contains("/api/image");
+
+                if (!isGlabs && !apiUrl.EndsWith("/images/edits"))
                 {
                     apiUrl = apiUrl.TrimEnd('/');
                     if (apiUrl.EndsWith("/v1"))
@@ -795,107 +913,319 @@ namespace AutoCreateImage
                 apiKey = "chatgpt2api";
             }
 
-            // Run API requests sequentially: Image 1 first, then Image 2
             // Image 1: Translation
             string prompt1 = $"tạo một bức ảnh tương tự với phần văn bản được dịch sang ngôn ngữ '{task.TargetLanguage}', kích thước ảnh 16:9";
             string savePath1 = Path.Combine(task.OutputDir, "translated_thumbnail.png");
-            LogTask(task, "[STEP 5] Sending Image 1 (Translation) request to API...");
-            try
-            {
-                await EditImageViaApiAsync(apiUrl, apiKey, thumbnailPath, prompt1, savePath1, task);
-                LogTask(task, $"[STEP 5] Success! Saved translated thumbnail to: {savePath1}");
-            }
-            catch (Exception ex)
-            {
-                LogTask(task, $"[STEP 5] [ERROR] Failed to generate Image 1: {ex.Message}");
-            }
-
-            // Delay for 30 seconds to allow local server / API to cooldown
-            LogTask(task, "[STEP 5] Waiting 30 seconds before sending Image 2 request to prevent API overload...");
-            await Task.Delay(30000);
 
             // Image 2: Clean/Remove elements
             string prompt2 = "tạo một bức ảnh tương tự với phần văn bản, biểu tượng mũi tên, vòng tròn (nếu có) được xóa, kích thước ảnh 16:9";
             string savePath2 = Path.Combine(task.OutputDir, "cleaned_thumbnail.png");
-            LogTask(task, "[STEP 5] Sending Image 2 (Clean/Remove elements) request to API...");
-            try
+
+            var tasksToEnqueue = new System.Collections.Generic.List<Task>();
+            var tasksToAwait = new System.Collections.Generic.List<Task>();
+
+            if (File.Exists(savePath1))
             {
-                await EditImageViaApiAsync(apiUrl, apiKey, thumbnailPath, prompt2, savePath2, task);
-                LogTask(task, $"[STEP 5] Success! Saved cleaned thumbnail to: {savePath2}");
+                LogTask(task, "[STEP 5] translated_thumbnail.png already exists. Skipping Image 1.");
             }
-            catch (Exception ex)
+            else
             {
-                LogTask(task, $"[STEP 5] [ERROR] Failed to generate Image 2: {ex.Message}");
+                var req1 = new ImageGenRequest
+                {
+                    ApiUrl = apiUrl,
+                    ApiKey = apiKey,
+                    ImagePath = thumbnailPath,
+                    Prompt = prompt1,
+                    SavePath = savePath1,
+                    Task = task
+                };
+                tasksToEnqueue.Add(EnqueueImageRequestAsync(req1));
+                tasksToAwait.Add(req1.Tcs.Task);
+            }
+
+            if (File.Exists(savePath2))
+            {
+                LogTask(task, "[STEP 5] cleaned_thumbnail.png already exists. Skipping Image 2.");
+            }
+            else
+            {
+                var req2 = new ImageGenRequest
+                {
+                    ApiUrl = apiUrl,
+                    ApiKey = apiKey,
+                    ImagePath = thumbnailPath,
+                    Prompt = prompt2,
+                    SavePath = savePath2,
+                    Task = task
+                };
+                tasksToEnqueue.Add(EnqueueImageRequestAsync(req2));
+                tasksToAwait.Add(req2.Tcs.Task);
+            }
+
+            if (tasksToEnqueue.Count > 0)
+            {
+                LogTask(task, $"[STEP 5] Enqueuing {tasksToEnqueue.Count} Image Generation request(s) to the pool...");
+                await Task.WhenAll(tasksToEnqueue);
+                await Task.WhenAll(tasksToAwait);
+                LogTask(task, "[STEP 5] Image generation request(s) completed successfully!");
+            }
+            else
+            {
+                LogTask(task, "[STEP 5] All thumbnails already exist. Skipping Step 5 entirely.");
             }
         }
 
-        private async Task EditImageViaApiAsync(string apiUrl, string apiKey, string imagePath, string prompt, string savePath, AutomationTask task)
+        private async Task EditImageViaApiAsync(ImageGenRequest req)
         {
+            var task = req.Task;
+            var apiUrl = req.ApiUrl;
+            var apiKey = req.ApiKey;
+            var imagePath = req.ImagePath;
+            var prompt = req.Prompt;
+            var savePath = req.SavePath;
+
             using var httpClient = new HttpClient();
             httpClient.Timeout = TimeSpan.FromMinutes(10);
 
-            if (!string.IsNullOrWhiteSpace(apiKey))
+            bool isLegacyApi = apiUrl.EndsWith("/images/edits", StringComparison.OrdinalIgnoreCase) || 
+                               apiUrl.EndsWith("/images/edits/", StringComparison.OrdinalIgnoreCase);
+
+            if (isLegacyApi)
             {
-                httpClient.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey);
-            }
-
-            using var content = new MultipartFormDataContent();
-            content.Add(new StringContent("gpt-image-2"), "model");
-            content.Add(new StringContent(prompt), "prompt");
-            content.Add(new StringContent("1"), "n");
-
-            byte[] fileBytes = await File.ReadAllBytesAsync(imagePath);
-            var imageContent = new ByteArrayContent(fileBytes);
-            string contentType = imagePath.EndsWith(".png", StringComparison.OrdinalIgnoreCase) ? "image/png" : "image/jpeg";
-            imageContent.Headers.ContentType = System.Net.Http.Headers.MediaTypeHeaderValue.Parse(contentType);
-            content.Add(imageContent, "image", Path.GetFileName(imagePath));
-
-            var response = await httpClient.PostAsync(apiUrl, content);
-            string responseContent = await response.Content.ReadAsStringAsync();
-
-            if (!response.IsSuccessStatusCode)
-            {
-                throw new Exception($"API status code {response.StatusCode}. Details: {responseContent}");
-            }
-
-            using var doc = System.Text.Json.JsonDocument.Parse(responseContent);
-            if (doc.RootElement.TryGetProperty("data", out var dataArray) && dataArray.ValueKind == System.Text.Json.JsonValueKind.Array && dataArray.GetArrayLength() > 0)
-            {
-                var firstItem = dataArray[0];
-                string? imgUrl = null;
-                if (firstItem.TryGetProperty("url", out var urlProp))
+                if (!string.IsNullOrWhiteSpace(apiKey))
                 {
-                    imgUrl = urlProp.GetString();
+                    httpClient.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey);
                 }
-                else if (firstItem.TryGetProperty("b64_json", out var b64Prop))
+
+                using var content = new MultipartFormDataContent();
+                content.Add(new StringContent("gpt-image-2"), "model");
+                content.Add(new StringContent(prompt), "prompt");
+                content.Add(new StringContent("1"), "n");
+
+                byte[] fileBytes = await File.ReadAllBytesAsync(imagePath);
+                var imageContent = new ByteArrayContent(fileBytes);
+                string contentType = imagePath.EndsWith(".png", StringComparison.OrdinalIgnoreCase) ? "image/png" : "image/jpeg";
+                imageContent.Headers.ContentType = System.Net.Http.Headers.MediaTypeHeaderValue.Parse(contentType);
+                content.Add(imageContent, "image", Path.GetFileName(imagePath));
+
+                var response = await httpClient.PostAsync(apiUrl, content);
+                string responseContent = await response.Content.ReadAsStringAsync();
+
+                System.Text.Json.JsonDocument? doc = null;
+                try
                 {
-                    string b64 = b64Prop.GetString() ?? string.Empty;
-                    if (!string.IsNullOrEmpty(b64))
+                    doc = System.Text.Json.JsonDocument.Parse(responseContent);
+                    if (doc.RootElement.TryGetProperty("_account_email", out var emailProp))
                     {
-                        byte[] imgBytes = Convert.FromBase64String(b64);
-                        await File.WriteAllBytesAsync(savePath, imgBytes);
-                        return;
+                        req.AccountName = emailProp.GetString() ?? string.Empty;
+                    }
+                    else if (doc.RootElement.TryGetProperty("error", out var errorProp) && errorProp.ValueKind == System.Text.Json.JsonValueKind.Object)
+                    {
+                        if (errorProp.TryGetProperty("account_email", out var errEmailProp))
+                        {
+                            req.AccountName = errEmailProp.GetString() ?? string.Empty;
+                        }
                     }
                 }
+                catch { }
 
-                if (!string.IsNullOrEmpty(imgUrl))
+                try
                 {
-                    if (imgUrl.StartsWith("/"))
+                    if (!response.IsSuccessStatusCode)
                     {
-                        var uri = new Uri(apiUrl);
-                        imgUrl = $"{uri.Scheme}://{uri.Authority}{imgUrl}";
+                        throw new Exception($"API status code {response.StatusCode}. Details: {responseContent}");
                     }
-                    var imgData = await httpClient.GetByteArrayAsync(imgUrl);
-                    await File.WriteAllBytesAsync(savePath, imgData);
+
+                    if (doc != null && doc.RootElement.TryGetProperty("data", out var dataArray) && dataArray.ValueKind == System.Text.Json.JsonValueKind.Array && dataArray.GetArrayLength() > 0)
+                    {
+                        var firstItem = dataArray[0];
+                        string? imgUrl = null;
+                        if (firstItem.TryGetProperty("url", out var urlProp))
+                        {
+                            imgUrl = urlProp.GetString();
+                        }
+                        else if (firstItem.TryGetProperty("b64_json", out var b64Prop))
+                        {
+                            string b64 = b64Prop.GetString() ?? string.Empty;
+                            if (!string.IsNullOrEmpty(b64))
+                            {
+                                byte[] imgBytes = Convert.FromBase64String(b64);
+                                await File.WriteAllBytesAsync(savePath, imgBytes);
+                                return;
+                            }
+                        }
+
+                        if (!string.IsNullOrEmpty(imgUrl))
+                        {
+                            if (imgUrl.StartsWith("/"))
+                            {
+                                var uri = new Uri(apiUrl);
+                                imgUrl = $"{uri.Scheme}://{uri.Authority}{imgUrl}";
+                            }
+                            var imgData = await httpClient.GetByteArrayAsync(imgUrl);
+                            await File.WriteAllBytesAsync(savePath, imgData);
+                        }
+                        else
+                        {
+                            throw new Exception("API response contains no image URL or Base64 data.");
+                        }
+                    }
+                    else
+                    {
+                        throw new Exception("No image data returned in API response.");
+                    }
                 }
-                else
+                finally
                 {
-                    throw new Exception("API response contains no image URL or Base64 data.");
+                    doc?.Dispose();
                 }
             }
             else
             {
-                throw new Exception("No image data returned in API response.");
+                // G-Labs API Flow
+                string normalizedApiUrl = apiUrl.TrimEnd('/');
+                if (!normalizedApiUrl.EndsWith("/api/image/generate", StringComparison.OrdinalIgnoreCase))
+                {
+                    normalizedApiUrl += "/api/image/generate";
+                }
+
+                // 1. Prepare base64 image
+                byte[] fileBytes = await File.ReadAllBytesAsync(imagePath);
+                string base64Data = Convert.ToBase64String(fileBytes);
+                string extension = Path.GetExtension(imagePath).ToLower();
+                string mimeType = extension == ".png" ? "image/png" : "image/jpeg";
+                string base64Uri = $"data:{mimeType};base64,{base64Data}";
+
+                // 2. Prepare payload
+                var payload = new
+                {
+                    prompt = prompt,
+                    model = "nano_banana_2",
+                    aspect_ratio = "16:9",
+                    reference_images = new[] { base64Uri }
+                };
+                string jsonPayload = System.Text.Json.JsonSerializer.Serialize(payload);
+
+                // 3. Send request
+                using var requestMessage = new HttpRequestMessage(HttpMethod.Post, normalizedApiUrl);
+                if (!string.IsNullOrWhiteSpace(apiKey))
+                {
+                    requestMessage.Headers.Add("X-API-Key", apiKey);
+                }
+                requestMessage.Content = new StringContent(jsonPayload, System.Text.Encoding.UTF8, "application/json");
+
+                // Output equivalent cURL command for debugging (with truncated base64)
+                string truncatedPayload = System.Text.Json.JsonSerializer.Serialize(new
+                {
+                    prompt = prompt,
+                    model = "nano_banana_2",
+                    aspect_ratio = "16:9",
+                    reference_images = new[] { $"data:{mimeType};base64,[BASE64_IMAGE_DATA_TRUNCATED]" }
+                });
+                string curlCmd = $"curl -X POST \"{normalizedApiUrl}\" " +
+                                 $"-H \"X-API-Key: {apiKey}\" " +
+                                 $"-H \"Content-Type: application/json\" " +
+                                 $"-d '{truncatedPayload}'";
+                LogTask(task, $"[STEP 5] Equivalent cURL command:\n{curlCmd}");
+
+                LogTask(task, $"[STEP 5] Sending image generation request to G-Labs API: {normalizedApiUrl}...");
+                var response = await httpClient.SendAsync(requestMessage);
+                string responseContent = await response.Content.ReadAsStringAsync();
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    throw new Exception($"G-Labs API error (status code {response.StatusCode}): {responseContent}");
+                }
+
+                // 4. Parse task_id
+                using var doc = System.Text.Json.JsonDocument.Parse(responseContent);
+                if (!doc.RootElement.TryGetProperty("task_id", out var taskIdProp))
+                {
+                    throw new Exception($"G-Labs API response does not contain 'task_id'. Response: {responseContent}");
+                }
+                string taskId = taskIdProp.GetString() ?? throw new Exception("task_id is null");
+                LogTask(task, $"[STEP 5] G-Labs API Task created successfully. Task ID: {taskId}");
+
+                // 5. Polling status
+                string apiBaseUrl = new Uri(normalizedApiUrl).GetLeftPart(UriPartial.Authority);
+                string statusUrl = $"{apiBaseUrl}/api/status/{taskId}";
+                
+                string statusCurl = $"curl -X GET \"{statusUrl}\" -H \"X-API-Key: {apiKey}\"";
+                LogTask(task, $"[STEP 5] Status check cURL command:\n{statusCurl}");
+
+                bool isCompleted = false;
+                int attempts = 0;
+                string? downloadUrl = null;
+
+                while (!isCompleted)
+                {
+                    attempts++;
+                    await Task.Delay(3000); // Wait 3 seconds between polls
+
+                    using var statusRequest = new HttpRequestMessage(HttpMethod.Get, statusUrl);
+                    if (!string.IsNullOrWhiteSpace(apiKey))
+                    {
+                        statusRequest.Headers.Add("X-API-Key", apiKey);
+                    }
+
+                    var statusResponse = await httpClient.SendAsync(statusRequest);
+                    if (!statusResponse.IsSuccessStatusCode)
+                    {
+                        LogTask(task, $"[STEP 5] [WARNING] Polling status failed (Attempt {attempts}). Status: {statusResponse.StatusCode}");
+                        continue;
+                    }
+
+                    string statusJson = await statusResponse.Content.ReadAsStringAsync();
+                    using var statusDoc = System.Text.Json.JsonDocument.Parse(statusJson);
+                    var root = statusDoc.RootElement;
+
+                    if (root.TryGetProperty("status", out var statusProp))
+                    {
+                        string status = statusProp.GetString() ?? "pending";
+                        if (status == "completed")
+                        {
+                            isCompleted = true;
+                            if (root.TryGetProperty("results", out var resultsProp) && resultsProp.ValueKind == System.Text.Json.JsonValueKind.Array && resultsProp.GetArrayLength() > 0)
+                            {
+                                downloadUrl = resultsProp[0].GetString();
+                            }
+                            else
+                            {
+                                throw new Exception("G-Labs task completed but results are empty.");
+                            }
+                        }
+                        else if (status == "failed")
+                        {
+                            string errMsg = "Unknown error";
+                            if (root.TryGetProperty("error", out var errProp)) errMsg = errProp.GetString() ?? errMsg;
+                            throw new Exception($"G-Labs image generation failed: {errMsg}");
+                        }
+                        else
+                        {
+                            if (attempts % 5 == 0) // log every 15s to keep task logs readable
+                            {
+                                LogTask(task, $"[STEP 5] Polling status for task {taskId}: {status}...");
+                            }
+                        }
+                    }
+                }
+
+                if (string.IsNullOrEmpty(downloadUrl))
+                {
+                    throw new Exception("Image download URL not found in results.");
+                }
+
+                // 6. Rewrite download URL if loopback
+                if (!downloadUrl.StartsWith(apiBaseUrl, StringComparison.OrdinalIgnoreCase))
+                {
+                    var resultUri = new Uri(downloadUrl);
+                    downloadUrl = apiBaseUrl + resultUri.PathAndQuery;
+                }
+
+                LogTask(task, $"[STEP 5] Downloading generated image from: {downloadUrl}...");
+                var imgData = await httpClient.GetByteArrayAsync(downloadUrl);
+                await File.WriteAllBytesAsync(savePath, imgData);
+                LogTask(task, $"[STEP 5] Successfully saved generated image to: {savePath}");
             }
         }
 

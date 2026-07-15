@@ -21,6 +21,17 @@ namespace AutoCreateImage
 
         private readonly ApiServerManager _apiManager = new ApiServerManager();
 
+        // Chrome window slots
+        private static readonly bool[] _activeBrowserSlots = new bool[32];
+        private static readonly object _browserSlotsLock = new object();
+
+        // Image Generation Request Pool
+        private readonly System.Collections.Generic.List<ImageGenRequest> _imageRequestPool = new System.Collections.Generic.List<ImageGenRequest>();
+        private readonly object _poolLock = new object();
+        private int _maxImageWorkers = 1;
+        private int _activeImageWorkers = 0;
+        private DateTime _lastUiUpdateTime = DateTime.MinValue;
+
         public MainWindow()
         {
             InitializeComponent();
@@ -37,14 +48,39 @@ namespace AutoCreateImage
             Closing += MainWindow_Closing;
 
             // Start API Server automatically on startup
-            _apiManager.StartServer();
+            // _apiManager.StartServer();
         }
 
         private void ApiManager_LogReceived(string log)
         {
             _ = Dispatcher.BeginInvoke(new Action(() =>
             {
-                TxtApiLogs.AppendText($"[{DateTime.Now:HH:mm:ss}] {log}\n");
+                string decodedLog = log;
+                try
+                {
+                    decodedLog = System.Text.RegularExpressions.Regex.Unescape(log);
+                }
+                catch { }
+
+                // Translate Chinese statuses
+                decodedLog = decodedLog.Replace("\"正常\"", "\"Normal\"")
+                                       .Replace("\"限流\"", "\"Limited\"")
+                                       .Replace("\"异常\"", "\"Abnormal\"")
+                                       .Replace("\"禁用\"", "\"Disabled\"")
+                                       .Replace("正常", "Normal")
+                                       .Replace("限流", "Limited")
+                                       .Replace("异常", "Abnormal")
+                                       .Replace("禁用", "Disabled");
+
+                // Translate Chinese descriptions
+                decodedLog = decodedLog.Replace("refresh_token 刷新 access_token 失败", "refresh_token refreshed access_token failed")
+                                       .Replace("refresh_token 已刷新 access_token", "refresh_token refreshed access_token successfully")
+                                       .Replace("自动移除异常账号", "Automatically removed abnormal account")
+                                       .Replace("更新账号", "Update account")
+                                       .Replace("账号已停用-标记禁用", "Account deactivated - marked disabled")
+                                       .Replace("号池状态", "Account pool status");
+
+                TxtApiLogs.AppendText($"[{DateTime.Now:HH:mm:ss}] {decodedLog}\n");
                 if (TxtApiLogs.Text.Length > 30000)
                 {
                     TxtApiLogs.Text = TxtApiLogs.Text.Substring(15000);
@@ -87,8 +123,164 @@ namespace AutoCreateImage
             {
                 DgridAccounts.ItemsSource = accounts;
             }));
+        }        public async Task EnqueueImageRequestAsync(ImageGenRequest request)
+        {
+            try
+            {
+                int calculatedWorkers = Math.Max(1, Math.Min(10, ConfigService.CurrentSettings.MaxConcurrentTasks * 2));
+                lock (_poolLock)
+                {
+                    _maxImageWorkers = calculatedWorkers;
+                }
+            }
+            catch (Exception ex)
+            {
+                Log($"[POOL] Error determining max workers: {ex.Message}. Falling back to default workers.");
+            }
+
+            lock (_poolLock)
+            {
+                _imageRequestPool.Add(request);
+                LogTask(request.Task, $"[POOL] Enqueued image request: {System.IO.Path.GetFileName(request.SavePath)} (Status: {request.Status})");
+                
+                while (_activeImageWorkers < _maxImageWorkers)
+                {
+                    _activeImageWorkers++;
+                    _ = Task.Run(async () => await ImageWorkerLoopAsync());
+                }
+            }
+            UpdatePoolUi();
         }
 
+        private async Task ImageWorkerLoopAsync()
+        {
+            while (true)
+            {
+                ImageGenRequest? req = null;
+                lock (_poolLock)
+                {
+                    req = GetNextRequestToProcess();
+                    if (req == null)
+                    {
+                        _activeImageWorkers--;
+                        UpdatePoolUi();
+                        break;
+                    }
+                }
+
+                try
+                {
+                    req.StartedAt = DateTime.Now;
+                    UpdatePoolUi();
+
+                    LogTask(req.Task, $"[POOL] Starting API generation for: {System.IO.Path.GetFileName(req.SavePath)}");
+                    await EditImageViaApiAsync(req);
+                    
+                    lock (_poolLock)
+                    {
+                        req.Status = "Done";
+                        req.FinishedAt = DateTime.Now;
+                    }
+                    req.Tcs.SetResult(true);
+                }
+                catch (Exception ex)
+                {
+                    lock (_poolLock)
+                    {
+                        req.Status = "Failed";
+                        req.FinishedAt = DateTime.Now;
+                        req.ErrorMessage = ex.Message;
+                    }
+                    LogTask(req.Task, $"[POOL] [ERROR] Image generation failed for {System.IO.Path.GetFileName(req.SavePath)}: {ex.Message}");
+                    req.Tcs.SetException(ex);
+                }
+                finally
+                {
+                    UpdatePoolUi();
+                }
+
+                await Task.Delay(5000);
+            }
+        }
+
+        private ImageGenRequest? GetNextRequestToProcess()
+        {
+            var inProgressTaskIds = _imageRequestPool
+                .Where(r => r.Status == "Processing")
+                .Select(r => r.Task.VideoId)
+                .Distinct()
+                .ToList();
+
+            foreach (var taskId in inProgressTaskIds)
+            {
+                var nextInSameTask = _imageRequestPool.FirstOrDefault(r => r.Task.VideoId == taskId && r.Status == "Waiting");
+                if (nextInSameTask != null)
+                {
+                    nextInSameTask.Status = "Processing";
+                    return nextInSameTask;
+                }
+            }
+
+            var nextRequest = _imageRequestPool
+                .Where(r => r.Status == "Waiting")
+                .OrderBy(r => r.EnqueuedAt)
+                .FirstOrDefault();
+
+            if (nextRequest != null)
+            {
+                nextRequest.Status = "Processing";
+            }
+            return nextRequest;
+        }
+
+        private void UpdatePoolUi()
+        {
+            var now = DateTime.Now;
+            bool shouldUpdateDataGrid = false;
+            lock (_poolLock)
+            {
+                if ((now - _lastUiUpdateTime).TotalMilliseconds >= 250)
+                {
+                    shouldUpdateDataGrid = true;
+                    _lastUiUpdateTime = now;
+                }
+            }
+
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                lock (_poolLock)
+                {
+                    int waiting = _imageRequestPool.Count(r => r.Status == "Waiting");
+                    int processing = _imageRequestPool.Count(r => r.Status == "Processing");
+                    int finished = _imageRequestPool.Count(r => r.Status == "Done" || r.Status == "Failed");
+
+                    TxtPoolRunningWorkers.Text = _activeImageWorkers.ToString();
+                    TxtPoolMaxWorkers.Text = _maxImageWorkers.ToString();
+                    TxtPoolWaitingRequests.Text = waiting.ToString();
+                    TxtPoolProcessingRequests.Text = processing.ToString();
+                    TxtPoolFinishedRequests.Text = finished.ToString();
+
+                    var processedRequests = _imageRequestPool.Where(r => r.StartedAt != null && r.FinishedAt != null).ToList();
+                    double avgSeconds = 0;
+                    if (processedRequests.Count > 0)
+                    {
+                        avgSeconds = processedRequests.Average(r => (r.FinishedAt!.Value - r.StartedAt!.Value).TotalSeconds);
+                    }
+                    TxtPoolAvgTime.Text = avgSeconds.ToString("F1");
+
+                    // Throttle DataGrid binding updates to prevent UI stuttering, always update on idle/done
+                    if (shouldUpdateDataGrid || waiting == 0 || processing == 0)
+                    {
+                        DgridPoolRequests.ItemsSource = _imageRequestPool.OrderByDescending(r => r.EnqueuedAt).ToList();
+                    }
+                }
+            }));
+        }
+
+        private void BtnRefreshPool_Click(object sender, RoutedEventArgs e)
+        {
+            UpdatePoolUi();
+        }
         private void BtnStartApi_Click(object sender, RoutedEventArgs e)
         {
             if (!_apiManager.IsRunning)
@@ -147,6 +339,36 @@ namespace AutoCreateImage
             }
         }
 
+        private async void BtnDeleteAccount_Click(object sender, RoutedEventArgs e)
+        {
+            if (!_apiManager.IsRunning)
+            {
+                MessageBox.Show("Vui lòng khởi động API Server trước.", "Server chưa chạy", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            var selectedAccount = DgridAccounts.SelectedItem as ChatGptAccount;
+            if (selectedAccount == null)
+            {
+                MessageBox.Show("Vui lòng chọn tài khoản muốn xóa từ danh sách.", "Chưa chọn tài khoản", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            var confirmResult = MessageBox.Show($"Bạn có chắc chắn muốn xóa tài khoản '{selectedAccount.Email}' khỏi API server không?", "Xác nhận xóa", MessageBoxButton.YesNo, MessageBoxImage.Question);
+            if (confirmResult != MessageBoxResult.Yes) return;
+
+            bool success = await _apiManager.DeleteAccountAsync(selectedAccount.AccessToken);
+            if (success)
+            {
+                MessageBox.Show("Xóa tài khoản thành công!", "Thành công", MessageBoxButton.OK, MessageBoxImage.Information);
+                await RefreshAccountsListAsync();
+            }
+            else
+            {
+                MessageBox.Show("Xóa tài khoản thất bại. Vui lòng kiểm tra log để biết thêm chi tiết.", "Thất bại", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
         private void LoadApplicationSettings()
         {
             try
@@ -154,6 +376,8 @@ namespace AutoCreateImage
                 var settings = ConfigService.LoadSettings();
                 PbSettingsAi84ApiKey.Password = settings.Ai84ApiKey;
                 PbSettingsSupabaseDbUrl.Password = settings.SupabaseDbUrl;
+                TxtSettingsImageApiUrl.Text = settings.ImageApiUrl;
+                PbSettingsImageApiKey.Password = settings.ImageApiKey;
                 TxtSettingsChromeProfilesDir.Text = settings.ChromeProfilesDir;
                 TxtSettingsOutputsDir.Text = settings.OutputsDir;
                 TxtSettingsMaxConcurrentTasks.Text = settings.MaxConcurrentTasks.ToString();
@@ -174,6 +398,8 @@ namespace AutoCreateImage
                 var settings = ConfigService.CurrentSettings;
                 settings.Ai84ApiKey = PbSettingsAi84ApiKey.Password.Trim();
                 settings.SupabaseDbUrl = PbSettingsSupabaseDbUrl.Password.Trim();
+                settings.ImageApiUrl = TxtSettingsImageApiUrl.Text.Trim();
+                settings.ImageApiKey = PbSettingsImageApiKey.Password.Trim();
                 settings.ChromeProfilesDir = TxtSettingsChromeProfilesDir.Text.Trim();
                 settings.OutputsDir = TxtSettingsOutputsDir.Text.Trim();
                 settings.MaxConcurrentTasks = maxTasks;
@@ -250,6 +476,69 @@ namespace AutoCreateImage
             SaveApplicationSettings();
             MessageBox.Show("Đã lưu cấu hình hệ thống thành công và cập nhật API Backend!", "Thành công", MessageBoxButton.OK, MessageBoxImage.Information);
             LoadProfiles(); // reload profiles in case path changed
+        }
+
+        private void BtnExportSettings_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                SaveApplicationSettings();
+
+                var saveFileDialog = new Microsoft.Win32.SaveFileDialog
+                {
+                    Filter = "JSON files (*.json)|*.json",
+                    FileName = "appsettings_backup.json",
+                    Title = "Xuất cấu hình hệ thống"
+                };
+
+                if (saveFileDialog.ShowDialog() == true)
+                {
+                    var options = new System.Text.Json.JsonSerializerOptions { WriteIndented = true };
+                    string json = System.Text.Json.JsonSerializer.Serialize(ConfigService.CurrentSettings, options);
+                    File.WriteAllText(saveFileDialog.FileName, json);
+                    MessageBox.Show("Xuất cấu hình hệ thống thành công!", "Xuất thành công", MessageBoxButton.OK, MessageBoxImage.Information);
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Lỗi khi xuất cấu hình: {ex.Message}", "Lỗi", MessageBoxButton.OK, MessageBoxImage.Error);
+                Log($"[ERROR] Failed to export settings: {ex.Message}");
+            }
+        }
+
+        private void BtnImportSettings_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var openFileDialog = new Microsoft.Win32.OpenFileDialog
+                {
+                    Filter = "JSON files (*.json)|*.json",
+                    Title = "Nhập cấu hình hệ thống"
+                };
+
+                if (openFileDialog.ShowDialog() == true)
+                {
+                    string json = File.ReadAllText(openFileDialog.FileName);
+                    var imported = System.Text.Json.JsonSerializer.Deserialize<AppSettings>(json);
+                    if (imported != null)
+                    {
+                        ConfigService.SaveSettings(imported);
+                        LoadApplicationSettings();
+                        _ = Task.Run(() => UpdatePythonEnvFile(imported.SupabaseDbUrl));
+                        LoadProfiles();
+                        MessageBox.Show("Nhập cấu hình hệ thống thành công và đã áp dụng cấu hình mới!", "Nhập thành công", MessageBoxButton.OK, MessageBoxImage.Information);
+                    }
+                    else
+                    {
+                        MessageBox.Show("Tệp cấu hình không hợp lệ hoặc rỗng.", "Lỗi nhập", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Lỗi khi nhập cấu hình: {ex.Message}", "Lỗi", MessageBoxButton.OK, MessageBoxImage.Error);
+                Log($"[ERROR] Failed to import settings: {ex.Message}");
+            }
         }
 
         private void BtnBrowseChromeProfilesDir_Click(object sender, RoutedEventArgs e)
@@ -408,5 +697,26 @@ namespace AutoCreateImage
         private void BtnClearLog_Click(object sender, RoutedEventArgs e)
         {
         }
+    }
+
+    public class ImageGenRequest
+    {
+        public string ApiUrl { get; set; } = string.Empty;
+        public string ApiKey { get; set; } = string.Empty;
+        public string ImagePath { get; set; } = string.Empty;
+        public string Prompt { get; set; } = string.Empty;
+        public string SavePath { get; set; } = string.Empty;
+        public AutomationTask Task { get; set; } = null!;
+        public System.Threading.Tasks.TaskCompletionSource<bool> Tcs { get; set; } = new System.Threading.Tasks.TaskCompletionSource<bool>();
+        public string Status { get; set; } = "Waiting"; // "Waiting", "Processing", "Done", "Failed"
+        public DateTime EnqueuedAt { get; set; } = DateTime.Now;
+        public string TaskId => Task?.Id.ToString().Substring(0, 8) ?? string.Empty;
+        public string VideoId => Task?.VideoId ?? string.Empty;
+        public string AccountName { get; set; } = string.Empty;
+        public DateTime? StartedAt { get; set; }
+        public DateTime? FinishedAt { get; set; }
+        public string ErrorMessage { get; set; } = string.Empty;
+        public string CreatedTimeFormatted => EnqueuedAt.ToString("HH:mm:ss");
+        public string FinishedTimeFormatted => FinishedAt?.ToString("HH:mm:ss") ?? string.Empty;
     }
 }

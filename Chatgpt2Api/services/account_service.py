@@ -935,7 +935,17 @@ class AccountService:
                     )
                 tokens = self._list_available_candidate_tokens(excluded_tokens, plan_type, source_type, plan_types)
                 if tokens:
-                    access_token = tokens[self._index % len(tokens)]
+                    def get_token_priority(tok: str) -> int:
+                        acc = self._accounts.get(tok)
+                        if not acc:
+                            return 2
+                        p_type = str(acc.get("type") or "free").lower()
+                        if p_type in {"plus", "pro", "team", "enterprise"}:
+                            return 0
+                        return 1
+
+                    tokens.sort(key=get_token_priority)
+                    access_token = tokens[0]
                     self._index += 1
                     self._image_inflight[access_token] = int(self._image_inflight.get(access_token, 0)) + 1
                     return access_token

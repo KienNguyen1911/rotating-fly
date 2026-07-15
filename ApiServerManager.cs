@@ -27,6 +27,9 @@ namespace AutoCreateImage
 
         [JsonPropertyName("refreshed_at")]
         public string RefreshedAt { get; set; } = string.Empty;
+
+        [JsonPropertyName("access_token")]
+        public string AccessToken { get; set; } = string.Empty;
     }
 
     public class OAuthStartResult
@@ -289,6 +292,31 @@ namespace AutoCreateImage
             catch (Exception ex)
             {
                 LogReceived?.Invoke($"[API Error] Lỗi gọi finish oauth: {ex.Message}");
+            }
+            return false;
+        }
+
+        public async Task<bool> DeleteAccountAsync(string token)
+        {
+            try
+            {
+                string jsonBody = JsonSerializer.Serialize(new { tokens = new[] { token } });
+                using var request = CreateRequest(HttpMethod.Delete, "/api/accounts", jsonBody);
+                using var response = await HttpClient.SendAsync(request);
+                if (response.IsSuccessStatusCode)
+                {
+                    LogReceived?.Invoke("[API Success] Đã xóa tài khoản thành công.");
+                    return true;
+                }
+                else
+                {
+                    string err = await response.Content.ReadAsStringAsync();
+                    LogReceived?.Invoke($"[API Error] Xóa tài khoản thất bại: {err}");
+                }
+            }
+            catch (Exception ex)
+            {
+                LogReceived?.Invoke($"[API Error] Lỗi gọi xóa tài khoản: {ex.Message}");
             }
             return false;
         }

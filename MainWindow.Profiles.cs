@@ -21,7 +21,6 @@ namespace AutoCreateImage
             }
             return baseDir;
         }
-
         private void LoadProfiles()
         {
             try
@@ -36,13 +35,16 @@ namespace AutoCreateImage
                 }
 
                 Log($"Loaded {ProfileList.Count} Chrome profiles from Desktop/ChromeProfiles.");
+
+                string defProfile = ConfigService.CurrentSettings.DefaultChromeProfile;
+                TxtDefaultProfileName.Text = string.IsNullOrEmpty(defProfile) ? "None" : defProfile;
+                TxtCustomGptUrl.Text = ConfigService.CurrentSettings.CustomGptUrl;
             }
             catch (Exception ex)
             {
                 Log($"[ERROR] Failed to load profiles: {ex.Message}");
             }
         }
-
         private void BtnRefreshProfiles_Click(object sender, RoutedEventArgs e)
         {
             LoadProfiles();
@@ -221,6 +223,39 @@ namespace AutoCreateImage
             {
                 BtnDeleteProfile.IsEnabled = true;
             }
+        }
+
+        private void BtnSetDefaultProfile_Click(object sender, RoutedEventArgs e)
+        {
+            var selectedProfileName = LboxProfiles.SelectedItem as string;
+            if (string.IsNullOrEmpty(selectedProfileName))
+            {
+                MessageBox.Show("Vui lòng chọn một profile để đặt làm mặc định.", "Chưa chọn Profile", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            var settings = ConfigService.CurrentSettings;
+            settings.DefaultChromeProfile = selectedProfileName;
+            ConfigService.SaveSettings(settings);
+            TxtDefaultProfileName.Text = selectedProfileName;
+            Log($"[SETTINGS] Đã đặt Chrome profile '{selectedProfileName}' làm mặc định khi tạo task.");
+            MessageBox.Show($"Đã đặt '{selectedProfileName}' làm profile mặc định.", "Thành công", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+
+        private void BtnSaveCustomGptUrl_Click(object sender, RoutedEventArgs e)
+        {
+            string url = TxtCustomGptUrl.Text.Trim();
+            if (string.IsNullOrEmpty(url))
+            {
+                MessageBox.Show("Vui lòng nhập URL Custom GPT hợp lệ.", "URL trống", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            var settings = ConfigService.CurrentSettings;
+            settings.CustomGptUrl = url;
+            ConfigService.SaveSettings(settings);
+            Log($"[SETTINGS] Đã lưu Custom GPT URL: {url}");
+            MessageBox.Show("Đã lưu cấu hình Custom GPT URL thành công.", "Thành công", MessageBoxButton.OK, MessageBoxImage.Information);
         }
     }
 }
