@@ -19,14 +19,18 @@ if (Test-Path $zipFile) {
     Remove-Item -Force $zipFile
 }
 
-# 3. Tạo thư mục package mới
+# 3. Chạy dotnet publish
+Write-Host "Đang build và publish ứng dụng..." -ForegroundColor Green
+dotnet publish AutoCreateImage.csproj -c Release -r win-x64 --self-contained true
+
+# 4. Tạo thư mục package mới
 New-Item -ItemType Directory -Path $packageOutDir | Out-Null
 
-# 4. Sao chép bản build WPF (.NET) sang thư mục package
+# 5. Sao chép bản build WPF (.NET) sang thư mục package (bao gồm cả thư mục ẩn .playwright)
 Write-Host "Đang sao chép ứng dụng WPF..." -ForegroundColor Green
-Copy-Item -Path "$publishDir\*" -Destination $packageOutDir -Recurse -Force
+Get-ChildItem -Path $publishDir -Force | Copy-Item -Destination $packageOutDir -Recurse -Force
 
-# 5. Tạo file nén zip
+# 6. Tạo file nén zip
 Write-Host "Đang tạo file nén zip..." -ForegroundColor Green
 Compress-Archive -Path "$packageOutDir\*" -DestinationPath $zipFile -Force
 

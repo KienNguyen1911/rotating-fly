@@ -29,12 +29,12 @@ fi
 
 # 3. Chạy lệnh dotnet publish
 echo -e "${GREEN}Đang build và publish ứng dụng...${NC}"
-dotnet publish AutoCreateImage.csproj -c Release -r win-x64 --self-contained false
+dotnet publish AutoCreateImage.csproj -c Release -r win-x64 --self-contained true
 
-# 4. Tạo thư mục package mới và sao chép bản build sang
+# 4. Tạo thư mục package mới và sao chép bản build sang (bao gồm cả thư mục ẩn .playwright)
 echo -e "${GREEN}Đang chuẩn bị thư mục package...${NC}"
 mkdir -p "$PACKAGE_OUT_DIR"
-cp -r "$PUBLISH_DIR"/* "$PACKAGE_OUT_DIR/"
+cp -r "$PUBLISH_DIR"/. "$PACKAGE_OUT_DIR/"
 
 # 5. Tạo file nén zip
 echo -e "${GREEN}Đang tạo file nén zip...${NC}"
