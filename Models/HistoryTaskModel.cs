@@ -15,10 +15,18 @@ namespace AutoCreateImage
         public bool Step3 { get; set; }
         public bool Step4 { get; set; }
         public bool Step5 { get; set; }
+        public bool StepSrt { get; set; }
         public string Status { get; set; } = string.Empty;
         public string SelectedProfile { get; set; } = string.Empty;
         public string Logs { get; set; } = string.Empty;
         public DateTime CreatedAt { get; set; }
+        
+        public string Step1Status { get; set; } = "Pending";
+        public string Step2Status { get; set; } = "Pending";
+        public string Step3Status { get; set; } = "Pending";
+        public string Step4Status { get; set; } = "Pending";
+        public string Step5Status { get; set; } = "Pending";
+        public string StepSrtStatus { get; set; } = "Pending";
 
         public string CreatedAtFormatted => CreatedAt.ToString("dd/MM/yyyy HH:mm:ss");
 

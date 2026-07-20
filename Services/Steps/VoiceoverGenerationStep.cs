@@ -239,22 +239,85 @@ namespace AutoCreateImage
 
                 logTask(task, $"[STEP 4] Success! Saved voiceover file to: {downloadPath}");
 
-                if (!string.IsNullOrEmpty(transcriptUrl))
+                if (!task.StepSrt)
                 {
-                    logTask(task, $"[STEP 4] Downloading transcript from: {transcriptUrl}");
-                    var transcriptResponse = await httpClient.GetAsync(transcriptUrl);
-                    if (transcriptResponse.IsSuccessStatusCode)
+                    logTask(task, "[STEP 4] SRT generation is disabled. Skipping subtitle creation.");
+                    return;
+                }
+
+                task.StepSrtStatus = "Running";
+                try
+                {
+                    if (!string.IsNullOrEmpty(transcriptUrl))
                     {
-                        string transcriptSrtContent = await transcriptResponse.Content.ReadAsStringAsync();
-                        string transcriptSrtPath = Path.Combine(outputDir, "voiceover.srt");
-                        await File.WriteAllTextAsync(transcriptSrtPath, transcriptSrtContent, System.Text.Encoding.UTF8);
-                        logTask(task, $"[STEP 4] Success! Saved transcript SRT file from AI84 to: {transcriptSrtPath}");
-                        return;
+                        logTask(task, $"[STEP 4] Downloading transcript from: {transcriptUrl}");
+                        var transcriptResponse = await httpClient.GetAsync(transcriptUrl);
+                        if (transcriptResponse.IsSuccessStatusCode)
+                        {
+                            string transcriptSrtContent = await transcriptResponse.Content.ReadAsStringAsync();
+                            string transcriptSrtPath = Path.Combine(outputDir, "voiceover.srt");
+                            await File.WriteAllTextAsync(transcriptSrtPath, transcriptSrtContent, System.Text.Encoding.UTF8);
+                            logTask(task, $"[STEP 4] Success! Saved transcript SRT file from AI84 to: {transcriptSrtPath}");
+                            task.StepSrtStatus = "Done";
+                            return;
+                        }
+                        else
+                        {
+                            logTask(task, $"[WARNING] Failed to download transcript from {transcriptUrl}. Falling back to Whisper API...");
+                        }
                     }
-                    else
+
+                    string subtitleApiUrl = ConfigService.CurrentSettings.SubtitleApiUrl;
+                    if (string.IsNullOrWhiteSpace(subtitleApiUrl))
                     {
-                        logTask(task, $"[WARNING] Failed to download transcript from {transcriptUrl}. Falling back to Whisper API...");
+                        throw new InvalidOperationException("Subtitle API URL is empty or not configured. Cannot generate SRT subtitles.");
                     }
+
+                    logTask(task, $"[STEP 4] Uploading voiceover.mp3 to Whisper SRT API: {subtitleApiUrl}...");
+                    using var uploadContent = new MultipartFormDataContent();
+
+                    using var fs = new FileStream(downloadPath, FileMode.Open, FileAccess.Read);
+                    using var fileStreamContent = new StreamContent(fs);
+                    fileStreamContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/octet-stream");
+                    uploadContent.Add(fileStreamContent, "file", Path.GetFileName(downloadPath));
+                    uploadContent.Add(new StringContent("Auto"), "language");
+
+                    var subResponse = await httpClient.PostAsync(subtitleApiUrl, uploadContent);
+                    string subResponseContent = await subResponse.Content.ReadAsStringAsync();
+
+                    if (!subResponse.IsSuccessStatusCode)
+                    {
+                        throw new Exception($"Whisper SRT API transcription failed with status code {subResponse.StatusCode}. Details: {subResponseContent}");
+                    }
+
+                    string srtContent = ParseSrtResponse(subResponseContent);
+
+                    string srtPath = Path.Combine(outputDir, "voiceover.srt");
+                    await File.WriteAllTextAsync(srtPath, srtContent, System.Text.Encoding.UTF8);
+                    logTask(task, $"[STEP 4] Success! Saved Whisper transcript SRT file to: {srtPath}");
+                    task.StepSrtStatus = "Done";
+                }
+                catch
+                {
+                    task.StepSrtStatus = "Failed";
+                    throw;
+                }
+            }
+            catch (Exception ex)
+            {
+                logTask(task, $"[ERROR] Failed to download audio file or generate subtitles: {ex.Message}");
+                throw;
+            }
+        }
+
+        public async Task GenerateSrtOnlyAsync(string outputDir, AutomationTask task, Action<AutomationTask, string> logTask)
+        {
+            try
+            {
+                string downloadPath = Path.Combine(outputDir, "voiceover.mp3");
+                if (!File.Exists(downloadPath))
+                {
+                    throw new FileNotFoundException("voiceover.mp3 not found. Please run the Voiceover step first or select Voiceover.");
                 }
 
                 string subtitleApiUrl = ConfigService.CurrentSettings.SubtitleApiUrl;
@@ -263,7 +326,8 @@ namespace AutoCreateImage
                     throw new InvalidOperationException("Subtitle API URL is empty or not configured. Cannot generate SRT subtitles.");
                 }
 
-                logTask(task, $"[STEP 4] Uploading voiceover.mp3 to Whisper SRT API: {subtitleApiUrl}...");
+                using var httpClient = new HttpClient();
+                logTask(task, $"[SRT] Uploading voiceover.mp3 to Whisper SRT API: {subtitleApiUrl}...");
                 using var uploadContent = new MultipartFormDataContent();
 
                 using var fs = new FileStream(downloadPath, FileMode.Open, FileAccess.Read);
@@ -281,14 +345,13 @@ namespace AutoCreateImage
                 }
 
                 string srtContent = ParseSrtResponse(subResponseContent);
-
                 string srtPath = Path.Combine(outputDir, "voiceover.srt");
                 await File.WriteAllTextAsync(srtPath, srtContent, System.Text.Encoding.UTF8);
-                logTask(task, $"[STEP 4] Success! Saved Whisper transcript SRT file to: {srtPath}");
+                logTask(task, $"[SRT] Success! Generated Whisper transcript SRT file to: {srtPath}");
             }
             catch (Exception ex)
             {
-                logTask(task, $"[ERROR] Failed to download audio file or generate subtitles: {ex.Message}");
+                logTask(task, $"[ERROR] SRT only generation failed: {ex.Message}");
                 throw;
             }
         }

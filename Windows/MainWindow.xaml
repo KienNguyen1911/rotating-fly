@@ -253,20 +253,31 @@
                     <!-- Top Toolbar for Tasks -->
                     <Border Grid.Row="0" Background="#1E293B" CornerRadius="8" Padding="15" Margin="0,0,0,15" BorderBrush="#334155" BorderThickness="1">
                         <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
 
-                            <TextBlock Grid.Column="0" Text="Manage tasks configuration directly inside the table rows below. Press 'Tạo Task' to add a new row." VerticalAlignment="Center" Foreground="#94A3B8" FontSize="12" FontStyle="Italic"/>
+                            <TextBlock Grid.Row="0" Grid.Column="0" Text="Manage tasks configuration directly inside the table rows below. Press 'Tạo Task' to add a new row." VerticalAlignment="Center" Foreground="#94A3B8" FontSize="12" FontStyle="Italic"/>
 
-                            <!-- Image API UI removed - managed via Settings -->
-                            
-                            <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                            <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                                 <Button x:Name="BtnAddTask" Content="Tạo Task" Height="28" Width="100" Background="#10B981" Foreground="White" BorderThickness="0" FontSize="12" FontWeight="Bold" Click="BtnAddTask_Click" Margin="0,0,10,0"/>
                                 <Button x:Name="BtnAddBulkTasks" Content="Tạo Nhiều" Height="28" Width="100" Background="#8B5CF6" Foreground="White" BorderThickness="0" FontSize="12" FontWeight="Bold" Click="BtnAddBulkTasks_Click" Margin="0,0,10,0"/>
-                                <Button x:Name="BtnRun" Content="Chạy Toàn Bộ Task" Height="28" Width="140" Background="#2563EB" Foreground="White" BorderThickness="0" FontSize="12" FontWeight="Bold" Click="BtnRun_Click"/>
+                                <Button x:Name="BtnRun" Content="Chạy Task Đã Chọn" Height="28" Width="140" Background="#2563EB" Foreground="White" BorderThickness="0" FontSize="12" FontWeight="Bold" Click="BtnRun_Click"/>
+                            </StackPanel>
+
+                            <StackPanel Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2" Orientation="Horizontal" Margin="0,12,0,0" VerticalAlignment="Center">
+                                <TextBlock Text="Chọn tính năng chạy:" Foreground="#94A3B8" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,15,0"/>
+                                <CheckBox x:Name="ChkStepDownloadThumbnail" Content="Download Thumbnail" IsChecked="True" Foreground="White" Margin="0,0,15,0" VerticalAlignment="Center"/>
+                                <CheckBox x:Name="ChkStepGenerateThumbnail" Content="Generate Thumbnail" IsChecked="True" Foreground="White" Margin="0,0,15,0" VerticalAlignment="Center"/>
+                                <CheckBox x:Name="ChkStepGetTranscript" Content="Get Transcript" IsChecked="True" Foreground="White" Margin="0,0,15,0" VerticalAlignment="Center"/>
+                                <CheckBox x:Name="ChkStepRewrittenTranscript" Content="Rewritten Transcript" IsChecked="True" Foreground="White" Margin="0,0,15,0" VerticalAlignment="Center"/>
+                                <CheckBox x:Name="ChkStepVoiceover" Content="Voiceover" IsChecked="True" Foreground="White" Margin="0,0,15,0" VerticalAlignment="Center"/>
+                                <CheckBox x:Name="ChkStepSrt" Content="SRT" IsChecked="True" Foreground="White" Margin="0,0,15,0" VerticalAlignment="Center"/>
                             </StackPanel>
                         </Grid>
                     </Border>
@@ -277,12 +288,43 @@
                         <Border Background="#1E293B" CornerRadius="8" Padding="15" BorderBrush="#334155" BorderThickness="1">
                             <Grid>
                                 <Grid.RowDefinitions>
-                                    <RowDefinition Height="Auto"/>
-                                    <RowDefinition Height="*"/>
+                                    <RowDefinition Height="Auto"/> <!-- Title -->
+                                    <RowDefinition Height="Auto"/> <!-- Filters -->
+                                    <RowDefinition Height="*"/>    <!-- DataGrid -->
                                 </Grid.RowDefinitions>
                                 <TextBlock Grid.Row="0" Text="Task Queue &amp; Automation Control" FontSize="16" FontWeight="SemiBold" Foreground="#F8FAFC" Margin="0,0,0,15"/>
                                 
-                                <DataGrid Grid.Row="1" x:Name="DgridTasks" AutoGenerateColumns="False" CanUserAddRows="False" 
+                                <!-- Filters Bar -->
+                                <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,12" VerticalAlignment="Center">
+                                    <TextBlock Text="Bộ lọc:" VerticalAlignment="Center" Foreground="#94A3B8" Margin="0,0,10,0" FontSize="12" FontWeight="SemiBold"/>
+                                    
+                                    <TextBlock Text="Link Video:" VerticalAlignment="Center" Foreground="#94A3B8" Margin="10,0,5,0" FontSize="12"/>
+                                    <TextBox x:Name="TxtFilterVideoUrl" Width="140" Height="26" VerticalContentAlignment="Center" Background="#1E293B" Foreground="White" BorderBrush="#334155" TextChanged="FilterFields_TextChanged" CaretBrush="White"/>
+                                    
+                                    <TextBlock Text="Ngôn ngữ:" VerticalAlignment="Center" Foreground="#94A3B8" Margin="15,0,5,0" FontSize="12"/>
+                                    <TextBox x:Name="TxtFilterLanguage" Width="90" Height="26" VerticalContentAlignment="Center" Background="#1E293B" Foreground="White" BorderBrush="#334155" TextChanged="FilterFields_TextChanged" CaretBrush="White"/>
+                                    
+                                    <TextBlock Text="Voice ID:" VerticalAlignment="Center" Foreground="#94A3B8" Margin="15,0,5,0" FontSize="12"/>
+                                    <TextBox x:Name="TxtFilterVoiceId" Width="90" Height="26" VerticalContentAlignment="Center" Background="#1E293B" Foreground="White" BorderBrush="#334155" TextChanged="FilterFields_TextChanged" CaretBrush="White"/>
+                                    
+                                    <TextBlock Text="Failures:" VerticalAlignment="Center" Foreground="#94A3B8" Margin="15,0,5,0" FontSize="12" FontWeight="SemiBold"/>
+                                    <CheckBox x:Name="ChkFilterT" Content="T" VerticalAlignment="Center" Foreground="#EF4444" Margin="3,0" Checked="FilterCheckbox_Changed" Unchecked="FilterCheckbox_Changed"/>
+                                    <CheckBox x:Name="ChkFilterR" Content="R" VerticalAlignment="Center" Foreground="#EF4444" Margin="3,0" Checked="FilterCheckbox_Changed" Unchecked="FilterCheckbox_Changed"/>
+                                    <CheckBox x:Name="ChkFilterW" Content="W" VerticalAlignment="Center" Foreground="#EF4444" Margin="3,0" Checked="FilterCheckbox_Changed" Unchecked="FilterCheckbox_Changed"/>
+                                    <CheckBox x:Name="ChkFilterV" Content="V" VerticalAlignment="Center" Foreground="#EF4444" Margin="3,0" Checked="FilterCheckbox_Changed" Unchecked="FilterCheckbox_Changed"/>
+                                    <CheckBox x:Name="ChkFilterS" Content="S" VerticalAlignment="Center" Foreground="#EF4444" Margin="3,0" Checked="FilterCheckbox_Changed" Unchecked="FilterCheckbox_Changed"/>
+                                    <CheckBox x:Name="ChkFilterG" Content="G" VerticalAlignment="Center" Foreground="#EF4444" Margin="3,0" Checked="FilterCheckbox_Changed" Unchecked="FilterCheckbox_Changed"/>
+
+                                    <Button x:Name="BtnClearFilters" Content="Xoá Lọc" Width="65" Height="26" Margin="15,0,0,0" Background="#475569" Foreground="White" BorderThickness="0" FontSize="11" FontWeight="SemiBold" Click="BtnClearFilters_Click">
+                                        <Button.Resources>
+                                            <Style TargetType="Border">
+                                                <Setter Property="CornerRadius" Value="4"/>
+                                            </Style>
+                                        </Button.Resources>
+                                    </Button>
+                                </StackPanel>
+                                
+                                <DataGrid Grid.Row="2" x:Name="DgridTasks" AutoGenerateColumns="False" CanUserAddRows="False" 
                                           Background="Transparent" BorderThickness="0" HeadersVisibility="Column" GridLinesVisibility="Horizontal"
                                           RowHeaderWidth="0" IsReadOnly="False" RowHeight="36" FontSize="13">
                                     <DataGrid.RowStyle>
@@ -303,6 +345,14 @@
                                         </Style>
                                     </DataGrid.RowStyle>
                                     <DataGrid.Columns>
+                                        <DataGridTemplateColumn Header="Chọn" Width="0.6*">
+                                            <DataGridTemplateColumn.CellTemplate>
+                                                <DataTemplate>
+                                                    <CheckBox IsChecked="{Binding IsSelected, UpdateSourceTrigger=PropertyChanged}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                </DataTemplate>
+                                            </DataGridTemplateColumn.CellTemplate>
+                                        </DataGridTemplateColumn>
+
                                         <DataGridTextColumn Header="Ngày tạo" Binding="{Binding CreatedAtFormatted}" Width="1.4*" IsReadOnly="True">
                                             <DataGridTextColumn.ElementStyle>
                                                 <Style TargetType="TextBlock">
@@ -364,45 +414,144 @@
                                             </DataGridTemplateColumn.CellTemplate>
                                         </DataGridTemplateColumn>
 
-                                        <DataGridTemplateColumn Header="SRT Gen" Width="2*">
-                                            <DataGridTemplateColumn.CellTemplate>
-                                                <DataTemplate>
-                                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Center">
-                                                        <RadioButton Content="Cách 1" IsChecked="{Binding UseSrtMethod1, UpdateSourceTrigger=PropertyChanged}" Foreground="White" Margin="0,0,10,0" VerticalAlignment="Center" GroupName="{Binding Id, StringFormat=SrtGroup_{0}}"/>
-                                                        <RadioButton Content="Cách 2" IsChecked="{Binding UseSrtMethod2, UpdateSourceTrigger=PropertyChanged}" Foreground="White" VerticalAlignment="Center"
-                                                                     IsEnabled="{Binding RelativeSource={RelativeSource AncestorType=Window}, Path=IsSrtMethod2Enabled}"
-                                                                     Visibility="{Binding RelativeSource={RelativeSource AncestorType=Window}, Path=IsSrtMethod2Visible}"
-                                                                     GroupName="{Binding Id, StringFormat=SrtGroup_{0}}"/>
-                                                    </StackPanel>
-                                                </DataTemplate>
-                                            </DataGridTemplateColumn.CellTemplate>
-                                        </DataGridTemplateColumn>
+                                         <DataGridTemplateColumn Header="Steps Status" Width="2.2*">
+                                             <DataGridTemplateColumn.HeaderStyle>
+                                                 <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}">
+                                                     <Setter Property="HorizontalContentAlignment" Value="Center"/>
+                                                 </Style>
+                                             </DataGridTemplateColumn.HeaderStyle>
+                                             <DataGridTemplateColumn.CellTemplate>
+                                                 <DataTemplate>
+                                                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                         <!-- Step 1: Download Thumbnail -->
+                                                         <Border Width="20" Height="20" CornerRadius="10" Margin="2,0" ToolTip="Step 1: Download Thumbnail">
+                                                             <Border.Style>
+                                                                 <Style TargetType="Border">
+                                                                     <Setter Property="Background" Value="#475569"/>
+                                                                     <Style.Triggers>
+                                                                         <DataTrigger Binding="{Binding Step1Status}" Value="Running">
+                                                                             <Setter Property="Background" Value="#F59E0B"/>
+                                                                         </DataTrigger>
+                                                                         <DataTrigger Binding="{Binding Step1Status}" Value="Done">
+                                                                             <Setter Property="Background" Value="#10B981"/>
+                                                                         </DataTrigger>
+                                                                         <DataTrigger Binding="{Binding Step1Status}" Value="Failed">
+                                                                             <Setter Property="Background" Value="#EF4444"/>
+                                                                         </DataTrigger>
+                                                                     </Style.Triggers>
+                                                                 </Style>
+                                                             </Border.Style>
+                                                             <TextBlock Text="T" Foreground="White" FontSize="10" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                         </Border>
 
-                                        <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="1.2*" IsReadOnly="True">
-                                            <DataGridTextColumn.HeaderStyle>
-                                                <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}">
-                                                    <Setter Property="HorizontalContentAlignment" Value="Center"/>
-                                                </Style>
-                                            </DataGridTextColumn.HeaderStyle>
-                                            <DataGridTextColumn.ElementStyle>
-                                                <Style TargetType="TextBlock">
-                                                    <Setter Property="FontWeight" Value="SemiBold"/>
-                                                    <Setter Property="HorizontalAlignment" Value="Center"/>
-                                                    <Setter Property="VerticalAlignment" Value="Center"/>
-                                                    <Style.Triggers>
-                                                        <Trigger Property="Text" Value="Done">
-                                                            <Setter Property="Foreground" Value="#10B981"/>
-                                                        </Trigger>
-                                                        <Trigger Property="Text" Value="Failed">
-                                                            <Setter Property="Foreground" Value="#EF4444"/>
-                                                        </Trigger>
-                                                        <Trigger Property="Text" Value="Pending">
-                                                            <Setter Property="Foreground" Value="#94A3B8"/>
-                                                        </Trigger>
-                                                    </Style.Triggers>
-                                                </Style>
-                                            </DataGridTextColumn.ElementStyle>
-                                        </DataGridTextColumn>
+                                                         <!-- Step 2: Get Transcript -->
+                                                         <Border Width="20" Height="20" CornerRadius="10" Margin="2,0" ToolTip="Step 2: Get Transcript">
+                                                             <Border.Style>
+                                                                 <Style TargetType="Border">
+                                                                     <Setter Property="Background" Value="#475569"/>
+                                                                     <Style.Triggers>
+                                                                         <DataTrigger Binding="{Binding Step2Status}" Value="Running">
+                                                                             <Setter Property="Background" Value="#F59E0B"/>
+                                                                         </DataTrigger>
+                                                                         <DataTrigger Binding="{Binding Step2Status}" Value="Done">
+                                                                             <Setter Property="Background" Value="#10B981"/>
+                                                                         </DataTrigger>
+                                                                         <DataTrigger Binding="{Binding Step2Status}" Value="Failed">
+                                                                             <Setter Property="Background" Value="#EF4444"/>
+                                                                         </DataTrigger>
+                                                                     </Style.Triggers>
+                                                                 </Style>
+                                                             </Border.Style>
+                                                             <TextBlock Text="R" Foreground="White" FontSize="10" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                         </Border>
+
+                                                         <!-- Step 3: Rewrite Script -->
+                                                         <Border Width="20" Height="20" CornerRadius="10" Margin="2,0" ToolTip="Step 3: ChatGPT Rewrite">
+                                                             <Border.Style>
+                                                                 <Style TargetType="Border">
+                                                                     <Setter Property="Background" Value="#475569"/>
+                                                                     <Style.Triggers>
+                                                                         <DataTrigger Binding="{Binding Step3Status}" Value="Running">
+                                                                             <Setter Property="Background" Value="#F59E0B"/>
+                                                                         </DataTrigger>
+                                                                         <DataTrigger Binding="{Binding Step3Status}" Value="Done">
+                                                                             <Setter Property="Background" Value="#10B981"/>
+                                                                         </DataTrigger>
+                                                                         <DataTrigger Binding="{Binding Step3Status}" Value="Failed">
+                                                                             <Setter Property="Background" Value="#EF4444"/>
+                                                                         </DataTrigger>
+                                                                     </Style.Triggers>
+                                                                 </Style>
+                                                             </Border.Style>
+                                                             <TextBlock Text="W" Foreground="White" FontSize="10" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                         </Border>
+
+                                                         <!-- Step 4: Voiceover -->
+                                                         <Border Width="20" Height="20" CornerRadius="10" Margin="2,0" ToolTip="Step 4: Voiceover">
+                                                             <Border.Style>
+                                                                 <Style TargetType="Border">
+                                                                     <Setter Property="Background" Value="#475569"/>
+                                                                     <Style.Triggers>
+                                                                         <DataTrigger Binding="{Binding Step4Status}" Value="Running">
+                                                                             <Setter Property="Background" Value="#F59E0B"/>
+                                                                         </DataTrigger>
+                                                                         <DataTrigger Binding="{Binding Step4Status}" Value="Done">
+                                                                             <Setter Property="Background" Value="#10B981"/>
+                                                                         </DataTrigger>
+                                                                         <DataTrigger Binding="{Binding Step4Status}" Value="Failed">
+                                                                             <Setter Property="Background" Value="#EF4444"/>
+                                                                         </DataTrigger>
+                                                                     </Style.Triggers>
+                                                                 </Style>
+                                                             </Border.Style>
+                                                             <TextBlock Text="V" Foreground="White" FontSize="10" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                         </Border>
+
+                                                         <!-- StepSrt: SRT -->
+                                                         <Border Width="20" Height="20" CornerRadius="10" Margin="2,0" ToolTip="Step: SRT Subtitles">
+                                                             <Border.Style>
+                                                                 <Style TargetType="Border">
+                                                                     <Setter Property="Background" Value="#475569"/>
+                                                                     <Style.Triggers>
+                                                                         <DataTrigger Binding="{Binding StepSrtStatus}" Value="Running">
+                                                                             <Setter Property="Background" Value="#F59E0B"/>
+                                                                         </DataTrigger>
+                                                                         <DataTrigger Binding="{Binding StepSrtStatus}" Value="Done">
+                                                                             <Setter Property="Background" Value="#10B981"/>
+                                                                         </DataTrigger>
+                                                                         <DataTrigger Binding="{Binding StepSrtStatus}" Value="Failed">
+                                                                             <Setter Property="Background" Value="#EF4444"/>
+                                                                         </DataTrigger>
+                                                                     </Style.Triggers>
+                                                                 </Style>
+                                                             </Border.Style>
+                                                             <TextBlock Text="S" Foreground="White" FontSize="10" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                         </Border>
+
+                                                         <!-- Step 5: Image Gen -->
+                                                         <Border Width="20" Height="20" CornerRadius="10" Margin="2,0" ToolTip="Step 5: Image Generation">
+                                                             <Border.Style>
+                                                                 <Style TargetType="Border">
+                                                                     <Setter Property="Background" Value="#475569"/>
+                                                                     <Style.Triggers>
+                                                                         <DataTrigger Binding="{Binding Step5Status}" Value="Running">
+                                                                             <Setter Property="Background" Value="#F59E0B"/>
+                                                                         </DataTrigger>
+                                                                         <DataTrigger Binding="{Binding Step5Status}" Value="Done">
+                                                                             <Setter Property="Background" Value="#10B981"/>
+                                                                         </DataTrigger>
+                                                                         <DataTrigger Binding="{Binding Step5Status}" Value="Failed">
+                                                                             <Setter Property="Background" Value="#EF4444"/>
+                                                                         </DataTrigger>
+                                                                     </Style.Triggers>
+                                                                 </Style>
+                                                             </Border.Style>
+                                                             <TextBlock Text="G" Foreground="White" FontSize="10" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                         </Border>
+                                                     </StackPanel>
+                                                 </DataTemplate>
+                                             </DataGridTemplateColumn.CellTemplate>
+                                         </DataGridTemplateColumn>
 
                                         <DataGridTemplateColumn Header="Action" Width="2.2*" IsReadOnly="True">
                                             <DataGridTemplateColumn.HeaderStyle>
@@ -426,56 +575,6 @@
                             </Grid>
                         </Border>
 
-                        <!-- Sidebar Drawer Overlay (slides from right, resizable via drag handle) -->
-                        <Grid x:Name="SidebarLogs" HorizontalAlignment="Right" Visibility="Collapsed">
-                            <Grid.ColumnDefinitions>
-                                <!-- Drag handle column -->
-                                <ColumnDefinition Width="Auto"/>
-                                <!-- Sidebar content column -->
-                                <ColumnDefinition Width="*"/>
-                            </Grid.ColumnDefinitions>
-
-                            <!-- Drag handle for resizing -->
-                            <Border Grid.Column="0" Width="6" Background="#334155" Cursor="SizeWE"
-                                    MouseLeftButtonDown="SidebarDragHandle_MouseLeftButtonDown"
-                                    MouseMove="SidebarDragHandle_MouseMove"
-                                    MouseLeftButtonUp="SidebarDragHandle_MouseLeftButtonUp">
-                                <Border.Style>
-                                    <Style TargetType="Border">
-                                        <Style.Triggers>
-                                            <Trigger Property="IsMouseOver" Value="True">
-                                                <Setter Property="Background" Value="#3B82F6"/>
-                                            </Trigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </Border.Style>
-                            </Border>
-
-                            <!-- Sidebar content -->
-                            <Border Grid.Column="1" Background="#0B0F19" BorderBrush="#3B82F6" BorderThickness="1,0,0,0">
-                                <Grid>
-                                    <Grid.RowDefinitions>
-                                        <RowDefinition Height="Auto"/>
-                                        <RowDefinition Height="*"/>
-                                    </Grid.RowDefinitions>
-
-                                    <!-- Header with close button -->
-                                    <Grid Grid.Row="0" Margin="15,15,15,10">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                        </Grid.ColumnDefinitions>
-                                        <TextBlock Text="Task Live Logs" Foreground="White" FontSize="14" FontWeight="Bold" VerticalAlignment="Center"/>
-                                        <Button Grid.Column="1" Content="✕" Width="30" Height="30" Background="Transparent" Foreground="White" BorderThickness="0" FontSize="16" Click="BtnCloseSidebar_Click"/>
-                                    </Grid>
-
-                                    <!-- Log content (stretches to fill sidebar width) -->
-                                    <TextBox Grid.Row="1" x:Name="TxtSidebarLog" Background="Transparent" Foreground="#F8FAFC" BorderThickness="0" 
-                                              Margin="15,0,15,15" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" IsReadOnly="True" 
-                                              FontSize="12" FontFamily="Consolas" AcceptsReturn="True"/>
-                                </Grid>
-                            </Border>
-                        </Grid>
                     </Grid>
                 </Grid>
             </TabItem>
@@ -592,111 +691,6 @@
                                     <DataGridTextColumn Header="Prompt" Binding="{Binding Prompt}" Width="*"/>
                                 </DataGrid.Columns>
                             </DataGrid>
-                        </Grid>
-                    </Border>
-                </Grid>
-            </TabItem>
-            <TabItem Header="Media Generator" Padding="15,6" FontSize="12" FontWeight="SemiBold">
-                <Grid Margin="15">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="*"/>
-                    </Grid.RowDefinitions>
-                    
-                    <!-- Configuration Card -->
-                    <Border Grid.Row="0" Background="#1E293B" CornerRadius="8" Padding="20" BorderBrush="#334155" BorderThickness="1" Margin="0,0,0,15">
-                        <Grid>
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="Auto"/>
-                            </Grid.RowDefinitions>
-                            
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="150"/>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                            </Grid.ColumnDefinitions>
-                            
-                            <TextBlock Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="3" Text="Cấu Hình Tạo Video / Xuất Audio" FontSize="16" FontWeight="Bold" Foreground="#F8FAFC" Margin="0,0,0,15"/>
-                            
-                            <!-- Input Asset Folder -->
-                            <TextBlock Grid.Row="1" Grid.Column="0" Text="Thư mục Assets (Auto):" VerticalAlignment="Center" Foreground="#10B981" FontWeight="SemiBold" Margin="0,0,10,10"/>
-                            <TextBox Grid.Row="1" Grid.Column="1" x:Name="TxtMediaAssetDir" Height="30" VerticalContentAlignment="Center" Margin="0,0,10,10" Background="#111827" Foreground="White" BorderBrush="#10B981"/>
-                            <Button Grid.Row="1" Grid.Column="2" x:Name="BtnBrowseMediaAssetDir" Content="Chọn Thư Mục..." Width="100" Height="30" Margin="0,0,0,10" Click="BtnBrowseMediaAssetDir_Click" Background="#10B981" Foreground="White" BorderThickness="0" FontWeight="SemiBold"/>
-                            
-                            <!-- Input Image -->
-                            <TextBlock Grid.Row="2" Grid.Column="0" Text="Ảnh nền (Background):" VerticalAlignment="Center" Foreground="#94A3B8" Margin="0,0,10,10"/>
-                            <TextBox Grid.Row="2" Grid.Column="1" x:Name="TxtMediaBgImage" Height="30" VerticalContentAlignment="Center" Margin="0,0,10,10"/>
-                            <Button Grid.Row="2" Grid.Column="2" x:Name="BtnBrowseMediaBgImage" Content="Chọn Ảnh..." Width="100" Height="30" Margin="0,0,0,10" Click="BtnBrowseMediaBgImage_Click" Background="#475569" Foreground="White" BorderThickness="0"/>
-                            
-                            <!-- Input Audio -->
-                            <TextBlock Grid.Row="3" Grid.Column="0" Text="Giọng đọc (Audio):" VerticalAlignment="Center" Foreground="#94A3B8" Margin="0,0,10,10"/>
-                            <TextBox Grid.Row="3" Grid.Column="1" x:Name="TxtMediaVoiceover" Height="30" VerticalContentAlignment="Center" Margin="0,0,10,10"/>
-                            <Button Grid.Row="3" Grid.Column="2" x:Name="BtnBrowseMediaVoiceover" Content="Chọn Audio..." Width="100" Height="30" Margin="0,0,0,10" Click="BtnBrowseMediaVoiceover_Click" Background="#475569" Foreground="White" BorderThickness="0"/>
-                            
-                            <!-- Input SRT Subtitle -->
-                            <TextBlock Grid.Row="4" Grid.Column="0" Text="File phụ đề (SRT):" VerticalAlignment="Center" Foreground="#94A3B8" Margin="0,0,10,10"/>
-                            <TextBox Grid.Row="4" Grid.Column="1" x:Name="TxtMediaSrtFile" Height="30" VerticalContentAlignment="Center" Margin="0,0,10,10"/>
-                            <Button Grid.Row="4" Grid.Column="2" x:Name="BtnBrowseMediaSrtFile" Content="Chọn SRT..." Width="100" Height="30" Margin="0,0,0,10" Click="BtnBrowseMediaSrtFile_Click" Background="#475569" Foreground="White" BorderThickness="0"/>
-
-                            <!-- Input Effect -->
-                            <TextBlock Grid.Row="5" Grid.Column="0" Text="Thư mục Effect (Hiệu ứng):" VerticalAlignment="Center" Foreground="#94A3B8" Margin="0,0,10,10"/>
-                            <TextBox Grid.Row="5" Grid.Column="1" x:Name="TxtMediaEffectDir" Height="30" VerticalContentAlignment="Center" Margin="0,0,10,10"/>
-                            <Button Grid.Row="5" Grid.Column="2" x:Name="BtnBrowseMediaEffectDir" Content="Chọn Effect..." Width="100" Height="30" Margin="0,0,0,10" Click="BtnBrowseMediaEffectDir_Click" Background="#475569" Foreground="White" BorderThickness="0"/>
-                            
-                            <!-- Mode & Settings -->
-                            <TextBlock Grid.Row="6" Grid.Column="0" Text="Cấu hình nâng cao:" VerticalAlignment="Center" Foreground="#94A3B8" Margin="0,0,10,15"/>
-                            <StackPanel Grid.Row="6" Grid.Column="1" Grid.ColumnSpan="2" Orientation="Horizontal" Margin="0,0,0,15">
-                                <TextBlock Text="Chế độ:" VerticalAlignment="Center" Foreground="#94A3B8" Margin="0,0,5,0"/>
-                                <ComboBox x:Name="CbMediaMode" Width="100" Height="30" SelectedIndex="0" Margin="0,0,20,0" SelectionChanged="CbMediaMode_SelectionChanged">
-                                    <ComboBoxItem Content="Video"/>
-                                    <ComboBoxItem Content="Audio"/>
-                                </ComboBox>
-                                
-                                <TextBlock x:Name="LblMediaResolution" Text="Độ phân giải:" VerticalAlignment="Center" Foreground="#94A3B8" Margin="0,0,5,0"/>
-                                <ComboBox x:Name="CbMediaResolution" Width="120" Height="30" SelectedIndex="0" Margin="0,0,20,0">
-                                    <ComboBoxItem Content="1920x1080 (FHD)"/>
-                                    <ComboBoxItem Content="3840x2160 (4K)"/>
-                                </ComboBox>
-                            </StackPanel>
-                            
-                            <!-- Action Buttons -->
-                            <StackPanel Grid.Row="7" Grid.Column="0" Grid.ColumnSpan="3" Orientation="Horizontal" Margin="0,5,0,0">
-                                <Button x:Name="BtnGenerateMedia" Content="Bắt Đầu Xử Lý" Width="150" Height="35" Click="BtnGenerateMedia_Click" Background="#2563EB" Foreground="White" BorderThickness="0" FontWeight="Bold" Margin="0,0,15,0">
-                                    <Button.Resources>
-                                        <Style TargetType="Border">
-                                            <Setter Property="CornerRadius" Value="4"/>
-                                        </Style>
-                                    </Button.Resources>
-                                </Button>
-                                <Button x:Name="BtnClearMediaForm" Content="Nhập lại" Width="100" Height="35" Click="BtnClearMediaForm_Click" Background="#475569" Foreground="White" BorderThickness="0" Margin="0,0,15,0">
-                                    <Button.Resources>
-                                        <Style TargetType="Border">
-                                            <Setter Property="CornerRadius" Value="4"/>
-                                        </Style>
-                                    </Button.Resources>
-                                </Button>
-                            </StackPanel>
-                        </Grid>
-                    </Border>
-                    
-                    <!-- Console Logs -->
-                    <Border Grid.Row="1" Background="#0B0F19" CornerRadius="8" Padding="15" BorderBrush="#334155" BorderThickness="1">
-                        <Grid>
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="*"/>
-                            </Grid.RowDefinitions>
-                            <TextBlock Grid.Row="0" Text="Trạng Thái &amp; Logs Xử Lý" FontSize="14" FontWeight="Bold" Foreground="#60A5FA" Margin="0,0,0,10"/>
-                            <TextBox Grid.Row="1" x:Name="TxtMediaLogs" Background="Transparent" Foreground="#F8FAFC" BorderThickness="0" 
-                                     TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" IsReadOnly="True" 
-                                     FontSize="12" FontFamily="Consolas" AcceptsReturn="True"/>
                         </Grid>
                     </Border>
                 </Grid>
@@ -977,11 +971,42 @@
                         <Grid>
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="*"/>
                             </Grid.RowDefinitions>
                             <TextBlock Grid.Row="0" Text="Danh sách task đã tạo" FontSize="16" FontWeight="SemiBold" Foreground="#F8FAFC" Margin="0,0,0,15"/>
                             
-                            <DataGrid Grid.Row="1" x:Name="DgridHistoryTasks" ItemsSource="{Binding HistoryTasks}" AutoGenerateColumns="False" CanUserAddRows="False" 
+                            <!-- Filters Bar for History -->
+                            <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,12" VerticalAlignment="Center">
+                                <TextBlock Text="Bộ lọc:" VerticalAlignment="Center" Foreground="#94A3B8" Margin="0,0,10,0" FontSize="12" FontWeight="SemiBold"/>
+                                
+                                <TextBlock Text="Link Video:" VerticalAlignment="Center" Foreground="#94A3B8" Margin="10,0,5,0" FontSize="12"/>
+                                <TextBox x:Name="TxtHistoryFilterVideoUrl" Width="140" Height="26" VerticalContentAlignment="Center" Background="#1E293B" Foreground="White" BorderBrush="#334155" TextChanged="HistoryFilterFields_TextChanged" CaretBrush="White"/>
+                                
+                                <TextBlock Text="Ngôn ngữ:" VerticalAlignment="Center" Foreground="#94A3B8" Margin="15,0,5,0" FontSize="12"/>
+                                <TextBox x:Name="TxtHistoryFilterLanguage" Width="90" Height="26" VerticalContentAlignment="Center" Background="#1E293B" Foreground="White" BorderBrush="#334155" TextChanged="HistoryFilterFields_TextChanged" CaretBrush="White"/>
+                                
+                                <TextBlock Text="Voice ID:" VerticalAlignment="Center" Foreground="#94A3B8" Margin="15,0,5,0" FontSize="12"/>
+                                <TextBox x:Name="TxtHistoryFilterVoiceId" Width="90" Height="26" VerticalContentAlignment="Center" Background="#1E293B" Foreground="White" BorderBrush="#334155" TextChanged="HistoryFilterFields_TextChanged" CaretBrush="White"/>
+                                
+                                <TextBlock Text="Failures:" VerticalAlignment="Center" Foreground="#94A3B8" Margin="15,0,5,0" FontSize="12" FontWeight="SemiBold"/>
+                                <CheckBox x:Name="ChkHistoryFilterT" Content="T" VerticalAlignment="Center" Foreground="#EF4444" Margin="3,0" Checked="HistoryFilterCheckbox_Changed" Unchecked="HistoryFilterCheckbox_Changed"/>
+                                <CheckBox x:Name="ChkHistoryFilterR" Content="R" VerticalAlignment="Center" Foreground="#EF4444" Margin="3,0" Checked="HistoryFilterCheckbox_Changed" Unchecked="HistoryFilterCheckbox_Changed"/>
+                                <CheckBox x:Name="ChkHistoryFilterW" Content="W" VerticalAlignment="Center" Foreground="#EF4444" Margin="3,0" Checked="HistoryFilterCheckbox_Changed" Unchecked="HistoryFilterCheckbox_Changed"/>
+                                <CheckBox x:Name="ChkHistoryFilterV" Content="V" VerticalAlignment="Center" Foreground="#EF4444" Margin="3,0" Checked="HistoryFilterCheckbox_Changed" Unchecked="HistoryFilterCheckbox_Changed"/>
+                                <CheckBox x:Name="ChkHistoryFilterS" Content="S" VerticalAlignment="Center" Foreground="#EF4444" Margin="3,0" Checked="HistoryFilterCheckbox_Changed" Unchecked="HistoryFilterCheckbox_Changed"/>
+                                <CheckBox x:Name="ChkHistoryFilterG" Content="G" VerticalAlignment="Center" Foreground="#EF4444" Margin="3,0" Checked="HistoryFilterCheckbox_Changed" Unchecked="HistoryFilterCheckbox_Changed"/>
+
+                                <Button x:Name="BtnHistoryClearFilters" Content="Xoá Lọc" Width="65" Height="26" Margin="15,0,0,0" Background="#475569" Foreground="White" BorderThickness="0" FontSize="11" FontWeight="SemiBold" Click="BtnHistoryClearFilters_Click">
+                                    <Button.Resources>
+                                        <Style TargetType="Border">
+                                            <Setter Property="CornerRadius" Value="4"/>
+                                        </Style>
+                                    </Button.Resources>
+                                </Button>
+                            </StackPanel>
+
+                            <DataGrid Grid.Row="2" x:Name="DgridHistoryTasks" ItemsSource="{Binding HistoryTasks}" AutoGenerateColumns="False" CanUserAddRows="False" 
                                       Background="Transparent" BorderThickness="0" HeadersVisibility="Column" GridLinesVisibility="Horizontal"
                                       RowHeaderWidth="0" IsReadOnly="True">
                                 <DataGrid.RowStyle>
@@ -1006,37 +1031,144 @@
                                     <DataGridTextColumn Header="Link Video (ID)" Binding="{Binding VideoUrl, Converter={StaticResource YoutubeUrlConverter}}" Width="1.6*"/>
                                     <DataGridTextColumn Header="Ngôn ngữ" Binding="{Binding TargetLanguage}" Width="1*"/>
                                     <DataGridTextColumn Header="Voice ID" Binding="{Binding VoiceId}" Width="0.8*"/>
-                                    <DataGridTemplateColumn Header="Steps" Width="1.4*">
-                                        <DataGridTemplateColumn.CellTemplate>
-                                            <DataTemplate>
-                                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                                    <CheckBox IsChecked="{Binding Step1}" Content="1" Margin="2,0" IsEnabled="False"/>
-                                                    <CheckBox IsChecked="{Binding Step2}" Content="2" Margin="2,0" IsEnabled="False"/>
-                                                    <CheckBox IsChecked="{Binding Step3}" Content="3" Margin="2,0" IsEnabled="False"/>
-                                                    <CheckBox IsChecked="{Binding Step4}" Content="4" Margin="2,0" IsEnabled="False"/>
-                                                    <CheckBox IsChecked="{Binding Step5}" Content="5" Margin="2,0" IsEnabled="False"/>
-                                                </StackPanel>
-                                            </DataTemplate>
-                                        </DataGridTemplateColumn.CellTemplate>
-                                    </DataGridTemplateColumn>
-                                    <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="1*">
-                                        <DataGridTextColumn.ElementStyle>
-                                            <Style TargetType="TextBlock">
-                                                <Setter Property="FontWeight" Value="SemiBold"/>
-                                                <Style.Triggers>
-                                                    <Trigger Property="Text" Value="Done">
-                                                        <Setter Property="Foreground" Value="#10B981"/>
-                                                    </Trigger>
-                                                    <Trigger Property="Text" Value="Failed">
-                                                        <Setter Property="Foreground" Value="#EF4444"/>
-                                                    </Trigger>
-                                                    <Trigger Property="Text" Value="Pending">
-                                                        <Setter Property="Foreground" Value="#94A3B8"/>
-                                                    </Trigger>
-                                                </Style.Triggers>
-                                            </Style>
-                                        </DataGridTextColumn.ElementStyle>
-                                    </DataGridTextColumn>
+                                    <DataGridTemplateColumn Header="Steps Status" Width="2.2*">
+                                         <DataGridTemplateColumn.HeaderStyle>
+                                             <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}">
+                                                 <Setter Property="HorizontalContentAlignment" Value="Center"/>
+                                             </Style>
+                                         </DataGridTemplateColumn.HeaderStyle>
+                                         <DataGridTemplateColumn.CellTemplate>
+                                             <DataTemplate>
+                                                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                     <!-- Step 1: Download Thumbnail -->
+                                                     <Border Width="20" Height="20" CornerRadius="10" Margin="2,0" ToolTip="Step 1: Download Thumbnail">
+                                                         <Border.Style>
+                                                             <Style TargetType="Border">
+                                                                 <Setter Property="Background" Value="#475569"/>
+                                                                 <Style.Triggers>
+                                                                     <DataTrigger Binding="{Binding Step1Status}" Value="Running">
+                                                                         <Setter Property="Background" Value="#F59E0B"/>
+                                                                     </DataTrigger>
+                                                                     <DataTrigger Binding="{Binding Step1Status}" Value="Done">
+                                                                         <Setter Property="Background" Value="#10B981"/>
+                                                                     </DataTrigger>
+                                                                     <DataTrigger Binding="{Binding Step1Status}" Value="Failed">
+                                                                         <Setter Property="Background" Value="#EF4444"/>
+                                                                     </DataTrigger>
+                                                                 </Style.Triggers>
+                                                             </Style>
+                                                         </Border.Style>
+                                                         <TextBlock Text="T" Foreground="White" FontSize="10" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                     </Border>
+
+                                                     <!-- Step 2: Get Transcript -->
+                                                     <Border Width="20" Height="20" CornerRadius="10" Margin="2,0" ToolTip="Step 2: Get Transcript">
+                                                         <Border.Style>
+                                                             <Style TargetType="Border">
+                                                                 <Setter Property="Background" Value="#475569"/>
+                                                                 <Style.Triggers>
+                                                                     <DataTrigger Binding="{Binding Step2Status}" Value="Running">
+                                                                         <Setter Property="Background" Value="#F59E0B"/>
+                                                                     </DataTrigger>
+                                                                     <DataTrigger Binding="{Binding Step2Status}" Value="Done">
+                                                                         <Setter Property="Background" Value="#10B981"/>
+                                                                     </DataTrigger>
+                                                                     <DataTrigger Binding="{Binding Step2Status}" Value="Failed">
+                                                                         <Setter Property="Background" Value="#EF4444"/>
+                                                                     </DataTrigger>
+                                                                 </Style.Triggers>
+                                                             </Style>
+                                                         </Border.Style>
+                                                         <TextBlock Text="R" Foreground="White" FontSize="10" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                     </Border>
+
+                                                     <!-- Step 3: Rewrite Script -->
+                                                     <Border Width="20" Height="20" CornerRadius="10" Margin="2,0" ToolTip="Step 3: ChatGPT Rewrite">
+                                                         <Border.Style>
+                                                             <Style TargetType="Border">
+                                                                 <Setter Property="Background" Value="#475569"/>
+                                                                 <Style.Triggers>
+                                                                     <DataTrigger Binding="{Binding Step3Status}" Value="Running">
+                                                                         <Setter Property="Background" Value="#F59E0B"/>
+                                                                     </DataTrigger>
+                                                                     <DataTrigger Binding="{Binding Step3Status}" Value="Done">
+                                                                         <Setter Property="Background" Value="#10B981"/>
+                                                                     </DataTrigger>
+                                                                     <DataTrigger Binding="{Binding Step3Status}" Value="Failed">
+                                                                         <Setter Property="Background" Value="#EF4444"/>
+                                                                     </DataTrigger>
+                                                                 </Style.Triggers>
+                                                             </Style>
+                                                         </Border.Style>
+                                                         <TextBlock Text="W" Foreground="White" FontSize="10" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                     </Border>
+
+                                                     <!-- Step 4: Voiceover -->
+                                                     <Border Width="20" Height="20" CornerRadius="10" Margin="2,0" ToolTip="Step 4: Voiceover">
+                                                         <Border.Style>
+                                                             <Style TargetType="Border">
+                                                                 <Setter Property="Background" Value="#475569"/>
+                                                                 <Style.Triggers>
+                                                                     <DataTrigger Binding="{Binding Step4Status}" Value="Running">
+                                                                         <Setter Property="Background" Value="#F59E0B"/>
+                                                                     </DataTrigger>
+                                                                     <DataTrigger Binding="{Binding Step4Status}" Value="Done">
+                                                                         <Setter Property="Background" Value="#10B981"/>
+                                                                     </DataTrigger>
+                                                                     <DataTrigger Binding="{Binding Step4Status}" Value="Failed">
+                                                                         <Setter Property="Background" Value="#EF4444"/>
+                                                                     </DataTrigger>
+                                                                 </Style.Triggers>
+                                                             </Style>
+                                                         </Border.Style>
+                                                         <TextBlock Text="V" Foreground="White" FontSize="10" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                     </Border>
+
+                                                     <!-- StepSrt: SRT -->
+                                                     <Border Width="20" Height="20" CornerRadius="10" Margin="2,0" ToolTip="Step: SRT Subtitles">
+                                                         <Border.Style>
+                                                             <Style TargetType="Border">
+                                                                 <Setter Property="Background" Value="#475569"/>
+                                                                 <Style.Triggers>
+                                                                     <DataTrigger Binding="{Binding StepSrtStatus}" Value="Running">
+                                                                         <Setter Property="Background" Value="#F59E0B"/>
+                                                                     </DataTrigger>
+                                                                     <DataTrigger Binding="{Binding StepSrtStatus}" Value="Done">
+                                                                         <Setter Property="Background" Value="#10B981"/>
+                                                                     </DataTrigger>
+                                                                     <DataTrigger Binding="{Binding StepSrtStatus}" Value="Failed">
+                                                                         <Setter Property="Background" Value="#EF4444"/>
+                                                                     </DataTrigger>
+                                                                 </Style.Triggers>
+                                                             </Style>
+                                                         </Border.Style>
+                                                         <TextBlock Text="S" Foreground="White" FontSize="10" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                     </Border>
+
+                                                     <!-- Step 5: Image Gen -->
+                                                     <Border Width="20" Height="20" CornerRadius="10" Margin="2,0" ToolTip="Step 5: Image Generation">
+                                                         <Border.Style>
+                                                             <Style TargetType="Border">
+                                                                 <Setter Property="Background" Value="#475569"/>
+                                                                 <Style.Triggers>
+                                                                     <DataTrigger Binding="{Binding Step5Status}" Value="Running">
+                                                                         <Setter Property="Background" Value="#F59E0B"/>
+                                                                     </DataTrigger>
+                                                                     <DataTrigger Binding="{Binding Step5Status}" Value="Done">
+                                                                         <Setter Property="Background" Value="#10B981"/>
+                                                                     </DataTrigger>
+                                                                     <DataTrigger Binding="{Binding Step5Status}" Value="Failed">
+                                                                         <Setter Property="Background" Value="#EF4444"/>
+                                                                     </DataTrigger>
+                                                                 </Style.Triggers>
+                                                             </Style>
+                                                         </Border.Style>
+                                                         <TextBlock Text="G" Foreground="White" FontSize="10" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                     </Border>
+                                                 </StackPanel>
+                                             </DataTemplate>
+                                         </DataGridTemplateColumn.CellTemplate>
+                                     </DataGridTemplateColumn>
                                     <DataGridTemplateColumn Header="Action" Width="1.8*">
                                         <DataGridTemplateColumn.CellTemplate>
                                             <DataTemplate>
@@ -1054,5 +1186,56 @@
                 </Grid>
             </TabItem>
         </TabControl>
+
+        <!-- Sidebar Drawer Overlay (slides from right, resizable via drag handle) -->
+        <Grid x:Name="SidebarLogs" Grid.Row="1" HorizontalAlignment="Right" Visibility="Collapsed">
+            <Grid.ColumnDefinitions>
+                <!-- Drag handle column -->
+                <ColumnDefinition Width="Auto"/>
+                <!-- Sidebar content column -->
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- Drag handle for resizing -->
+            <Border Grid.Column="0" Width="6" Background="#334155" Cursor="SizeWE"
+                    MouseLeftButtonDown="SidebarDragHandle_MouseLeftButtonDown"
+                    MouseMove="SidebarDragHandle_MouseMove"
+                    MouseLeftButtonUp="SidebarDragHandle_MouseLeftButtonUp">
+                <Border.Style>
+                    <Style TargetType="Border">
+                        <Style.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="#3B82F6"/>
+                            </Trigger>
+                        </Style.Triggers>
+                    </Style>
+                </Border.Style>
+            </Border>
+
+            <!-- Sidebar content -->
+            <Border Grid.Column="1" Background="#0B0F19" BorderBrush="#3B82F6" BorderThickness="1,0,0,0">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <!-- Header with close button -->
+                    <Grid Grid.Row="0" Margin="15,15,15,10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="Task Live Logs" Foreground="White" FontSize="14" FontWeight="Bold" VerticalAlignment="Center"/>
+                        <Button Grid.Column="1" Content="✕" Width="30" Height="30" Background="Transparent" Foreground="White" BorderThickness="0" FontSize="16" Click="BtnCloseSidebar_Click"/>
+                    </Grid>
+
+                    <!-- Log content (stretches to fill sidebar width) -->
+                    <TextBox Grid.Row="1" x:Name="TxtSidebarLog" Background="Transparent" Foreground="#F8FAFC" BorderThickness="0" 
+                              Margin="15,0,15,15" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" IsReadOnly="True" 
+                              FontSize="12" FontFamily="Consolas" AcceptsReturn="True"/>
+                </Grid>
+            </Border>
+        </Grid>
     </Grid>
 </Window>

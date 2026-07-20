@@ -15,6 +15,15 @@ namespace AutoCreateImage
         private async Task RunSingleVideoFlowAsync(AutomationTask task)
         {
             task.Status = "Running";
+            
+            // Reset all step status fields at start
+            task.Step1Status = task.Step1 ? "Pending" : "Pending";
+            task.Step2Status = task.Step2 ? "Pending" : "Pending";
+            task.Step3Status = task.Step3 ? "Pending" : "Pending";
+            task.Step4Status = task.Step4 ? "Pending" : "Pending";
+            task.StepSrtStatus = task.StepSrt ? "Pending" : "Pending";
+            task.Step5Status = task.Step5 ? "Pending" : "Pending";
+
             LogTask(task, $"[FLOW] Starting parallel flow for video: {task.VideoId}");
 
             try
@@ -30,8 +39,8 @@ namespace AutoCreateImage
             }
 
             // Track the status of the two pipelines to update overall Task status
-            string pipeline1Status = task.Step1 ? "Pending Thumbnail" : "Done";
-            string pipeline2Status = (task.Step2 || task.Step3 || task.Step4) ? "Pending Script" : "Done";
+            string pipeline1Status = (task.Step1 || task.Step5) ? "Pending Thumbnail/Image" : "Done";
+            string pipeline2Status = (task.Step2 || task.Step3 || task.Step4 || task.StepSrt) ? "Pending Script/Voice" : "Done";
 
             var updateOverallStatus = new Action(() =>
             {
@@ -60,22 +69,43 @@ namespace AutoCreateImage
                         if (File.Exists(thumbnailPath))
                         {
                             LogTask(task, "[IMAGE-BRANCH] Thumbnail already exists. Skipping Step 1.");
+                            task.Step1Status = "Done";
                         }
                         else
                         {
-                            pipeline1Status = "Step 1: Thumbnail";
-                            updateOverallStatus();
-                            LogTask(task, "[IMAGE-BRANCH] Starting Step 1: Download Thumbnail...");
-                            await _step1.ExecuteAsync(task, LogTask);
+                            try
+                            {
+                                pipeline1Status = "Step 1: Thumbnail";
+                                updateOverallStatus();
+                                task.Step1Status = "Running";
+                                LogTask(task, "[IMAGE-BRANCH] Starting Step 1: Download Thumbnail...");
+                                await _step1.ExecuteAsync(task, LogTask);
+                                task.Step1Status = "Done";
+                            }
+                            catch
+                            {
+                                task.Step1Status = "Failed";
+                                throw;
+                            }
                         }
                     }
 
                     if (task.Step5)
                     {
-                        pipeline1Status = "Step 5: Image Gen";
-                        updateOverallStatus();
-                        LogTask(task, "[IMAGE-BRANCH] Starting Step 5: Image Generation...");
-                        await _step5.ExecuteAsync(task, LogTask);
+                        try
+                        {
+                            pipeline1Status = "Step 5: Image Gen";
+                            updateOverallStatus();
+                            task.Step5Status = "Running";
+                            LogTask(task, "[IMAGE-BRANCH] Starting Step 5: Image Generation...");
+                            await _step5.ExecuteAsync(task, LogTask);
+                            task.Step5Status = "Done";
+                        }
+                        catch
+                        {
+                            task.Step5Status = "Failed";
+                            throw;
+                        }
                     }
 
                     pipeline1Status = "Done";
@@ -138,13 +168,24 @@ namespace AutoCreateImage
                         {
                             LogTask(task, "[SCRIPT-BRANCH] transcript.txt already exists. Skipping extraction.");
                             transcript = await File.ReadAllTextAsync(path);
+                            task.Step2Status = "Done";
                         }
                         else
                         {
-                            pipeline2Status = "Step 2: Transcript";
-                            updateOverallStatus();
-                            LogTask(task, "[SCRIPT-BRANCH] Starting Step 2: Transcript Extraction...");
-                            transcript = await _step2.ExecuteAsync(task, context!, LogTask);
+                            try
+                            {
+                                pipeline2Status = "Step 2: Transcript";
+                                updateOverallStatus();
+                                task.Step2Status = "Running";
+                                LogTask(task, "[SCRIPT-BRANCH] Starting Step 2: Transcript Extraction...");
+                                transcript = await _step2.ExecuteAsync(task, context!, LogTask);
+                                task.Step2Status = "Done";
+                            }
+                            catch
+                            {
+                                task.Step2Status = "Failed";
+                                throw;
+                            }
                         }
                     }
                     else if (task.Step3)
@@ -165,25 +206,36 @@ namespace AutoCreateImage
                         {
                             LogTask(task, "[SCRIPT-BRANCH] rewritten_script.txt already exists. Skipping ChatGPT rewrite.");
                             rewrittenScript = await File.ReadAllTextAsync(path);
+                            task.Step3Status = "Done";
                         }
                         else
                         {
-                            if (string.IsNullOrWhiteSpace(transcript))
+                            try
                             {
-                                string transPath = Path.Combine(task.OutputDir, "transcript.txt");
-                                if (File.Exists(transPath))
+                                if (string.IsNullOrWhiteSpace(transcript))
                                 {
-                                    transcript = await File.ReadAllTextAsync(transPath);
+                                    string transPath = Path.Combine(task.OutputDir, "transcript.txt");
+                                    if (File.Exists(transPath))
+                                    {
+                                        transcript = await File.ReadAllTextAsync(transPath);
+                                    }
                                 }
+                                if (string.IsNullOrWhiteSpace(transcript))
+                                {
+                                    throw new Exception("Transcript is empty. Cannot run Step 3.");
+                                }
+                                pipeline2Status = "Step 3: ChatGPT";
+                                updateOverallStatus();
+                                task.Step3Status = "Running";
+                                LogTask(task, "[SCRIPT-BRANCH] Starting Step 3: ChatGPT Rewrite...");
+                                rewrittenScript = await _step3.ExecuteAsync(task.TargetLanguage, task.OutputDir, transcript, task.VideoId, task, context!, LogTask);
+                                task.Step3Status = "Done";
                             }
-                            if (string.IsNullOrWhiteSpace(transcript))
+                            catch
                             {
-                                throw new Exception("Transcript is empty. Cannot run Step 3.");
+                                task.Step3Status = "Failed";
+                                throw;
                             }
-                            pipeline2Status = "Step 3: ChatGPT";
-                            updateOverallStatus();
-                            LogTask(task, "[SCRIPT-BRANCH] Starting Step 3: ChatGPT Rewrite...");
-                            rewrittenScript = await _step3.ExecuteAsync(task.TargetLanguage, task.OutputDir, transcript, task.VideoId, task, context!, LogTask);
                         }
                     }
                     else if (task.Step4)
@@ -214,26 +266,76 @@ namespace AutoCreateImage
                         if (File.Exists(voiceoverPath))
                         {
                             LogTask(task, "[SCRIPT-BRANCH] voiceover.mp3 already exists. Skipping Voiceover generation.");
+                            task.Step4Status = "Done";
+                            if (task.StepSrt && File.Exists(Path.Combine(task.OutputDir, "voiceover.srt")))
+                            {
+                                task.StepSrtStatus = "Done";
+                            }
                         }
                         else
                         {
-                            if (string.IsNullOrWhiteSpace(rewrittenScript))
+                            try
                             {
-                                string rewPath = Path.Combine(task.OutputDir, "rewritten_script.txt");
-                                if (File.Exists(rewPath))
+                                if (string.IsNullOrWhiteSpace(rewrittenScript))
                                 {
-                                    rewrittenScript = await File.ReadAllTextAsync(rewPath);
+                                    string rewPath = Path.Combine(task.OutputDir, "rewritten_script.txt");
+                                    if (File.Exists(rewPath))
+                                    {
+                                        rewrittenScript = await File.ReadAllTextAsync(rewPath);
+                                    }
                                 }
+                                if (string.IsNullOrWhiteSpace(rewrittenScript))
+                                {
+                                    throw new Exception("Rewritten script is empty. Cannot run Step 4.");
+                                }
+                                pipeline2Status = "Step 4: Voiceover";
+                                updateOverallStatus();
+                                task.Step4Status = "Running";
+                                if (task.StepSrt)
+                                {
+                                    task.StepSrtStatus = "Pending";
+                                }
+                                LogTask(task, "[SCRIPT-BRANCH] Starting Step 4: Voiceover Generation...");
+                                string apiKey = ConfigService.CurrentSettings.Ai84ApiKey;
+                                await _step4.ExecuteAsync(task.VoiceId, task.OutputDir, rewrittenScript, task.VideoId, task, apiKey, LogTask);
+                                task.Step4Status = "Done";
                             }
-                            if (string.IsNullOrWhiteSpace(rewrittenScript))
+                            catch
                             {
-                                throw new Exception("Rewritten script is empty. Cannot run Step 4.");
+                                task.Step4Status = "Failed";
+                                if (task.StepSrt)
+                                {
+                                    task.StepSrtStatus = "Failed";
+                                }
+                                throw;
                             }
-                            pipeline2Status = "Step 4: Voiceover";
-                            updateOverallStatus();
-                            LogTask(task, "[SCRIPT-BRANCH] Starting Step 4: Voiceover Generation...");
-                            string apiKey = ConfigService.CurrentSettings.Ai84ApiKey;
-                            await _step4.ExecuteAsync(task.VoiceId, task.OutputDir, rewrittenScript, task.VideoId, task, apiKey, LogTask);
+                        }
+                    }
+
+                    if (!task.Step4 && task.StepSrt)
+                    {
+                        string srtPath = Path.Combine(task.OutputDir, "voiceover.srt");
+                        if (File.Exists(srtPath))
+                        {
+                            LogTask(task, "[SCRIPT-BRANCH] voiceover.srt already exists. Skipping SRT generation.");
+                            task.StepSrtStatus = "Done";
+                        }
+                        else
+                        {
+                            try
+                            {
+                                pipeline2Status = "SRT Generation";
+                                updateOverallStatus();
+                                task.StepSrtStatus = "Running";
+                                LogTask(task, "[SCRIPT-BRANCH] Starting SRT only generation...");
+                                await _step4.GenerateSrtOnlyAsync(task.OutputDir, task, LogTask);
+                                task.StepSrtStatus = "Done";
+                            }
+                            catch
+                            {
+                                task.StepSrtStatus = "Failed";
+                                throw;
+                            }
                         }
                     }
 

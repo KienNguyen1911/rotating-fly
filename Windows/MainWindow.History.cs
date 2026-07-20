@@ -29,6 +29,7 @@ namespace AutoCreateImage
             {
                 HistoryTasks.Add(task);
             }
+            ApplyHistoryFilters();
         }
 
         private void LboxHistoryDates_SelectionChanged(object sender, SelectionChangedEventArgs e)

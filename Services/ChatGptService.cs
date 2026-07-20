@@ -84,7 +84,7 @@ namespace AutoCreateImage
         /// <summary>
         /// Waits for ChatGPT to finish generating a response by polling for the stop button.
         /// </summary>
-        public async Task WaitForGenerationToFinishAsync(IPage page, int timeoutMs = 90000)
+        public async Task WaitForGenerationToFinishAsync(IPage page, int timeoutMs = 1800000)
         {
             int elapsed = 0;
             while (elapsed < timeoutMs)
@@ -94,8 +94,8 @@ namespace AutoCreateImage
                 {
                     break;
                 }
-                await Task.Delay(2000);
-                elapsed += 2000;
+                await Task.Delay(5000);
+                elapsed += 5000;
             }
             await Task.Delay(2000);
         }

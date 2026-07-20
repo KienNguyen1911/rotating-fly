@@ -17,6 +17,8 @@ namespace AutoCreateImage
         private bool _step3 = true;
         private bool _step4 = true;
         private bool _step5 = true;
+        private bool _stepSrt = true;
+        private bool _isSelected = false;
         private string _status = "Pending";
         private string _selectedProfile = string.Empty;
         private string _logs = string.Empty;
@@ -95,6 +97,18 @@ namespace AutoCreateImage
             set { _step5 = value; OnPropertyChanged(); }
         }
 
+        public bool StepSrt
+        {
+            get => _stepSrt;
+            set { _stepSrt = value; OnPropertyChanged(); }
+        }
+
+        public bool IsSelected
+        {
+            get => _isSelected;
+            set { _isSelected = value; OnPropertyChanged(); }
+        }
+
         public string Status
         {
             get => _status;
@@ -105,6 +119,49 @@ namespace AutoCreateImage
         {
             get => _logs;
             set { _logs = value; OnPropertyChanged(); }
+        }
+
+        private string _step1Status = "Pending";
+        private string _step2Status = "Pending";
+        private string _step3Status = "Pending";
+        private string _step4Status = "Pending";
+        private string _step5Status = "Pending";
+        private string _stepSrtStatus = "Pending";
+
+        public string Step1Status
+        {
+            get => _step1Status;
+            set { _step1Status = value ?? "Pending"; OnPropertyChanged(); }
+        }
+
+        public string Step2Status
+        {
+            get => _step2Status;
+            set { _step2Status = value ?? "Pending"; OnPropertyChanged(); }
+        }
+
+        public string Step3Status
+        {
+            get => _step3Status;
+            set { _step3Status = value ?? "Pending"; OnPropertyChanged(); }
+        }
+
+        public string Step4Status
+        {
+            get => _step4Status;
+            set { _step4Status = value ?? "Pending"; OnPropertyChanged(); }
+        }
+
+        public string Step5Status
+        {
+            get => _step5Status;
+            set { _step5Status = value ?? "Pending"; OnPropertyChanged(); }
+        }
+
+        public string StepSrtStatus
+        {
+            get => _stepSrtStatus;
+            set { _stepSrtStatus = value ?? "Pending"; OnPropertyChanged(); }
         }
 
         private int _srtMethod = 1;

@@ -101,7 +101,7 @@ namespace AutoCreateImage
                 await Task.Delay(5000);
 
                 logTask(task, "Waiting for AI to finish writing script...");
-                await _chatGptService.WaitForGenerationToFinishAsync(page, 90000);
+                await _chatGptService.WaitForGenerationToFinishAsync(page, 1800000);
 
                 await Task.Delay(2000);
 

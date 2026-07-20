@@ -70,9 +70,16 @@ namespace AutoCreateImage
                     existing.Step3 = task.Step3;
                     existing.Step4 = task.Step4;
                     existing.Step5 = task.Step5;
+                    existing.StepSrt = task.StepSrt;
                     existing.Status = task.Status;
                     existing.SelectedProfile = task.SelectedProfile;
                     existing.Logs = task.Logs;
+                    existing.Step1Status = task.Step1Status;
+                    existing.Step2Status = task.Step2Status;
+                    existing.Step3Status = task.Step3Status;
+                    existing.Step4Status = task.Step4Status;
+                    existing.Step5Status = task.Step5Status;
+                    existing.StepSrtStatus = task.StepSrtStatus;
                 }
                 else
                 {
@@ -87,10 +94,17 @@ namespace AutoCreateImage
                         Step3 = task.Step3,
                         Step4 = task.Step4,
                         Step5 = task.Step5,
+                        StepSrt = task.StepSrt,
                         Status = task.Status,
                         SelectedProfile = task.SelectedProfile,
                         Logs = task.Logs,
-                        CreatedAt = task.CreatedAt
+                        CreatedAt = task.CreatedAt,
+                        Step1Status = task.Step1Status,
+                        Step2Status = task.Step2Status,
+                        Step3Status = task.Step3Status,
+                        Step4Status = task.Step4Status,
+                        Step5Status = task.Step5Status,
+                        StepSrtStatus = task.StepSrtStatus
                     });
                 }
 

@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Windows;
+using System.Windows.Controls;
 using System.Collections.ObjectModel;
 
 namespace AutoCreateImage
@@ -395,6 +396,158 @@ namespace AutoCreateImage
             {
                 BtnTestProxies.IsEnabled = true;
                 BtnTestProxies.Content = "Test Proxies";
+            }
+        }
+
+        private void FilterFields_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
+        {
+            ApplyFilters();
+        }
+
+        private void FilterCheckbox_Changed(object sender, RoutedEventArgs e)
+        {
+            ApplyFilters();
+        }
+
+        private void BtnClearFilters_Click(object sender, RoutedEventArgs e)
+        {
+            TxtFilterVideoUrl.Text = string.Empty;
+            TxtFilterLanguage.Text = string.Empty;
+            TxtFilterVoiceId.Text = string.Empty;
+            ChkFilterT.IsChecked = false;
+            ChkFilterR.IsChecked = false;
+            ChkFilterW.IsChecked = false;
+            ChkFilterV.IsChecked = false;
+            ChkFilterS.IsChecked = false;
+            ChkFilterG.IsChecked = false;
+            ApplyFilters();
+        }
+
+        private void ApplyFilters()
+        {
+            var view = System.Windows.Data.CollectionViewSource.GetDefaultView(Tasks);
+            if (view == null) return;
+
+            string filterVideo = TxtFilterVideoUrl.Text.Trim();
+            string filterLang = TxtFilterLanguage.Text.Trim();
+            string filterVoice = TxtFilterVoiceId.Text.Trim();
+
+            bool chkT = ChkFilterT.IsChecked == true;
+            bool chkR = ChkFilterR.IsChecked == true;
+            bool chkW = ChkFilterW.IsChecked == true;
+            bool chkV = ChkFilterV.IsChecked == true;
+            bool chkS = ChkFilterS.IsChecked == true;
+            bool chkG = ChkFilterG.IsChecked == true;
+            bool anyFailedFilter = chkT || chkR || chkW || chkV || chkS || chkG;
+
+            if (string.IsNullOrEmpty(filterVideo) && string.IsNullOrEmpty(filterLang) && string.IsNullOrEmpty(filterVoice) && !anyFailedFilter)
+            {
+                view.Filter = null;
+            }
+            else
+            {
+                view.Filter = obj =>
+                {
+                    if (obj is AutomationTask task)
+                    {
+                        if (!string.IsNullOrEmpty(filterVideo) && (task.VideoUrl == null || !task.VideoUrl.Contains(filterVideo, StringComparison.OrdinalIgnoreCase)))
+                            return false;
+                        if (!string.IsNullOrEmpty(filterLang) && (task.TargetLanguage == null || !task.TargetLanguage.Contains(filterLang, StringComparison.OrdinalIgnoreCase)))
+                            return false;
+                        if (!string.IsNullOrEmpty(filterVoice) && (task.VoiceId == null || !task.VoiceId.Contains(filterVoice, StringComparison.OrdinalIgnoreCase)))
+                            return false;
+                        
+                        if (anyFailedFilter)
+                        {
+                            bool matches = false;
+                            if (chkT && task.Step1Status == "Failed") matches = true;
+                            if (chkR && task.Step2Status == "Failed") matches = true;
+                            if (chkW && task.Step3Status == "Failed") matches = true;
+                            if (chkV && task.Step4Status == "Failed") matches = true;
+                            if (chkS && task.StepSrtStatus == "Failed") matches = true;
+                            if (chkG && task.Step5Status == "Failed") matches = true;
+                            if (!matches) return false;
+                        }
+                        return true;
+                    }
+                    return false;
+                };
+            }
+        }
+
+        private void HistoryFilterFields_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            ApplyHistoryFilters();
+        }
+
+        private void HistoryFilterCheckbox_Changed(object sender, RoutedEventArgs e)
+        {
+            ApplyHistoryFilters();
+        }
+
+        private void BtnHistoryClearFilters_Click(object sender, RoutedEventArgs e)
+        {
+            TxtHistoryFilterVideoUrl.Text = string.Empty;
+            TxtHistoryFilterLanguage.Text = string.Empty;
+            TxtHistoryFilterVoiceId.Text = string.Empty;
+            ChkHistoryFilterT.IsChecked = false;
+            ChkHistoryFilterR.IsChecked = false;
+            ChkHistoryFilterW.IsChecked = false;
+            ChkHistoryFilterV.IsChecked = false;
+            ChkHistoryFilterS.IsChecked = false;
+            ChkHistoryFilterG.IsChecked = false;
+            ApplyHistoryFilters();
+        }
+
+        public void ApplyHistoryFilters()
+        {
+            var view = System.Windows.Data.CollectionViewSource.GetDefaultView(HistoryTasks);
+            if (view == null) return;
+
+            string filterVideo = TxtHistoryFilterVideoUrl.Text.Trim();
+            string filterLang = TxtHistoryFilterLanguage.Text.Trim();
+            string filterVoice = TxtHistoryFilterVoiceId.Text.Trim();
+
+            bool chkT = ChkHistoryFilterT.IsChecked == true;
+            bool chkR = ChkHistoryFilterR.IsChecked == true;
+            bool chkW = ChkHistoryFilterW.IsChecked == true;
+            bool chkV = ChkHistoryFilterV.IsChecked == true;
+            bool chkS = ChkHistoryFilterS.IsChecked == true;
+            bool chkG = ChkHistoryFilterG.IsChecked == true;
+            bool anyFailedFilter = chkT || chkR || chkW || chkV || chkS || chkG;
+
+            if (string.IsNullOrEmpty(filterVideo) && string.IsNullOrEmpty(filterLang) && string.IsNullOrEmpty(filterVoice) && !anyFailedFilter)
+            {
+                view.Filter = null;
+            }
+            else
+            {
+                view.Filter = obj =>
+                {
+                    if (obj is HistoryTaskModel task)
+                    {
+                        if (!string.IsNullOrEmpty(filterVideo) && (task.VideoUrl == null || !task.VideoUrl.Contains(filterVideo, StringComparison.OrdinalIgnoreCase)))
+                            return false;
+                        if (!string.IsNullOrEmpty(filterLang) && (task.TargetLanguage == null || !task.TargetLanguage.Contains(filterLang, StringComparison.OrdinalIgnoreCase)))
+                            return false;
+                        if (!string.IsNullOrEmpty(filterVoice) && (task.VoiceId == null || !task.VoiceId.Contains(filterVoice, StringComparison.OrdinalIgnoreCase)))
+                            return false;
+                        
+                        if (anyFailedFilter)
+                        {
+                            bool matches = false;
+                            if (chkT && task.Step1Status == "Failed") matches = true;
+                            if (chkR && task.Step2Status == "Failed") matches = true;
+                            if (chkW && task.Step3Status == "Failed") matches = true;
+                            if (chkV && task.Step4Status == "Failed") matches = true;
+                            if (chkS && task.StepSrtStatus == "Failed") matches = true;
+                            if (chkG && task.Step5Status == "Failed") matches = true;
+                            if (!matches) return false;
+                        }
+                        return true;
+                    }
+                    return false;
+                };
             }
         }
 

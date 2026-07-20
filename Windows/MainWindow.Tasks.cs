@@ -167,6 +167,27 @@ namespace AutoCreateImage
                     return;
                 }
 
+                bool runStep1 = ChkStepDownloadThumbnail.IsChecked == true;
+                bool runStep2 = ChkStepGetTranscript.IsChecked == true;
+                bool runStep3 = ChkStepRewrittenTranscript.IsChecked == true;
+                bool runStep4 = ChkStepVoiceover.IsChecked == true;
+                bool runStep5 = ChkStepGenerateThumbnail.IsChecked == true;
+                bool runStepSrt = ChkStepSrt.IsChecked == true;
+
+                if (!runStep1 && !runStep2 && !runStep3 && !runStep4 && !runStep5 && !runStepSrt)
+                {
+                    MessageBox.Show("Please select at least one feature/step to run.", "No Feature Selected", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+
+                // Map global checkboxes to task
+                task.Step1 = runStep1;
+                task.Step2 = runStep2;
+                task.Step3 = runStep3;
+                task.Step4 = runStep4;
+                task.Step5 = runStep5;
+                task.StepSrt = runStepSrt;
+
                 SaveApplicationSettings();
                 btn.IsEnabled = false;
                 try
@@ -193,20 +214,44 @@ namespace AutoCreateImage
 
         private async void BtnRun_Click(object sender, RoutedEventArgs e)
         {
-            var pendingTasks = Tasks.Where(t => t.Status == "Pending" || t.Status == "Failed").ToArray();
-            if (pendingTasks.Length == 0)
+            var selectedTasks = Tasks.Where(t => t.IsSelected).ToArray();
+            if (selectedTasks.Length == 0)
             {
-                MessageBox.Show("No pending or failed tasks to run.", "No Tasks", MessageBoxButton.OK, MessageBoxImage.Information);
+                MessageBox.Show("No selected tasks to run. Please check the 'Chọn' column.", "No Tasks Selected", MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
 
-            foreach (var task in pendingTasks)
+            foreach (var task in selectedTasks)
             {
                 if (string.IsNullOrEmpty(task.SelectedProfile))
                 {
                     MessageBox.Show($"Please select a Chrome Profile for the task with Video ID: {task.VideoId}.", "Profile Required", MessageBoxButton.OK, MessageBoxImage.Warning);
                     return;
                 }
+            }
+
+            bool runStep1 = ChkStepDownloadThumbnail.IsChecked == true;
+            bool runStep2 = ChkStepGetTranscript.IsChecked == true;
+            bool runStep3 = ChkStepRewrittenTranscript.IsChecked == true;
+            bool runStep4 = ChkStepVoiceover.IsChecked == true;
+            bool runStep5 = ChkStepGenerateThumbnail.IsChecked == true;
+            bool runStepSrt = ChkStepSrt.IsChecked == true;
+
+            if (!runStep1 && !runStep2 && !runStep3 && !runStep4 && !runStep5 && !runStepSrt)
+            {
+                MessageBox.Show("Please select at least one feature/step to run.", "No Feature Selected", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            foreach (var task in selectedTasks)
+            {
+                // Map global checkboxes to task
+                task.Step1 = runStep1;
+                task.Step2 = runStep2;
+                task.Step3 = runStep3;
+                task.Step4 = runStep4;
+                task.Step5 = runStep5;
+                task.StepSrt = runStepSrt;
             }
 
             SaveApplicationSettings();
@@ -216,12 +261,12 @@ namespace AutoCreateImage
             {
                 int maxConcurrent = ConfigService.CurrentSettings.MaxConcurrentTasks;
                 if (maxConcurrent <= 0) maxConcurrent = 4;
-                Log($"[FLOW] Starting batch execution for {pendingTasks.Length} tasks (Max {maxConcurrent} concurrent threads)...");
+                Log($"[FLOW] Starting batch execution for {selectedTasks.Length} tasks (Max {maxConcurrent} concurrent threads)...");
 
                 await Task.Run(async () =>
                 {
                     using var concurrencySemaphore = new System.Threading.SemaphoreSlim(maxConcurrent, maxConcurrent);
-                    var tasks = pendingTasks.Select(async task =>
+                    var tasks = selectedTasks.Select(async task =>
                     {
                         await concurrencySemaphore.WaitAsync();
                         try

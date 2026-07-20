@@ -1,16 +1,5 @@
-- tôi muốn sắp xếp lại vị trí của menu tab: Task, Image Pool, Media Generator, Chrome Profiles, Settings
+tôi muốn filter status theo các chữ cái như hiện tại: T R W V S G
+nếu chọn T thì show ra các task có status failed tại step T
+nếu chọn R thì show ra các task có status faied tại step R
+tương tự và các chữ cái còn lại
 
-- mỗi chrome profile sẽ có lưu 1 custom gpt url khác nhau, nếu chưa setting thì hãy để trống
-
-- hiện tại tôi đang không get được transcript từ YoutubeExplodeApi. có vẻ như đang bị chặn IP vì spam quá nhiều, nên bạn hãy tôi tạo cấu hình để tôi có thể import file proxies.json (với format C:\Users\ngkie\Dev\AutoCreateImage\free-proxies.json) sau đó có thêm 1 button để test proxy sống hay chết
-
-=== NOT DONE =====================
-- check rewritten script
-
-- feature srt generating: tôi đang muốn sử dụng 2 cách để gen srt. hãy thêm radio button tại mỗi task để chọn gen bằng cách 1 hay cách 2. nếu cách 2 chưa config thì hãy ẩn và để disabled. default là cách 1
--- 1 là sử dụng with_transcript từ ai84, cách này sẽ yêu cầu bạn phải sửa cách polling cho đến khi có transcriptUrl.tôi mong muốn khi đã có kết quả mp3 (audioUrl) thì thời gian tối đa polling cho đến khi có transcriptUrl là (độ dài mp3 / 2)
--- 2 là sử dụng url tôi config riêng (như hệ thống hiện tại đang làm). sau khi có file mp3 xong thì sẽ gửi mp3 đó qua api để tạo srt 
-
-- feature Media Generator hãy sửa cho tôi các yêu cầu sau:
--- tại trang settings, hãy cho tôi thêm config để chọn folder effect (trong folder assets/effects sẽ chứa những effect mặc định tôi đã setting sẵn)
---  
