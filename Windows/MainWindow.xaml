@@ -5,8 +5,9 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:AutoCreateImage"
         mc:Ignorable="d"
-         Title="YouTube &amp; ChatGPT Automation Prototype" Height="750" Width="1250"
-         Background="#0F172A" FontFamily="Segoe UI">
+        Title="AssetAutomator" Height="750" Width="1250"
+        Background="#0F172A" FontFamily="Segoe UI"
+        Icon="pack://application:,,,/Resources/app_logo.png">
     <Window.Resources>
         <!-- TextBox Style -->
         <Style TargetType="TextBox">

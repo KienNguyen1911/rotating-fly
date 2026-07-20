@@ -6,7 +6,8 @@
         mc:Ignorable="d"
         Title="Select ElevenLabs Shared Voice" Height="650" Width="1050"
         WindowStartupLocation="CenterOwner"
-        Background="#0F172A" Foreground="White" FontFamily="Segoe UI" FontSize="13">
+        Background="#0F172A" Foreground="White" FontFamily="Segoe UI" FontSize="13"
+        Icon="pack://application:,,,/Resources/app_logo.png">
     <Window.Resources>
         <!-- TextBox Style -->
         <Style TargetType="TextBox">
