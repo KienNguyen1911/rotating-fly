@@ -6,6 +6,9 @@ using Microsoft.Playwright;
 
 namespace AutoCreateImage
 {
+    /// <summary>
+    /// Chrome Profile management UI handlers. Browser lifecycle delegated to BrowserService.
+    /// </summary>
     public partial class MainWindow : Window
     {
         private string GetProfilesBaseDir()
@@ -21,6 +24,7 @@ namespace AutoCreateImage
             }
             return baseDir;
         }
+
         private void LoadProfiles()
         {
             try
@@ -38,13 +42,24 @@ namespace AutoCreateImage
 
                 string defProfile = ConfigService.CurrentSettings.DefaultChromeProfile;
                 TxtDefaultProfileName.Text = string.IsNullOrEmpty(defProfile) ? "None" : defProfile;
-                TxtCustomGptUrl.Text = ConfigService.CurrentSettings.CustomGptUrl;
+
+                if (LboxProfiles.SelectedItem is string selectedProfileName)
+                {
+                    string profilePath = Path.Combine(baseDir, selectedProfileName);
+                    string gptUrlPath = Path.Combine(profilePath, "gpt_url.txt");
+                    TxtCustomGptUrl.Text = File.Exists(gptUrlPath) ? File.ReadAllText(gptUrlPath).Trim() : string.Empty;
+                }
+                else
+                {
+                    TxtCustomGptUrl.Text = string.Empty;
+                }
             }
             catch (Exception ex)
             {
                 Log($"[ERROR] Failed to load profiles: {ex.Message}");
             }
         }
+
         private void BtnRefreshProfiles_Click(object sender, RoutedEventArgs e)
         {
             LoadProfiles();
@@ -60,7 +75,6 @@ namespace AutoCreateImage
                 return;
             }
 
-            // Remove invalid characters for directory names
             foreach (char c in Path.GetInvalidFileNameChars())
             {
                 newProfileName = newProfileName.Replace(c, '_');
@@ -87,7 +101,6 @@ namespace AutoCreateImage
                 }
             }
 
-            // Refresh Profile List
             LoadProfiles();
 
             BtnCreateProfile.IsEnabled = false;
@@ -98,12 +111,12 @@ namespace AutoCreateImage
                     try
                     {
                         Log("[INIT PROFILE] Initializing Chrome browser context...");
-                        var context = await EnsureBrowserInitializedAsync(profilePath);
+                        var context = await _browserService.EnsureBrowserInitializedAsync(profilePath);
 
                         Log("[INIT PROFILE] Opening ChatGPT (https://chatgpt.com/)...");
                         var page = await context.NewPageAsync();
                         await page.GotoAsync("https://chatgpt.com/");
-                        
+
                         Log("[INIT PROFILE] Chrome window opened! PLEASE LOG IN TO CHATGPT MANUALLY.");
                         Log("[INIT PROFILE] Once logged in, close the browser window or click 'Close All Browsers' in the app to save.");
                     }
@@ -137,7 +150,7 @@ namespace AutoCreateImage
                     try
                     {
                         Log($"[INIT PROFILE] Initializing Chrome for profile: {selectedProfileName}");
-                        var context = await EnsureBrowserInitializedAsync(profilePath);
+                        var context = await _browserService.EnsureBrowserInitializedAsync(profilePath);
 
                         Log("[INIT PROFILE] Opening ChatGPT...");
                         var page = await context.NewPageAsync();
@@ -189,15 +202,10 @@ namespace AutoCreateImage
 
             string profilePath = Path.Combine(GetProfilesBaseDir(), selectedProfileName);
 
-            // First close if active
-            if (_browserContexts.TryGetValue(profilePath, out var context))
+            // Close browser if active (use BrowserService)
+            if (_browserService.BrowserContexts.TryGetValue(profilePath, out var context))
             {
-                try
-                {
-                    await context.CloseAsync();
-                }
-                catch { }
-                _browserContexts.TryRemove(profilePath, out _);
+                await _browserService.CloseBrowserSafelyAsync(context, profilePath);
             }
 
             BtnDeleteProfile.IsEnabled = false;
@@ -242,20 +250,62 @@ namespace AutoCreateImage
             MessageBox.Show($"Đã đặt '{selectedProfileName}' làm profile mặc định.", "Thành công", MessageBoxButton.OK, MessageBoxImage.Information);
         }
 
+        private void LboxProfiles_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+        {
+            var selectedProfileName = LboxProfiles.SelectedItem as string;
+            if (!string.IsNullOrEmpty(selectedProfileName))
+            {
+                string profilePath = Path.Combine(GetProfilesBaseDir(), selectedProfileName);
+                string gptUrlPath = Path.Combine(profilePath, "gpt_url.txt");
+                if (File.Exists(gptUrlPath))
+                {
+                    TxtCustomGptUrl.Text = File.ReadAllText(gptUrlPath).Trim();
+                }
+                else
+                {
+                    TxtCustomGptUrl.Text = string.Empty;
+                }
+            }
+            else
+            {
+                TxtCustomGptUrl.Text = string.Empty;
+            }
+        }
+
         private void BtnSaveCustomGptUrl_Click(object sender, RoutedEventArgs e)
         {
-            string url = TxtCustomGptUrl.Text.Trim();
-            if (string.IsNullOrEmpty(url))
+            var selectedProfileName = LboxProfiles.SelectedItem as string;
+            if (string.IsNullOrEmpty(selectedProfileName))
             {
-                MessageBox.Show("Vui lòng nhập URL Custom GPT hợp lệ.", "URL trống", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show("Vui lòng chọn một profile để cấu hình Custom GPT.", "Chưa chọn Profile", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
-            var settings = ConfigService.CurrentSettings;
-            settings.CustomGptUrl = url;
-            ConfigService.SaveSettings(settings);
-            Log($"[SETTINGS] Đã lưu Custom GPT URL: {url}");
-            MessageBox.Show("Đã lưu cấu hình Custom GPT URL thành công.", "Thành công", MessageBoxButton.OK, MessageBoxImage.Information);
+            string url = TxtCustomGptUrl.Text.Trim();
+            string profilePath = Path.Combine(GetProfilesBaseDir(), selectedProfileName);
+            string gptUrlPath = Path.Combine(profilePath, "gpt_url.txt");
+
+            try
+            {
+                if (string.IsNullOrEmpty(url))
+                {
+                    if (File.Exists(gptUrlPath))
+                    {
+                        File.Delete(gptUrlPath);
+                    }
+                    Log($"[SETTINGS] Đã xóa Custom GPT URL của profile '{selectedProfileName}'.");
+                }
+                else
+                {
+                    File.WriteAllText(gptUrlPath, url);
+                    Log($"[SETTINGS] Đã lưu Custom GPT URL cho profile '{selectedProfileName}': {url}");
+                }
+                MessageBox.Show($"Đã lưu cấu hình Custom GPT URL cho profile '{selectedProfileName}' thành công.", "Thành công", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Lỗi khi lưu Custom GPT URL: {ex.Message}", "Lỗi", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
         }
     }
 }

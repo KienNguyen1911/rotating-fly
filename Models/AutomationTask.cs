@@ -107,38 +107,41 @@ namespace AutoCreateImage
             set { _logs = value; OnPropertyChanged(); }
         }
 
-        public string VideoId => ExtractVideoId(VideoUrl);
+        private int _srtMethod = 1;
 
-        public string OutputDir
+        public int SrtMethod
         {
-            get
+            get => _srtMethod;
+            set
             {
-                string baseDir = ConfigService.CurrentSettings.OutputsDir;
-                if (string.IsNullOrEmpty(baseDir))
-                {
-                    string desktopPath = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
-                    baseDir = Path.Combine(desktopPath, "Outputs");
-                }
-                return Path.Combine(baseDir, VideoId);
+                _srtMethod = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(UseSrtMethod1));
+                OnPropertyChanged(nameof(UseSrtMethod2));
             }
         }
+
+        public bool UseSrtMethod1
+        {
+            get => SrtMethod == 1;
+            set { if (value) SrtMethod = 1; }
+        }
+
+        public bool UseSrtMethod2
+        {
+            get => SrtMethod == 2;
+            set { if (value) SrtMethod = 2; }
+        }
+
+        public string VideoId => YoutubeHelper.ExtractVideoId(VideoUrl);
+
+        public string OutputDir => YoutubeHelper.GetOutputDir(VideoId);
 
         public event PropertyChangedEventHandler? PropertyChanged;
 
         protected void OnPropertyChanged([CallerMemberName] string? propertyName = null)
         {
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
-        }
-
-        private string ExtractVideoId(string url)
-        {
-            if (string.IsNullOrWhiteSpace(url)) return "unknown";
-            if (url.Length == 11 && Regex.IsMatch(url, @"^[a-zA-Z0-9_-]{11}$"))
-            {
-                return url;
-            }
-            var match = Regex.Match(url, @"(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^""&?\/ ]{11})", RegexOptions.IgnoreCase);
-            return match.Success ? match.Groups[1].Value : "unknown";
         }
     }
 }

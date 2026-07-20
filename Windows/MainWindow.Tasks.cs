@@ -9,6 +9,9 @@ using System.ComponentModel;
 
 namespace AutoCreateImage
 {
+    /// <summary>
+    /// Task tab UI handlers. History persistence delegated to HistoryService.
+    /// </summary>
     public partial class MainWindow : Window
     {
         private AutomationTask? _currentLogTask;
@@ -24,7 +27,7 @@ namespace AutoCreateImage
                 {
                     return;
                 }
-                _ = Task.Run(() => SaveTaskToHistoryAsync(task));
+                _ = Task.Run(() => _historyService.SaveTaskToHistoryAsync(task));
             }
         }
 
@@ -33,7 +36,6 @@ namespace AutoCreateImage
             string formattedMessage = $"[{DateTime.Now:HH:mm:ss}] {message}\n";
             task.Logs += formattedMessage;
 
-            // If the sidebar is open and showing this task's logs, append to it in real-time
             Dispatcher.BeginInvoke(new Action(() =>
             {
                 if (SidebarLogs.Visibility == Visibility.Visible && TxtSidebarLog.DataContext == task)
@@ -43,6 +45,7 @@ namespace AutoCreateImage
                 }
             }));
         }
+
         private void BtnAddTask_Click(object sender, RoutedEventArgs e)
         {
             string defaultProf = ConfigService.CurrentSettings.DefaultChromeProfile;
@@ -67,7 +70,7 @@ namespace AutoCreateImage
 
             task.PropertyChanged += Task_PropertyChanged;
             Tasks.Insert(0, task);
-            _ = Task.Run(() => SaveTaskToHistoryAsync(task));
+            _ = Task.Run(() => _historyService.SaveTaskToHistoryAsync(task));
             Log("Created new empty task in the table.");
         }
 
@@ -106,7 +109,7 @@ namespace AutoCreateImage
 
                     task.PropertyChanged += Task_PropertyChanged;
                     Tasks.Insert(0, task);
-                    _ = Task.Run(() => SaveTaskToHistoryAsync(task));
+                    _ = Task.Run(() => _historyService.SaveTaskToHistoryAsync(task));
 
                     if (!string.IsNullOrEmpty(apiKey) && !string.IsNullOrEmpty(entry.VoiceId))
                     {
@@ -296,8 +299,7 @@ namespace AutoCreateImage
                 if (result == MessageBoxResult.Yes)
                 {
                     Tasks.Remove(task);
-                    
-                    // Delete assets in background
+
                     _ = Task.Run(async () =>
                     {
                         if (Directory.Exists(task.OutputDir))
@@ -311,12 +313,12 @@ namespace AutoCreateImage
                                 Log($"[WARNING] Failed to delete output folder: {ex.Message}");
                             }
                         }
-                        await DeleteTaskFromHistoryAsync(task);
+                        await _historyService.DeleteTaskFromHistoryAsync(task);
                     });
                 }
             }
         }
-        // Sidebar drag handle events for resizable drawer
+
         private void SidebarDragHandle_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
             _isDraggingSidebar = true;
@@ -330,10 +332,9 @@ namespace AutoCreateImage
             if (!_isDraggingSidebar) return;
 
             double currentX = e.GetPosition(this).X;
-            double delta = _dragStartX - currentX; // moving left = positive delta = wider sidebar
+            double delta = _dragStartX - currentX;
             double newWidth = _sidebarWidth + delta;
 
-            // Clamp between 280 and 80% of window width
             double maxWidth = this.ActualWidth * 0.8;
             newWidth = Math.Max(280, Math.Min(newWidth, maxWidth));
 

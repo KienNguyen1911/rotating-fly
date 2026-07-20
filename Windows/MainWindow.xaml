@@ -243,7 +243,6 @@
 
         <!-- Main TabControl -->
         <TabControl Grid.Row="1" Background="Transparent" BorderThickness="0">
-            <!-- TAB 1: AUTOMATION TASKS -->
             <TabItem Header="Automation Tasks" Padding="15,6" FontSize="12" FontWeight="SemiBold">
                 <Grid Margin="0,15,0,0">
                     <Grid.RowDefinitions>
@@ -365,6 +364,20 @@
                                             </DataGridTemplateColumn.CellTemplate>
                                         </DataGridTemplateColumn>
 
+                                        <DataGridTemplateColumn Header="SRT Gen" Width="2*">
+                                            <DataGridTemplateColumn.CellTemplate>
+                                                <DataTemplate>
+                                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Center">
+                                                        <RadioButton Content="Cách 1" IsChecked="{Binding UseSrtMethod1, UpdateSourceTrigger=PropertyChanged}" Foreground="White" Margin="0,0,10,0" VerticalAlignment="Center" GroupName="{Binding Id, StringFormat=SrtGroup_{0}}"/>
+                                                        <RadioButton Content="Cách 2" IsChecked="{Binding UseSrtMethod2, UpdateSourceTrigger=PropertyChanged}" Foreground="White" VerticalAlignment="Center"
+                                                                     IsEnabled="{Binding RelativeSource={RelativeSource AncestorType=Window}, Path=IsSrtMethod2Enabled}"
+                                                                     Visibility="{Binding RelativeSource={RelativeSource AncestorType=Window}, Path=IsSrtMethod2Visible}"
+                                                                     GroupName="{Binding Id, StringFormat=SrtGroup_{0}}"/>
+                                                    </StackPanel>
+                                                </DataTemplate>
+                                            </DataGridTemplateColumn.CellTemplate>
+                                        </DataGridTemplateColumn>
+
                                         <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="1.2*" IsReadOnly="True">
                                             <DataGridTextColumn.HeaderStyle>
                                                 <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}">
@@ -466,336 +479,6 @@
                     </Grid>
                 </Grid>
             </TabItem>
-
-            <!-- TAB 2: CHROME PROFILE MANAGER -->
-            <TabItem Header="Chrome Profiles" Padding="15,6" FontSize="12" FontWeight="SemiBold">
-                <Grid Margin="0,15,0,0">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="300"/>
-                        <ColumnDefinition Width="20"/>
-                        <ColumnDefinition Width="*"/>
-                    </Grid.ColumnDefinitions>
-
-                    <!-- Left: Profiles Listbox -->
-                    <Border Grid.Column="0" Background="#1E293B" CornerRadius="8" Padding="15" BorderBrush="#334155" BorderThickness="1">
-                        <Grid>
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="*"/>
-                            </Grid.RowDefinitions>
-                            <TextBlock Grid.Row="0" Text="Select Profile" FontSize="14" FontWeight="Bold" Foreground="#F8FAFC" Margin="0,0,0,10"/>
-                            <ListBox Grid.Row="1" x:Name="LboxProfiles" ItemsSource="{Binding ProfileList}" BorderThickness="0" Background="Transparent" SelectedIndex="0">
-                                <ListBox.ItemTemplate>
-                                    <DataTemplate>
-                                        <Border Padding="10,8" Margin="0,2" CornerRadius="4" BorderThickness="1" BorderBrush="#334155" Background="#0F172A">
-                                            <StackPanel Orientation="Horizontal">
-                                                <TextBlock Text="👤" Margin="0,0,8,0"/>
-                                                <TextBlock Text="{Binding}" FontSize="12" FontWeight="SemiBold" Foreground="#F8FAFC"/>
-                                            </StackPanel>
-                                        </Border>
-                                    </DataTemplate>
-                                </ListBox.ItemTemplate>
-                            </ListBox>
-                        </Grid>
-                    </Border>
-
-                    <!-- Right: Profile Controls -->
-                    <Grid Grid.Column="2">
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="20"/>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="20"/>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="*"/>
-                        </Grid.RowDefinitions>
-
-                        <!-- Selected Profile Actions Card -->
-                        <Border Grid.Row="0" Background="#1E293B" CornerRadius="8" Padding="20" BorderBrush="#334155" BorderThickness="1">
-                            <StackPanel>
-                                <TextBlock Text="Selected Profile Management" FontSize="14" FontWeight="Bold" Foreground="#F8FAFC" Margin="0,0,0,15"/>
-                                
-                                <Grid Margin="0,0,0,15">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel>
-                                        <TextBlock Text="Selected Profile:" FontSize="12" Foreground="#94A3B8"/>
-                                        <TextBlock Text="{Binding ElementName=LboxProfiles, Path=SelectedItem}" FontSize="18" FontWeight="Bold" Foreground="#60A5FA" Margin="0,2,0,0"/>
-                                    </StackPanel>
-                                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Orientation="Horizontal">
-                                        <TextBlock Text="Mặc định: " FontSize="12" Foreground="#94A3B8" VerticalAlignment="Center"/>
-                                        <TextBlock x:Name="TxtDefaultProfileName" Text="None" FontSize="14" FontWeight="Bold" Foreground="#FBBF24" VerticalAlignment="Center"/>
-                                    </StackPanel>
-                                </Grid>
-
-                                <StackPanel Orientation="Horizontal">
-                                    <Button x:Name="BtnOpenProfileBrowser" Content="🌐 Open Browser" Width="150" Height="35" Background="#2563EB" Foreground="White" BorderThickness="0" FontWeight="SemiBold" Click="BtnOpenProfileBrowser_Click" Margin="0,0,10,0"/>
-                                    <Button x:Name="BtnOpenProfileFolder" Content="📂 Open Folder" Width="130" Height="35" Background="#475569" Foreground="White" BorderThickness="0" FontWeight="SemiBold" Click="BtnOpenProfileFolder_Click" Margin="0,0,10,0"/>
-                                    <Button x:Name="BtnSetDefaultProfile" Content="⭐ Đặt làm mặc định" Width="150" Height="35" Background="#D97706" Foreground="White" BorderThickness="0" FontWeight="SemiBold" Click="BtnSetDefaultProfile_Click" Margin="0,0,10,0"/>
-                                    <Button x:Name="BtnDeleteProfile" Content="🗑️ Delete Profile" Width="130" Height="35" Background="#EF4444" Foreground="White" BorderThickness="0" FontWeight="SemiBold" Click="BtnDeleteProfile_Click"/>
-                                </StackPanel>
-                            </StackPanel>
-                        </Border>
-
-                        <!-- Create New Profile Card -->
-                        <Border Grid.Row="2" Background="#1E293B" CornerRadius="8" Padding="20" BorderBrush="#334155" BorderThickness="1" VerticalAlignment="Top">
-                            <StackPanel>
-                                <TextBlock Text="Create New Chrome Profile" FontSize="14" FontWeight="Bold" Foreground="#F8FAFC" Margin="0,0,0,15"/>
-                                <TextBlock Text="Profile Name (e.g. your Gmail or Name):" FontSize="12" Foreground="#94A3B8" Margin="0,0,0,5"/>
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    <TextBox x:Name="TxtNewProfileName" Height="30" VerticalContentAlignment="Center" Padding="5" />
-                                    <Button x:Name="BtnCreateProfile" Grid.Column="1" Content="Create &amp; Initialize Profile" Width="180" Height="30" Margin="10,0,0,0" Click="BtnCreateProfile_Click" Background="#10B981" Foreground="White" BorderThickness="0" FontWeight="Bold"/>
-                                </Grid>
-                            </StackPanel>
-                        </Border>
-
-                        <!-- Custom GPT settings Card -->
-                        <Border Grid.Row="4" Background="#1E293B" CornerRadius="8" Padding="20" BorderBrush="#334155" BorderThickness="1" VerticalAlignment="Top">
-                            <StackPanel>
-                                <TextBlock Text="Cấu hình Custom GPT (Dịch Chay)" FontSize="14" FontWeight="Bold" Foreground="#F8FAFC" Margin="0,0,0,15"/>
-                                <TextBlock Text="Custom GPT URL (Đường dẫn dùng ở Step 3):" FontSize="12" Foreground="#94A3B8" Margin="0,0,0,5"/>
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    <TextBox x:Name="TxtCustomGptUrl" Height="30" VerticalContentAlignment="Center" Padding="5" />
-                                    <Button x:Name="BtnSaveCustomGptUrl" Grid.Column="1" Content="Lưu URL" Width="120" Height="30" Margin="10,0,0,0" Click="BtnSaveCustomGptUrl_Click" Background="#2563EB" Foreground="White" BorderThickness="0" FontWeight="Bold"/>
-                                </Grid>
-                            </StackPanel>
-                        </Border>
-                    </Grid>
-                </Grid>
-            </TabItem>
-
-            <!-- TAB 3: HISTORY -->
-            <TabItem Header="History" Padding="15,6" FontSize="12" FontWeight="SemiBold">
-                <Grid Margin="0,15,0,0">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="250"/>
-                        <ColumnDefinition Width="20"/>
-                        <ColumnDefinition Width="*"/>
-                    </Grid.ColumnDefinitions>
-
-                    <!-- Left: Dates Listbox -->
-                    <Border Grid.Column="0" Background="#1E293B" CornerRadius="8" Padding="15" BorderBrush="#334155" BorderThickness="1">
-                        <Grid>
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="*"/>
-                                <RowDefinition Height="Auto"/>
-                            </Grid.RowDefinitions>
-                            <TextBlock Grid.Row="0" Text="Lịch sử theo ngày" FontSize="14" FontWeight="Bold" Foreground="#F8FAFC" Margin="0,0,0,10"/>
-                            
-                            <ListBox Grid.Row="1" x:Name="LboxHistoryDates" ItemsSource="{Binding HistoryDates}" BorderThickness="0" Background="Transparent" 
-                                     SelectedIndex="0" SelectionChanged="LboxHistoryDates_SelectionChanged">
-                                <ListBox.ItemTemplate>
-                                    <DataTemplate>
-                                        <Border Padding="10,8" Margin="0,2" CornerRadius="4" BorderThickness="1" BorderBrush="#334155" Background="#0F172A">
-                                            <StackPanel Orientation="Horizontal">
-                                                <TextBlock Text="📅" Margin="0,0,8,0"/>
-                                                <TextBlock Text="{Binding}" FontSize="12" FontWeight="SemiBold" Foreground="#F8FAFC"/>
-                                            </StackPanel>
-                                        </Border>
-                                    </DataTemplate>
-                                </ListBox.ItemTemplate>
-                            </ListBox>
-
-                            <Button Grid.Row="2" Content="Làm mới (Refresh)" Height="30" Margin="0,10,0,0" Click="BtnRefreshHistory_Click" Background="#2563EB" Foreground="White" BorderThickness="0" FontWeight="Bold"/>
-                        </Grid>
-                    </Border>
-
-                    <!-- Right: Historical Tasks DataGrid -->
-                    <Border Grid.Column="2" Background="#1E293B" CornerRadius="8" Padding="15" BorderBrush="#334155" BorderThickness="1">
-                        <Grid>
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="*"/>
-                            </Grid.RowDefinitions>
-                            <TextBlock Grid.Row="0" Text="Danh sách task đã tạo" FontSize="16" FontWeight="SemiBold" Foreground="#F8FAFC" Margin="0,0,0,15"/>
-                            
-                            <DataGrid Grid.Row="1" x:Name="DgridHistoryTasks" ItemsSource="{Binding HistoryTasks}" AutoGenerateColumns="False" CanUserAddRows="False" 
-                                      Background="Transparent" BorderThickness="0" HeadersVisibility="Column" GridLinesVisibility="Horizontal"
-                                      RowHeaderWidth="0" IsReadOnly="True">
-                                <DataGrid.RowStyle>
-                                    <Style TargetType="DataGridRow">
-                                        <Setter Property="Foreground" Value="White"/>
-                                        <Setter Property="Background" Value="Transparent"/>
-                                        <Style.Resources>
-                                            <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="#3B82F6"/>
-                                            <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}" Color="White"/>
-                                            <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightBrushKey}" Color="#334155"/>
-                                            <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightTextBrushKey}" Color="White"/>
-                                        </Style.Resources>
-                                        <Style.Triggers>
-                                            <Trigger Property="IsMouseOver" Value="True">
-                                                <Setter Property="Background" Value="#334155"/>
-                                            </Trigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </DataGrid.RowStyle>
-                                <DataGrid.Columns>
-                                    <DataGridTextColumn Header="Ngày tạo" Binding="{Binding CreatedAtFormatted}" Width="1.4*"/>
-                                    <DataGridTextColumn Header="Link Video (ID)" Binding="{Binding VideoUrl, Converter={StaticResource YoutubeUrlConverter}}" Width="1.6*"/>
-                                    <DataGridTextColumn Header="Ngôn ngữ" Binding="{Binding TargetLanguage}" Width="1*"/>
-                                    <DataGridTextColumn Header="Voice ID" Binding="{Binding VoiceId}" Width="0.8*"/>
-                                    <DataGridTemplateColumn Header="Steps" Width="1.4*">
-                                        <DataGridTemplateColumn.CellTemplate>
-                                            <DataTemplate>
-                                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                                    <CheckBox IsChecked="{Binding Step1}" Content="1" Margin="2,0" IsEnabled="False"/>
-                                                    <CheckBox IsChecked="{Binding Step2}" Content="2" Margin="2,0" IsEnabled="False"/>
-                                                    <CheckBox IsChecked="{Binding Step3}" Content="3" Margin="2,0" IsEnabled="False"/>
-                                                    <CheckBox IsChecked="{Binding Step4}" Content="4" Margin="2,0" IsEnabled="False"/>
-                                                    <CheckBox IsChecked="{Binding Step5}" Content="5" Margin="2,0" IsEnabled="False"/>
-                                                </StackPanel>
-                                            </DataTemplate>
-                                        </DataGridTemplateColumn.CellTemplate>
-                                    </DataGridTemplateColumn>
-                                    <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="1*">
-                                        <DataGridTextColumn.ElementStyle>
-                                            <Style TargetType="TextBlock">
-                                                <Setter Property="FontWeight" Value="SemiBold"/>
-                                                <Style.Triggers>
-                                                    <Trigger Property="Text" Value="Done">
-                                                        <Setter Property="Foreground" Value="#10B981"/>
-                                                    </Trigger>
-                                                    <Trigger Property="Text" Value="Failed">
-                                                        <Setter Property="Foreground" Value="#EF4444"/>
-                                                    </Trigger>
-                                                    <Trigger Property="Text" Value="Pending">
-                                                        <Setter Property="Foreground" Value="#94A3B8"/>
-                                                    </Trigger>
-                                                </Style.Triggers>
-                                            </Style>
-                                        </DataGridTextColumn.ElementStyle>
-                                    </DataGridTextColumn>
-                                    <DataGridTemplateColumn Header="Action" Width="1.8*">
-                                        <DataGridTemplateColumn.CellTemplate>
-                                            <DataTemplate>
-                                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                                    <Button Content="Logs" Padding="6,3" Margin="2,0" Click="BtnViewHistoryTaskLog_Click" Background="#475569" Foreground="White" BorderThickness="0" FontSize="11"/>
-                                                    <Button Content="Assets" Padding="6,3" Margin="2,0" Click="BtnViewHistoryTaskAssets_Click" Background="#10B981" Foreground="White" BorderThickness="0" FontSize="11"/>
-                                                </StackPanel>
-                                            </DataTemplate>
-                                        </DataGridTemplateColumn.CellTemplate>
-                                    </DataGridTemplateColumn>
-                                </DataGrid.Columns>
-                            </DataGrid>
-                        </Grid>
-                    </Border>
-                </Grid>
-            </TabItem>
-            <!-- TAB 5: SETTINGS -->
-            <TabItem Header="Settings" Padding="15,6" FontSize="12" FontWeight="SemiBold">
-                <Grid Margin="0,15,0,0">
-                    <Border Background="#1E293B" CornerRadius="8" Padding="20" BorderBrush="#334155" BorderThickness="1" VerticalAlignment="Top">
-                        <StackPanel>
-                            <TextBlock Text="Cấu Hình Hệ Thống (Settings)" FontSize="16" FontWeight="Bold" Foreground="#F8FAFC" Margin="0,0,0,20"/>
-
-                            <!-- AI84 Key -->
-                            <TextBlock Text="AI84 API Key:" Foreground="#94A3B8" FontSize="12" Margin="0,0,0,5"/>
-                            <Grid Margin="0,0,0,15">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="Auto"/>
-                                </Grid.ColumnDefinitions>
-                                <PasswordBox x:Name="PbSettingsAi84ApiKey" Height="30" VerticalContentAlignment="Center" Background="#1E293B" Foreground="White" BorderBrush="#334155" BorderThickness="1" Padding="6,4"/>
-                                <Button x:Name="BtnCheckAi84Key" Grid.Column="1" Content="Kiểm tra Key" Width="120" Height="30" Margin="10,0,0,0" Click="BtnCheckAi84Key_Click" Background="#2563EB" Foreground="White" BorderThickness="0" FontWeight="SemiBold">
-                                    <Button.Resources>
-                                        <Style TargetType="Border">
-                                            <Setter Property="CornerRadius" Value="4"/>
-                                        </Style>
-                                    </Button.Resources>
-                                </Button>
-                            </Grid>
-
-                            <!-- Supabase DB Url -->
-                            <TextBlock Text="Supabase PostgreSQL URL (DATABASE_URL):" Foreground="#94A3B8" FontSize="12" Margin="0,0,0,5"/>
-                            <PasswordBox x:Name="PbSettingsSupabaseDbUrl" Height="30" VerticalContentAlignment="Center" Background="#1E293B" Foreground="White" BorderBrush="#334155" BorderThickness="1" Padding="6,4" Margin="0,0,0,15"/>
-
-                            <!-- Image API URL -->
-                            <TextBlock Text="Image API URL (G-Labs / ChatGPT2API):" Foreground="#94A3B8" FontSize="12" Margin="0,0,0,5"/>
-                            <TextBox x:Name="TxtSettingsImageApiUrl" Height="30" VerticalContentAlignment="Center" Margin="0,0,0,15"/>
-
-                            <!-- Image API Key -->
-                            <TextBlock Text="Image API Key (X-API-Key / Bearer Token):" Foreground="#94A3B8" FontSize="12" Margin="0,0,0,5"/>
-                            <PasswordBox x:Name="PbSettingsImageApiKey" Height="30" VerticalContentAlignment="Center" Background="#1E293B" Foreground="White" BorderBrush="#334155" BorderThickness="1" Padding="6,4" Margin="0,0,0,15"/>
-
-                            <!-- Chrome Profiles Dir -->
-                            <TextBlock Text="Chrome Profiles Folder Path:" Foreground="#94A3B8" FontSize="12" Margin="0,0,0,5"/>
-                            <Grid Margin="0,0,0,15">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="Auto"/>
-                                </Grid.ColumnDefinitions>
-                                <TextBox x:Name="TxtSettingsChromeProfilesDir" Height="30" VerticalContentAlignment="Center"/>
-                                <Button x:Name="BtnBrowseChromeProfilesDir" Grid.Column="1" Content="Browse..." Width="80" Height="30" Margin="10,0,0,0" Click="BtnBrowseChromeProfilesDir_Click" Background="#475569" Foreground="White" BorderThickness="0">
-                                    <Button.Resources>
-                                        <Style TargetType="Border">
-                                            <Setter Property="CornerRadius" Value="4"/>
-                                        </Style>
-                                    </Button.Resources>
-                                </Button>
-                            </Grid>
-
-                            <!-- Outputs Dir -->
-                            <TextBlock Text="Outputs Folder Path:" Foreground="#94A3B8" FontSize="12" Margin="0,0,0,5"/>
-                            <Grid Margin="0,0,0,15">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="Auto"/>
-                                </Grid.ColumnDefinitions>
-                                <TextBox x:Name="TxtSettingsOutputsDir" Height="30" VerticalContentAlignment="Center"/>
-                                <Button x:Name="BtnBrowseOutputsDir" Grid.Column="1" Content="Browse..." Width="80" Height="30" Margin="10,0,0,0" Click="BtnBrowseOutputsDir_Click" Background="#475569" Foreground="White" BorderThickness="0">
-                                    <Button.Resources>
-                                        <Style TargetType="Border">
-                                            <Setter Property="CornerRadius" Value="4"/>
-                                        </Style>
-                                    </Button.Resources>
-                                </Button>
-                            </Grid>
-
-                            <!-- Concurrent Tasks -->
-                            <TextBlock Text="Số lượng task chạy song song tối đa (Max Concurrent Tasks):" Foreground="#94A3B8" FontSize="12" Margin="0,0,0,5"/>
-                            <TextBox x:Name="TxtSettingsMaxConcurrentTasks" Height="30" Width="80" HorizontalAlignment="Left" Margin="0,0,0,20" VerticalContentAlignment="Center" Text="4"/>
-
-                            <!-- Action Buttons -->
-                            <StackPanel Orientation="Horizontal" Margin="0,0,0,20">
-                                <Button x:Name="BtnSaveSettings" Content="Lưu Cấu Hình" Width="130" Height="35" Click="BtnSaveSettings_Click" Background="#10B981" Foreground="White" BorderThickness="0" FontWeight="Bold" Margin="0,0,10,0">
-                                    <Button.Resources>
-                                        <Style TargetType="Border">
-                                            <Setter Property="CornerRadius" Value="4"/>
-                                        </Style>
-                                    </Button.Resources>
-                                </Button>
-                                <Button x:Name="BtnExportSettings" Content="Xuất Cấu Hình" Width="130" Height="35" Click="BtnExportSettings_Click" Background="#2563EB" Foreground="White" BorderThickness="0" FontWeight="Bold" Margin="0,0,10,0">
-                                    <Button.Resources>
-                                        <Style TargetType="Border">
-                                            <Setter Property="CornerRadius" Value="4"/>
-                                        </Style>
-                                    </Button.Resources>
-                                </Button>
-                                <Button x:Name="BtnImportSettings" Content="Nhập Cấu Hình" Width="130" Height="35" Click="BtnImportSettings_Click" Background="#475569" Foreground="White" BorderThickness="0" FontWeight="Bold">
-                                    <Button.Resources>
-                                        <Style TargetType="Border">
-                                            <Setter Property="CornerRadius" Value="4"/>
-                                        </Style>
-                                    </Button.Resources>
-                                </Button>
-                            </StackPanel>
-                        </StackPanel>
-                    </Border>
-                </Grid>
-            </TabItem>
-
-            <!-- TAB 5: IMAGE GENERATION REQUEST POOL -->
             <TabItem Header="Image Pool" Padding="15,6" FontSize="12" FontWeight="SemiBold">
                 <Grid Margin="15,15,15,15">
                     <Grid.RowDefinitions>
@@ -907,6 +590,463 @@
                                     <DataGridTextColumn Header="Finished Time" Binding="{Binding FinishedTimeFormatted}" Width="Auto"/>
                                     <DataGridTextColumn Header="Error Message" Binding="{Binding ErrorMessage}" Width="*"/>
                                     <DataGridTextColumn Header="Prompt" Binding="{Binding Prompt}" Width="*"/>
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </Grid>
+                    </Border>
+                </Grid>
+            </TabItem>
+            <TabItem Header="Media Generator" Padding="15,6" FontSize="12" FontWeight="SemiBold">
+                <Grid Margin="15">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    
+                    <!-- Configuration Card -->
+                    <Border Grid.Row="0" Background="#1E293B" CornerRadius="8" Padding="20" BorderBrush="#334155" BorderThickness="1" Margin="0,0,0,15">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+                            
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="150"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            
+                            <TextBlock Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="3" Text="Cấu Hình Tạo Video / Xuất Audio" FontSize="16" FontWeight="Bold" Foreground="#F8FAFC" Margin="0,0,0,15"/>
+                            
+                            <!-- Input Asset Folder -->
+                            <TextBlock Grid.Row="1" Grid.Column="0" Text="Thư mục Assets (Auto):" VerticalAlignment="Center" Foreground="#10B981" FontWeight="SemiBold" Margin="0,0,10,10"/>
+                            <TextBox Grid.Row="1" Grid.Column="1" x:Name="TxtMediaAssetDir" Height="30" VerticalContentAlignment="Center" Margin="0,0,10,10" Background="#111827" Foreground="White" BorderBrush="#10B981"/>
+                            <Button Grid.Row="1" Grid.Column="2" x:Name="BtnBrowseMediaAssetDir" Content="Chọn Thư Mục..." Width="100" Height="30" Margin="0,0,0,10" Click="BtnBrowseMediaAssetDir_Click" Background="#10B981" Foreground="White" BorderThickness="0" FontWeight="SemiBold"/>
+                            
+                            <!-- Input Image -->
+                            <TextBlock Grid.Row="2" Grid.Column="0" Text="Ảnh nền (Background):" VerticalAlignment="Center" Foreground="#94A3B8" Margin="0,0,10,10"/>
+                            <TextBox Grid.Row="2" Grid.Column="1" x:Name="TxtMediaBgImage" Height="30" VerticalContentAlignment="Center" Margin="0,0,10,10"/>
+                            <Button Grid.Row="2" Grid.Column="2" x:Name="BtnBrowseMediaBgImage" Content="Chọn Ảnh..." Width="100" Height="30" Margin="0,0,0,10" Click="BtnBrowseMediaBgImage_Click" Background="#475569" Foreground="White" BorderThickness="0"/>
+                            
+                            <!-- Input Audio -->
+                            <TextBlock Grid.Row="3" Grid.Column="0" Text="Giọng đọc (Audio):" VerticalAlignment="Center" Foreground="#94A3B8" Margin="0,0,10,10"/>
+                            <TextBox Grid.Row="3" Grid.Column="1" x:Name="TxtMediaVoiceover" Height="30" VerticalContentAlignment="Center" Margin="0,0,10,10"/>
+                            <Button Grid.Row="3" Grid.Column="2" x:Name="BtnBrowseMediaVoiceover" Content="Chọn Audio..." Width="100" Height="30" Margin="0,0,0,10" Click="BtnBrowseMediaVoiceover_Click" Background="#475569" Foreground="White" BorderThickness="0"/>
+                            
+                            <!-- Input SRT Subtitle -->
+                            <TextBlock Grid.Row="4" Grid.Column="0" Text="File phụ đề (SRT):" VerticalAlignment="Center" Foreground="#94A3B8" Margin="0,0,10,10"/>
+                            <TextBox Grid.Row="4" Grid.Column="1" x:Name="TxtMediaSrtFile" Height="30" VerticalContentAlignment="Center" Margin="0,0,10,10"/>
+                            <Button Grid.Row="4" Grid.Column="2" x:Name="BtnBrowseMediaSrtFile" Content="Chọn SRT..." Width="100" Height="30" Margin="0,0,0,10" Click="BtnBrowseMediaSrtFile_Click" Background="#475569" Foreground="White" BorderThickness="0"/>
+
+                            <!-- Input Effect -->
+                            <TextBlock Grid.Row="5" Grid.Column="0" Text="Thư mục Effect (Hiệu ứng):" VerticalAlignment="Center" Foreground="#94A3B8" Margin="0,0,10,10"/>
+                            <TextBox Grid.Row="5" Grid.Column="1" x:Name="TxtMediaEffectDir" Height="30" VerticalContentAlignment="Center" Margin="0,0,10,10"/>
+                            <Button Grid.Row="5" Grid.Column="2" x:Name="BtnBrowseMediaEffectDir" Content="Chọn Effect..." Width="100" Height="30" Margin="0,0,0,10" Click="BtnBrowseMediaEffectDir_Click" Background="#475569" Foreground="White" BorderThickness="0"/>
+                            
+                            <!-- Mode & Settings -->
+                            <TextBlock Grid.Row="6" Grid.Column="0" Text="Cấu hình nâng cao:" VerticalAlignment="Center" Foreground="#94A3B8" Margin="0,0,10,15"/>
+                            <StackPanel Grid.Row="6" Grid.Column="1" Grid.ColumnSpan="2" Orientation="Horizontal" Margin="0,0,0,15">
+                                <TextBlock Text="Chế độ:" VerticalAlignment="Center" Foreground="#94A3B8" Margin="0,0,5,0"/>
+                                <ComboBox x:Name="CbMediaMode" Width="100" Height="30" SelectedIndex="0" Margin="0,0,20,0" SelectionChanged="CbMediaMode_SelectionChanged">
+                                    <ComboBoxItem Content="Video"/>
+                                    <ComboBoxItem Content="Audio"/>
+                                </ComboBox>
+                                
+                                <TextBlock x:Name="LblMediaResolution" Text="Độ phân giải:" VerticalAlignment="Center" Foreground="#94A3B8" Margin="0,0,5,0"/>
+                                <ComboBox x:Name="CbMediaResolution" Width="120" Height="30" SelectedIndex="0" Margin="0,0,20,0">
+                                    <ComboBoxItem Content="1920x1080 (FHD)"/>
+                                    <ComboBoxItem Content="3840x2160 (4K)"/>
+                                </ComboBox>
+                            </StackPanel>
+                            
+                            <!-- Action Buttons -->
+                            <StackPanel Grid.Row="7" Grid.Column="0" Grid.ColumnSpan="3" Orientation="Horizontal" Margin="0,5,0,0">
+                                <Button x:Name="BtnGenerateMedia" Content="Bắt Đầu Xử Lý" Width="150" Height="35" Click="BtnGenerateMedia_Click" Background="#2563EB" Foreground="White" BorderThickness="0" FontWeight="Bold" Margin="0,0,15,0">
+                                    <Button.Resources>
+                                        <Style TargetType="Border">
+                                            <Setter Property="CornerRadius" Value="4"/>
+                                        </Style>
+                                    </Button.Resources>
+                                </Button>
+                                <Button x:Name="BtnClearMediaForm" Content="Nhập lại" Width="100" Height="35" Click="BtnClearMediaForm_Click" Background="#475569" Foreground="White" BorderThickness="0" Margin="0,0,15,0">
+                                    <Button.Resources>
+                                        <Style TargetType="Border">
+                                            <Setter Property="CornerRadius" Value="4"/>
+                                        </Style>
+                                    </Button.Resources>
+                                </Button>
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+                    
+                    <!-- Console Logs -->
+                    <Border Grid.Row="1" Background="#0B0F19" CornerRadius="8" Padding="15" BorderBrush="#334155" BorderThickness="1">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                            </Grid.RowDefinitions>
+                            <TextBlock Grid.Row="0" Text="Trạng Thái &amp; Logs Xử Lý" FontSize="14" FontWeight="Bold" Foreground="#60A5FA" Margin="0,0,0,10"/>
+                            <TextBox Grid.Row="1" x:Name="TxtMediaLogs" Background="Transparent" Foreground="#F8FAFC" BorderThickness="0" 
+                                     TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" IsReadOnly="True" 
+                                     FontSize="12" FontFamily="Consolas" AcceptsReturn="True"/>
+                        </Grid>
+                    </Border>
+                </Grid>
+            </TabItem>
+            <TabItem Header="Chrome Profiles" Padding="15,6" FontSize="12" FontWeight="SemiBold">
+                <Grid Margin="0,15,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="300"/>
+                        <ColumnDefinition Width="20"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+
+                    <!-- Left: Profiles Listbox -->
+                    <Border Grid.Column="0" Background="#1E293B" CornerRadius="8" Padding="15" BorderBrush="#334155" BorderThickness="1">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                            </Grid.RowDefinitions>
+                            <TextBlock Grid.Row="0" Text="Select Profile" FontSize="14" FontWeight="Bold" Foreground="#F8FAFC" Margin="0,0,0,10"/>
+                            <ListBox Grid.Row="1" x:Name="LboxProfiles" ItemsSource="{Binding ProfileList}" BorderThickness="0" Background="Transparent" SelectedIndex="0" SelectionChanged="LboxProfiles_SelectionChanged">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Padding="10,8" Margin="0,2" CornerRadius="4" BorderThickness="1" BorderBrush="#334155" Background="#0F172A">
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="👤" Margin="0,0,8,0"/>
+                                                <TextBlock Text="{Binding}" FontSize="12" FontWeight="SemiBold" Foreground="#F8FAFC"/>
+                                            </StackPanel>
+                                        </Border>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                        </Grid>
+                    </Border>
+
+                    <!-- Right: Profile Controls -->
+                    <Grid Grid.Column="2">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="20"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="20"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+
+                        <!-- Selected Profile Actions Card -->
+                        <Border Grid.Row="0" Background="#1E293B" CornerRadius="8" Padding="20" BorderBrush="#334155" BorderThickness="1">
+                            <StackPanel>
+                                <TextBlock Text="Selected Profile Management" FontSize="14" FontWeight="Bold" Foreground="#F8FAFC" Margin="0,0,0,15"/>
+                                
+                                <Grid Margin="0,0,0,15">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel>
+                                        <TextBlock Text="Selected Profile:" FontSize="12" Foreground="#94A3B8"/>
+                                        <TextBlock Text="{Binding ElementName=LboxProfiles, Path=SelectedItem}" FontSize="18" FontWeight="Bold" Foreground="#60A5FA" Margin="0,2,0,0"/>
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Orientation="Horizontal">
+                                        <TextBlock Text="Mặc định: " FontSize="12" Foreground="#94A3B8" VerticalAlignment="Center"/>
+                                        <TextBlock x:Name="TxtDefaultProfileName" Text="None" FontSize="14" FontWeight="Bold" Foreground="#FBBF24" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </Grid>
+
+                                <StackPanel Orientation="Horizontal">
+                                    <Button x:Name="BtnOpenProfileBrowser" Content="🌐 Open Browser" Width="150" Height="35" Background="#2563EB" Foreground="White" BorderThickness="0" FontWeight="SemiBold" Click="BtnOpenProfileBrowser_Click" Margin="0,0,10,0"/>
+                                    <Button x:Name="BtnOpenProfileFolder" Content="📂 Open Folder" Width="130" Height="35" Background="#475569" Foreground="White" BorderThickness="0" FontWeight="SemiBold" Click="BtnOpenProfileFolder_Click" Margin="0,0,10,0"/>
+                                    <Button x:Name="BtnSetDefaultProfile" Content="⭐ Đặt làm mặc định" Width="150" Height="35" Background="#D97706" Foreground="White" BorderThickness="0" FontWeight="SemiBold" Click="BtnSetDefaultProfile_Click" Margin="0,0,10,0"/>
+                                    <Button x:Name="BtnDeleteProfile" Content="🗑️ Delete Profile" Width="130" Height="35" Background="#EF4444" Foreground="White" BorderThickness="0" FontWeight="SemiBold" Click="BtnDeleteProfile_Click"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Create New Profile Card -->
+                        <Border Grid.Row="2" Background="#1E293B" CornerRadius="8" Padding="20" BorderBrush="#334155" BorderThickness="1" VerticalAlignment="Top">
+                            <StackPanel>
+                                <TextBlock Text="Create New Chrome Profile" FontSize="14" FontWeight="Bold" Foreground="#F8FAFC" Margin="0,0,0,15"/>
+                                <TextBlock Text="Profile Name (e.g. your Gmail or Name):" FontSize="12" Foreground="#94A3B8" Margin="0,0,0,5"/>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBox x:Name="TxtNewProfileName" Height="30" VerticalContentAlignment="Center" Padding="5" />
+                                    <Button x:Name="BtnCreateProfile" Grid.Column="1" Content="Create &amp; Initialize Profile" Width="180" Height="30" Margin="10,0,0,0" Click="BtnCreateProfile_Click" Background="#10B981" Foreground="White" BorderThickness="0" FontWeight="Bold"/>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Custom GPT settings Card -->
+                        <Border Grid.Row="4" Background="#1E293B" CornerRadius="8" Padding="20" BorderBrush="#334155" BorderThickness="1" VerticalAlignment="Top">
+                            <StackPanel>
+                                <TextBlock Text="Cấu hình Custom GPT (Dịch Chay)" FontSize="14" FontWeight="Bold" Foreground="#F8FAFC" Margin="0,0,0,15"/>
+                                <TextBlock Text="Custom GPT URL (Đường dẫn dùng ở Step 3):" FontSize="12" Foreground="#94A3B8" Margin="0,0,0,5"/>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBox x:Name="TxtCustomGptUrl" Height="30" VerticalContentAlignment="Center" Padding="5" />
+                                    <Button x:Name="BtnSaveCustomGptUrl" Grid.Column="1" Content="Lưu URL" Width="120" Height="30" Margin="10,0,0,0" Click="BtnSaveCustomGptUrl_Click" Background="#2563EB" Foreground="White" BorderThickness="0" FontWeight="Bold"/>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+                    </Grid>
+                </Grid>
+            </TabItem>
+            <TabItem Header="Settings" Padding="15,6" FontSize="12" FontWeight="SemiBold">
+                <Grid Margin="0,15,0,0">
+                    <Border Background="#1E293B" CornerRadius="8" Padding="20" BorderBrush="#334155" BorderThickness="1" VerticalAlignment="Top">
+                        <StackPanel>
+                            <TextBlock Text="Cấu Hình Hệ Thống (Settings)" FontSize="16" FontWeight="Bold" Foreground="#F8FAFC" Margin="0,0,0,20"/>
+
+                            <!-- AI84 Key -->
+                            <TextBlock Text="AI84 API Key:" Foreground="#94A3B8" FontSize="12" Margin="0,0,0,5"/>
+                            <Grid Margin="0,0,0,15">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <PasswordBox x:Name="PbSettingsAi84ApiKey" Height="30" VerticalContentAlignment="Center" Background="#1E293B" Foreground="White" BorderBrush="#334155" BorderThickness="1" Padding="6,4"/>
+                                <Button x:Name="BtnCheckAi84Key" Grid.Column="1" Content="Kiểm tra Key" Width="120" Height="30" Margin="10,0,0,0" Click="BtnCheckAi84Key_Click" Background="#2563EB" Foreground="White" BorderThickness="0" FontWeight="SemiBold">
+                                    <Button.Resources>
+                                        <Style TargetType="Border">
+                                            <Setter Property="CornerRadius" Value="4"/>
+                                        </Style>
+                                    </Button.Resources>
+                                </Button>
+                            </Grid>
+
+                            <!-- Supabase DB Url -->
+                            <TextBlock Text="Supabase PostgreSQL URL (DATABASE_URL):" Foreground="#94A3B8" FontSize="12" Margin="0,0,0,5"/>
+                            <PasswordBox x:Name="PbSettingsSupabaseDbUrl" Height="30" VerticalContentAlignment="Center" Background="#1E293B" Foreground="White" BorderBrush="#334155" BorderThickness="1" Padding="6,4" Margin="0,0,0,15"/>
+
+                            <!-- Image API URL -->
+                            <TextBlock Text="Image API URL (G-Labs / ChatGPT2API):" Foreground="#94A3B8" FontSize="12" Margin="0,0,0,5"/>
+                            <TextBox x:Name="TxtSettingsImageApiUrl" Height="30" VerticalContentAlignment="Center" Margin="0,0,0,15"/>
+
+                            <!-- Subtitle API URL -->
+                            <TextBlock Text="Subtitle API URL (Whisper SRT API):" Foreground="#94A3B8" FontSize="12" Margin="0,0,0,5"/>
+                            <TextBox x:Name="TxtSettingsSubtitleApiUrl" Height="30" VerticalContentAlignment="Center" Margin="0,0,0,15"/>
+
+                            <!-- Image API Key -->
+                            <TextBlock Text="Image API Key (X-API-Key / Bearer Token):" Foreground="#94A3B8" FontSize="12" Margin="0,0,0,5"/>
+                            <PasswordBox x:Name="PbSettingsImageApiKey" Height="30" VerticalContentAlignment="Center" Background="#1E293B" Foreground="White" BorderBrush="#334155" BorderThickness="1" Padding="6,4" Margin="0,0,0,15"/>
+
+                            <!-- Chrome Profiles Dir -->
+                            <TextBlock Text="Chrome Profiles Folder Path:" Foreground="#94A3B8" FontSize="12" Margin="0,0,0,5"/>
+                            <Grid Margin="0,0,0,15">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBox x:Name="TxtSettingsChromeProfilesDir" Height="30" VerticalContentAlignment="Center"/>
+                                <Button x:Name="BtnBrowseChromeProfilesDir" Grid.Column="1" Content="Browse..." Width="80" Height="30" Margin="10,0,0,0" Click="BtnBrowseChromeProfilesDir_Click" Background="#475569" Foreground="White" BorderThickness="0">
+                                    <Button.Resources>
+                                        <Style TargetType="Border">
+                                            <Setter Property="CornerRadius" Value="4"/>
+                                        </Style>
+                                    </Button.Resources>
+                                </Button>
+                            </Grid>
+
+                            <!-- Outputs Dir -->
+                            <TextBlock Text="Outputs Folder Path:" Foreground="#94A3B8" FontSize="12" Margin="0,0,0,5"/>
+                            <Grid Margin="0,0,0,15">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBox x:Name="TxtSettingsOutputsDir" Height="30" VerticalContentAlignment="Center"/>
+                                <Button x:Name="BtnBrowseOutputsDir" Grid.Column="1" Content="Browse..." Width="80" Height="30" Margin="10,0,0,0" Click="BtnBrowseOutputsDir_Click" Background="#475569" Foreground="White" BorderThickness="0">
+                                    <Button.Resources>
+                                        <Style TargetType="Border">
+                                            <Setter Property="CornerRadius" Value="4"/>
+                                        </Style>
+                                    </Button.Resources>
+                                </Button>
+                            </Grid>
+
+                            <!-- Concurrent Tasks -->
+                            <TextBlock Text="Số lượng task chạy song song tối đa (Max Concurrent Tasks):" Foreground="#94A3B8" FontSize="12" Margin="0,0,0,5"/>
+                            <TextBox x:Name="TxtSettingsMaxConcurrentTasks" Height="30" Width="80" HorizontalAlignment="Left" Margin="0,0,0,20" VerticalContentAlignment="Center" Text="4"/>
+
+                            <!-- Proxies File Path -->
+                            <TextBlock Text="Đường dẫn file Proxies JSON (proxies.json):" Foreground="#94A3B8" FontSize="12" Margin="0,0,0,5"/>
+                            <Grid Margin="0,0,0,20">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBox x:Name="TxtSettingsProxiesFilePath" Height="30" VerticalContentAlignment="Center"/>
+                                <Button x:Name="BtnBrowseProxiesFile" Grid.Column="1" Content="Browse..." Width="80" Height="30" Margin="10,0,0,0" Click="BtnBrowseProxiesFile_Click" Background="#475569" Foreground="White" BorderThickness="0">
+                                    <Button.Resources>
+                                        <Style TargetType="Border">
+                                            <Setter Property="CornerRadius" Value="4"/>
+                                        </Style>
+                                    </Button.Resources>
+                                </Button>
+                                <Button x:Name="BtnTestProxies" Grid.Column="2" Content="Test Proxies" Width="120" Height="30" Margin="10,0,0,0" Click="BtnTestProxies_Click" Background="#8B5CF6" Foreground="White" BorderThickness="0" FontWeight="SemiBold">
+                                    <Button.Resources>
+                                        <Style TargetType="Border">
+                                            <Setter Property="CornerRadius" Value="4"/>
+                                        </Style>
+                                    </Button.Resources>
+                                </Button>
+                            </Grid>
+
+                            <!-- Action Buttons -->
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,20">
+                                <Button x:Name="BtnSaveSettings" Content="Lưu Cấu Hình" Width="130" Height="35" Click="BtnSaveSettings_Click" Background="#10B981" Foreground="White" BorderThickness="0" FontWeight="Bold" Margin="0,0,10,0">
+                                    <Button.Resources>
+                                        <Style TargetType="Border">
+                                            <Setter Property="CornerRadius" Value="4"/>
+                                        </Style>
+                                    </Button.Resources>
+                                </Button>
+                                <Button x:Name="BtnExportSettings" Content="Xuất Cấu Hình" Width="130" Height="35" Click="BtnExportSettings_Click" Background="#2563EB" Foreground="White" BorderThickness="0" FontWeight="Bold" Margin="0,0,10,0">
+                                    <Button.Resources>
+                                        <Style TargetType="Border">
+                                            <Setter Property="CornerRadius" Value="4"/>
+                                        </Style>
+                                    </Button.Resources>
+                                </Button>
+                                <Button x:Name="BtnImportSettings" Content="Nhập Cấu Hình" Width="130" Height="35" Click="BtnImportSettings_Click" Background="#475569" Foreground="White" BorderThickness="0" FontWeight="Bold">
+                                    <Button.Resources>
+                                        <Style TargetType="Border">
+                                            <Setter Property="CornerRadius" Value="4"/>
+                                        </Style>
+                                    </Button.Resources>
+                                </Button>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+                </Grid>
+            </TabItem>
+            <TabItem Header="History" Padding="15,6" FontSize="12" FontWeight="SemiBold">
+                <Grid Margin="0,15,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="250"/>
+                        <ColumnDefinition Width="20"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+
+                    <!-- Left: Dates Listbox -->
+                    <Border Grid.Column="0" Background="#1E293B" CornerRadius="8" Padding="15" BorderBrush="#334155" BorderThickness="1">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+                            <TextBlock Grid.Row="0" Text="Lịch sử theo ngày" FontSize="14" FontWeight="Bold" Foreground="#F8FAFC" Margin="0,0,0,10"/>
+                            
+                            <ListBox Grid.Row="1" x:Name="LboxHistoryDates" ItemsSource="{Binding HistoryDates}" BorderThickness="0" Background="Transparent" 
+                                     SelectedIndex="0" SelectionChanged="LboxHistoryDates_SelectionChanged">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Padding="10,8" Margin="0,2" CornerRadius="4" BorderThickness="1" BorderBrush="#334155" Background="#0F172A">
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="📅" Margin="0,0,8,0"/>
+                                                <TextBlock Text="{Binding}" FontSize="12" FontWeight="SemiBold" Foreground="#F8FAFC"/>
+                                            </StackPanel>
+                                        </Border>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+
+                            <Button Grid.Row="2" Content="Làm mới (Refresh)" Height="30" Margin="0,10,0,0" Click="BtnRefreshHistory_Click" Background="#2563EB" Foreground="White" BorderThickness="0" FontWeight="Bold"/>
+                        </Grid>
+                    </Border>
+
+                    <!-- Right: Historical Tasks DataGrid -->
+                    <Border Grid.Column="2" Background="#1E293B" CornerRadius="8" Padding="15" BorderBrush="#334155" BorderThickness="1">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                            </Grid.RowDefinitions>
+                            <TextBlock Grid.Row="0" Text="Danh sách task đã tạo" FontSize="16" FontWeight="SemiBold" Foreground="#F8FAFC" Margin="0,0,0,15"/>
+                            
+                            <DataGrid Grid.Row="1" x:Name="DgridHistoryTasks" ItemsSource="{Binding HistoryTasks}" AutoGenerateColumns="False" CanUserAddRows="False" 
+                                      Background="Transparent" BorderThickness="0" HeadersVisibility="Column" GridLinesVisibility="Horizontal"
+                                      RowHeaderWidth="0" IsReadOnly="True">
+                                <DataGrid.RowStyle>
+                                    <Style TargetType="DataGridRow">
+                                        <Setter Property="Foreground" Value="White"/>
+                                        <Setter Property="Background" Value="Transparent"/>
+                                        <Style.Resources>
+                                            <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="#3B82F6"/>
+                                            <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}" Color="White"/>
+                                            <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightBrushKey}" Color="#334155"/>
+                                            <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightTextBrushKey}" Color="White"/>
+                                        </Style.Resources>
+                                        <Style.Triggers>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter Property="Background" Value="#334155"/>
+                                            </Trigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </DataGrid.RowStyle>
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="Ngày tạo" Binding="{Binding CreatedAtFormatted}" Width="1.4*"/>
+                                    <DataGridTextColumn Header="Link Video (ID)" Binding="{Binding VideoUrl, Converter={StaticResource YoutubeUrlConverter}}" Width="1.6*"/>
+                                    <DataGridTextColumn Header="Ngôn ngữ" Binding="{Binding TargetLanguage}" Width="1*"/>
+                                    <DataGridTextColumn Header="Voice ID" Binding="{Binding VoiceId}" Width="0.8*"/>
+                                    <DataGridTemplateColumn Header="Steps" Width="1.4*">
+                                        <DataGridTemplateColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                    <CheckBox IsChecked="{Binding Step1}" Content="1" Margin="2,0" IsEnabled="False"/>
+                                                    <CheckBox IsChecked="{Binding Step2}" Content="2" Margin="2,0" IsEnabled="False"/>
+                                                    <CheckBox IsChecked="{Binding Step3}" Content="3" Margin="2,0" IsEnabled="False"/>
+                                                    <CheckBox IsChecked="{Binding Step4}" Content="4" Margin="2,0" IsEnabled="False"/>
+                                                    <CheckBox IsChecked="{Binding Step5}" Content="5" Margin="2,0" IsEnabled="False"/>
+                                                </StackPanel>
+                                            </DataTemplate>
+                                        </DataGridTemplateColumn.CellTemplate>
+                                    </DataGridTemplateColumn>
+                                    <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="1*">
+                                        <DataGridTextColumn.ElementStyle>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="FontWeight" Value="SemiBold"/>
+                                                <Style.Triggers>
+                                                    <Trigger Property="Text" Value="Done">
+                                                        <Setter Property="Foreground" Value="#10B981"/>
+                                                    </Trigger>
+                                                    <Trigger Property="Text" Value="Failed">
+                                                        <Setter Property="Foreground" Value="#EF4444"/>
+                                                    </Trigger>
+                                                    <Trigger Property="Text" Value="Pending">
+                                                        <Setter Property="Foreground" Value="#94A3B8"/>
+                                                    </Trigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </DataGridTextColumn.ElementStyle>
+                                    </DataGridTextColumn>
+                                    <DataGridTemplateColumn Header="Action" Width="1.8*">
+                                        <DataGridTemplateColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                    <Button Content="Logs" Padding="6,3" Margin="2,0" Click="BtnViewHistoryTaskLog_Click" Background="#475569" Foreground="White" BorderThickness="0" FontSize="11"/>
+                                                    <Button Content="Assets" Padding="6,3" Margin="2,0" Click="BtnViewHistoryTaskAssets_Click" Background="#10B981" Foreground="White" BorderThickness="0" FontSize="11"/>
+                                                </StackPanel>
+                                            </DataTemplate>
+                                        </DataGridTemplateColumn.CellTemplate>
+                                    </DataGridTemplateColumn>
                                 </DataGrid.Columns>
                             </DataGrid>
                         </Grid>

@@ -2,37 +2,62 @@ using System;
 using System.IO;
 using System.Windows;
 using System.Collections.ObjectModel;
-using Microsoft.Playwright;
 
 namespace AutoCreateImage
 {
-    public partial class MainWindow : Window
+    public partial class MainWindow : Window, System.ComponentModel.INotifyPropertyChanged
     {
-        private IPlaywright? _playwright;
-        private readonly System.Collections.Concurrent.ConcurrentDictionary<string, IBrowserContext> _browserContexts = new System.Collections.Concurrent.ConcurrentDictionary<string, IBrowserContext>();
-        private readonly System.Threading.SemaphoreSlim _clipboardSemaphore = new System.Threading.SemaphoreSlim(1, 1);
-        private readonly System.Threading.SemaphoreSlim _browserInitSemaphore = new System.Threading.SemaphoreSlim(1, 1);
-        
+        public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;
+
+        protected void OnPropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string? propertyName = null)
+        {
+            PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(propertyName));
+        }
+
+        public bool IsSrtMethod2Enabled => !string.IsNullOrWhiteSpace(ConfigService.CurrentSettings.SubtitleApiUrl);
+        public Visibility IsSrtMethod2Visible => IsSrtMethod2Enabled ? Visibility.Visible : Visibility.Collapsed;
+
+        // Services
+        private readonly BrowserService _browserService;
+        private readonly HistoryService _historyService;
+        private readonly ImagePoolService _imagePoolService;
+        private readonly ChatGptService _chatGptService;
+
+        // Step services
+        private readonly ThumbnailDownloadStep _step1;
+        private readonly TranscriptExtractionStep _step2;
+        private readonly ChatGptRewriteStep _step3;
+        private readonly VoiceoverGenerationStep _step4;
+        private readonly ImageGenerationStep _step5;
+
+        // UI state
+        private DateTime _lastUiUpdateTime = DateTime.MinValue;
+
         public ObservableCollection<AutomationTask> Tasks { get; set; } = new ObservableCollection<AutomationTask>();
         public ObservableCollection<string> ProfileList { get; set; } = new ObservableCollection<string>();
         public ObservableCollection<string> LanguageList { get; set; } = new ObservableCollection<string>(AppConstants.Languages);
         public ObservableCollection<string> HistoryDates { get; set; } = new ObservableCollection<string>();
         public ObservableCollection<HistoryTaskModel> HistoryTasks { get; set; } = new ObservableCollection<HistoryTaskModel>();
 
-        // Chrome window slots
-        private static readonly bool[] _activeBrowserSlots = new bool[32];
-        private static readonly object _browserSlotsLock = new object();
-
-        // Image Generation Request Pool
-        private readonly System.Collections.Generic.List<ImageGenRequest> _imageRequestPool = new System.Collections.Generic.List<ImageGenRequest>();
-        private readonly object _poolLock = new object();
-        private int _maxImageWorkers = 1;
-        private int _activeImageWorkers = 0;
-        private DateTime _lastUiUpdateTime = DateTime.MinValue;
-
         public MainWindow()
         {
             InitializeComponent();
+
+            // Initialize services
+            _browserService = new BrowserService(Log);
+            _historyService = new HistoryService(Log);
+            _chatGptService = new ChatGptService();
+            _imagePoolService = new ImagePoolService();
+            _imagePoolService.LogTask = LogTask;
+            _imagePoolService.OnPoolStateChanged += UpdatePoolUi;
+
+            // Initialize step services
+            _step1 = new ThumbnailDownloadStep();
+            _step2 = new TranscriptExtractionStep();
+            _step3 = new ChatGptRewriteStep(_chatGptService);
+            _step4 = new VoiceoverGenerationStep();
+            _step5 = new ImageGenerationStep(_imagePoolService);
+
             DgridTasks.ItemsSource = Tasks;
             DataContext = this;
             Log("Application started. Ready to run tasks.");
@@ -48,156 +73,30 @@ namespace AutoCreateImage
             SaveApplicationSettings();
         }
 
-        public async Task EnqueueImageRequestAsync(ImageGenRequest request)
-        {
-            try
-            {
-                int calculatedWorkers = Math.Max(1, Math.Min(10, ConfigService.CurrentSettings.MaxConcurrentTasks * 2));
-                lock (_poolLock)
-                {
-                    _maxImageWorkers = calculatedWorkers;
-                }
-            }
-            catch (Exception ex)
-            {
-                Log($"[POOL] Error determining max workers: {ex.Message}. Falling back to default workers.");
-            }
-
-            lock (_poolLock)
-            {
-                _imageRequestPool.Add(request);
-                LogTask(request.Task, $"[POOL] Enqueued image request: {System.IO.Path.GetFileName(request.SavePath)} (Status: {request.Status})");
-                
-                while (_activeImageWorkers < _maxImageWorkers)
-                {
-                    _activeImageWorkers++;
-                    _ = Task.Run(async () => await ImageWorkerLoopAsync());
-                }
-            }
-            UpdatePoolUi();
-        }
-
-        private async Task ImageWorkerLoopAsync()
-        {
-            while (true)
-            {
-                ImageGenRequest? req = null;
-                lock (_poolLock)
-                {
-                    req = GetNextRequestToProcess();
-                    if (req == null)
-                    {
-                        _activeImageWorkers--;
-                        UpdatePoolUi();
-                        break;
-                    }
-                }
-
-                try
-                {
-                    req.StartedAt = DateTime.Now;
-                    UpdatePoolUi();
-
-                    LogTask(req.Task, $"[POOL] Starting API generation for: {System.IO.Path.GetFileName(req.SavePath)}");
-                    await EditImageViaApiAsync(req);
-                    
-                    lock (_poolLock)
-                    {
-                        req.Status = "Done";
-                        req.FinishedAt = DateTime.Now;
-                    }
-                    req.Tcs.SetResult(true);
-                }
-                catch (Exception ex)
-                {
-                    lock (_poolLock)
-                    {
-                        req.Status = "Failed";
-                        req.FinishedAt = DateTime.Now;
-                        req.ErrorMessage = ex.Message;
-                    }
-                    LogTask(req.Task, $"[POOL] [ERROR] Image generation failed for {System.IO.Path.GetFileName(req.SavePath)}: {ex.Message}");
-                    req.Tcs.SetException(ex);
-                }
-                finally
-                {
-                    UpdatePoolUi();
-                }
-
-                await Task.Delay(5000);
-            }
-        }
-
-        private ImageGenRequest? GetNextRequestToProcess()
-        {
-            var inProgressTaskIds = _imageRequestPool
-                .Where(r => r.Status == "Processing")
-                .Select(r => r.Task.VideoId)
-                .Distinct()
-                .ToList();
-
-            foreach (var taskId in inProgressTaskIds)
-            {
-                var nextInSameTask = _imageRequestPool.FirstOrDefault(r => r.Task.VideoId == taskId && r.Status == "Waiting");
-                if (nextInSameTask != null)
-                {
-                    nextInSameTask.Status = "Processing";
-                    return nextInSameTask;
-                }
-            }
-
-            var nextRequest = _imageRequestPool
-                .Where(r => r.Status == "Waiting")
-                .OrderBy(r => r.EnqueuedAt)
-                .FirstOrDefault();
-
-            if (nextRequest != null)
-            {
-                nextRequest.Status = "Processing";
-            }
-            return nextRequest;
-        }
-
         private void UpdatePoolUi()
         {
             var now = DateTime.Now;
             bool shouldUpdateDataGrid = false;
-            lock (_poolLock)
+            if ((now - _lastUiUpdateTime).TotalMilliseconds >= 250)
             {
-                if ((now - _lastUiUpdateTime).TotalMilliseconds >= 250)
-                {
-                    shouldUpdateDataGrid = true;
-                    _lastUiUpdateTime = now;
-                }
+                shouldUpdateDataGrid = true;
+                _lastUiUpdateTime = now;
             }
 
             Dispatcher.BeginInvoke(new Action(() =>
             {
-                lock (_poolLock)
+                var stats = _imagePoolService.GetPoolStats();
+
+                TxtPoolRunningWorkers.Text = stats.ActiveWorkers.ToString();
+                TxtPoolMaxWorkers.Text = stats.MaxWorkers.ToString();
+                TxtPoolWaitingRequests.Text = stats.Waiting.ToString();
+                TxtPoolProcessingRequests.Text = stats.Processing.ToString();
+                TxtPoolFinishedRequests.Text = stats.Finished.ToString();
+                TxtPoolAvgTime.Text = stats.AvgSeconds.ToString("F1");
+
+                if (shouldUpdateDataGrid || stats.Waiting == 0 || stats.Processing == 0)
                 {
-                    int waiting = _imageRequestPool.Count(r => r.Status == "Waiting");
-                    int processing = _imageRequestPool.Count(r => r.Status == "Processing");
-                    int finished = _imageRequestPool.Count(r => r.Status == "Done" || r.Status == "Failed");
-
-                    TxtPoolRunningWorkers.Text = _activeImageWorkers.ToString();
-                    TxtPoolMaxWorkers.Text = _maxImageWorkers.ToString();
-                    TxtPoolWaitingRequests.Text = waiting.ToString();
-                    TxtPoolProcessingRequests.Text = processing.ToString();
-                    TxtPoolFinishedRequests.Text = finished.ToString();
-
-                    var processedRequests = _imageRequestPool.Where(r => r.StartedAt != null && r.FinishedAt != null).ToList();
-                    double avgSeconds = 0;
-                    if (processedRequests.Count > 0)
-                    {
-                        avgSeconds = processedRequests.Average(r => (r.FinishedAt!.Value - r.StartedAt!.Value).TotalSeconds);
-                    }
-                    TxtPoolAvgTime.Text = avgSeconds.ToString("F1");
-
-                    // Throttle DataGrid binding updates to prevent UI stuttering, always update on idle/done
-                    if (shouldUpdateDataGrid || waiting == 0 || processing == 0)
-                    {
-                        DgridPoolRequests.ItemsSource = _imageRequestPool.OrderByDescending(r => r.EnqueuedAt).ToList();
-                    }
+                    DgridPoolRequests.ItemsSource = _imagePoolService.GetOrderedRequests();
                 }
             }));
         }
@@ -207,7 +106,6 @@ namespace AutoCreateImage
             UpdatePoolUi();
         }
 
-
         private void LoadApplicationSettings()
         {
             try
@@ -216,10 +114,14 @@ namespace AutoCreateImage
                 PbSettingsAi84ApiKey.Password = settings.Ai84ApiKey;
                 PbSettingsSupabaseDbUrl.Password = settings.SupabaseDbUrl;
                 TxtSettingsImageApiUrl.Text = settings.ImageApiUrl;
+                TxtSettingsSubtitleApiUrl.Text = settings.SubtitleApiUrl;
                 PbSettingsImageApiKey.Password = settings.ImageApiKey;
                 TxtSettingsChromeProfilesDir.Text = settings.ChromeProfilesDir;
                 TxtSettingsOutputsDir.Text = settings.OutputsDir;
                 TxtSettingsMaxConcurrentTasks.Text = settings.MaxConcurrentTasks.ToString();
+                TxtSettingsProxiesFilePath.Text = settings.ProxiesFilePath;
+                OnPropertyChanged(nameof(IsSrtMethod2Enabled));
+                OnPropertyChanged(nameof(IsSrtMethod2Visible));
             }
             catch (Exception ex)
             {
@@ -238,12 +140,16 @@ namespace AutoCreateImage
                 settings.Ai84ApiKey = PbSettingsAi84ApiKey.Password.Trim();
                 settings.SupabaseDbUrl = PbSettingsSupabaseDbUrl.Password.Trim();
                 settings.ImageApiUrl = TxtSettingsImageApiUrl.Text.Trim();
+                settings.SubtitleApiUrl = TxtSettingsSubtitleApiUrl.Text.Trim();
                 settings.ImageApiKey = PbSettingsImageApiKey.Password.Trim();
                 settings.ChromeProfilesDir = TxtSettingsChromeProfilesDir.Text.Trim();
                 settings.OutputsDir = TxtSettingsOutputsDir.Text.Trim();
                 settings.MaxConcurrentTasks = maxTasks;
+                settings.ProxiesFilePath = TxtSettingsProxiesFilePath.Text.Trim();
 
                 ConfigService.SaveSettings(settings);
+                OnPropertyChanged(nameof(IsSrtMethod2Enabled));
+                OnPropertyChanged(nameof(IsSrtMethod2Visible));
             }
             catch (Exception ex)
             {
@@ -255,7 +161,7 @@ namespace AutoCreateImage
         {
             SaveApplicationSettings();
             MessageBox.Show("Đã lưu cấu hình hệ thống thành công và cập nhật API Backend!", "Thành công", MessageBoxButton.OK, MessageBoxImage.Information);
-            LoadProfiles(); // reload profiles in case path changed
+            LoadProfiles();
         }
 
         private void BtnExportSettings_Click(object sender, RoutedEventArgs e)
@@ -378,36 +284,123 @@ namespace AutoCreateImage
             }
         }
 
+        private void BtnBrowseProxiesFile_Click(object sender, RoutedEventArgs e)
+        {
+            var dialog = new Microsoft.Win32.OpenFileDialog
+            {
+                Filter = "JSON files (*.json)|*.json|All files (*.*)|*.*",
+                Title = "Chọn tệp Proxies JSON"
+            };
+            if (dialog.ShowDialog() == true)
+            {
+                TxtSettingsProxiesFilePath.Text = dialog.FileName;
+            }
+        }
 
+        private async void BtnTestProxies_Click(object sender, RoutedEventArgs e)
+        {
+            string path = TxtSettingsProxiesFilePath.Text.Trim();
+            if (string.IsNullOrEmpty(path) || !File.Exists(path))
+            {
+                MessageBox.Show("File proxy không tồn tại hoặc đường dẫn trống.", "Lỗi", MessageBoxButton.OK, MessageBoxImage.Error);
+                return;
+            }
+
+            BtnTestProxies.IsEnabled = false;
+            BtnTestProxies.Content = "Testing...";
+            Log($"Starting testing proxies from file: {path}");
+
+            try
+            {
+                string jsonContent = await File.ReadAllTextAsync(path);
+                using var doc = System.Text.Json.JsonDocument.Parse(jsonContent);
+                if (!doc.RootElement.TryGetProperty("proxies", out var proxiesArray) || proxiesArray.ValueKind != System.Text.Json.JsonValueKind.Array)
+                {
+                    MessageBox.Show("File json không chứa mảng 'proxies'.", "Lỗi định dạng", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+
+                var proxyList = new System.Collections.Generic.List<string>();
+                foreach (var item in proxiesArray.EnumerateArray())
+                {
+                    if (item.TryGetProperty("proxy", out var proxyProp))
+                    {
+                        string val = proxyProp.GetString() ?? "";
+                        if (!string.IsNullOrWhiteSpace(val))
+                        {
+                            proxyList.Add(val);
+                        }
+                    }
+                }
+
+                if (proxyList.Count == 0)
+                {
+                    MessageBox.Show("Không tìm thấy proxy nào trong file.", "Trống", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+
+                Log($"Parsed {proxyList.Count} proxies. Testing first few proxies...");
+                
+                int aliveCount = 0;
+                int deadCount = 0;
+                
+                var tasks = new System.Collections.Generic.List<Task<(string proxy, bool success)>>();
+                int limit = Math.Min(proxyList.Count, 30); // Test up to 30 proxies to keep it fast
+                for (int i = 0; i < limit; i++)
+                {
+                    string proxyStr = proxyList[i];
+                    tasks.Add(Task.Run(async () =>
+                    {
+                        try
+                        {
+                            var handler = new System.Net.Http.HttpClientHandler();
+                            handler.Proxy = new System.Net.WebProxy(proxyStr);
+                            handler.UseProxy = true;
+                            
+                            using var client = new System.Net.Http.HttpClient(handler);
+                            client.Timeout = TimeSpan.FromSeconds(5);
+                            
+                            var response = await client.GetAsync("https://www.google.com");
+                            return (proxyStr, response.IsSuccessStatusCode);
+                        }
+                        catch
+                        {
+                            return (proxyStr, false);
+                        }
+                    }));
+                }
+
+                var results = await Task.WhenAll(tasks);
+                foreach (var res in results)
+                {
+                    if (res.success)
+                    {
+                        aliveCount++;
+                        Log($"[ALIVE] Proxy works: {res.proxy}");
+                    }
+                    else
+                    {
+                        deadCount++;
+                    }
+                }
+
+                MessageBox.Show($"Đã test {limit} proxies đầu tiên.\nSống: {aliveCount}\nChết/Không phản hồi: {deadCount}", "Kết quả Test Proxy", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Lỗi khi test proxy: {ex.Message}", "Lỗi", MessageBoxButton.OK, MessageBoxImage.Error);
+                Log($"[ERROR] Proxy test error: {ex.Message}");
+            }
+            finally
+            {
+                BtnTestProxies.IsEnabled = true;
+                BtnTestProxies.Content = "Test Proxies";
+            }
+        }
 
         private void Log(string message)
         {
             System.Diagnostics.Debug.WriteLine($"[{DateTime.Now:HH:mm:ss}] {message}");
         }
-
-        private void BtnClearLog_Click(object sender, RoutedEventArgs e)
-        {
-        }
-    }
-
-    public class ImageGenRequest
-    {
-        public string ApiUrl { get; set; } = string.Empty;
-        public string ApiKey { get; set; } = string.Empty;
-        public string ImagePath { get; set; } = string.Empty;
-        public string Prompt { get; set; } = string.Empty;
-        public string SavePath { get; set; } = string.Empty;
-        public AutomationTask Task { get; set; } = null!;
-        public System.Threading.Tasks.TaskCompletionSource<bool> Tcs { get; set; } = new System.Threading.Tasks.TaskCompletionSource<bool>();
-        public string Status { get; set; } = "Waiting"; // "Waiting", "Processing", "Done", "Failed"
-        public DateTime EnqueuedAt { get; set; } = DateTime.Now;
-        public string TaskId => Task?.Id.ToString().Substring(0, 8) ?? string.Empty;
-        public string VideoId => Task?.VideoId ?? string.Empty;
-        public string AccountName { get; set; } = string.Empty;
-        public DateTime? StartedAt { get; set; }
-        public DateTime? FinishedAt { get; set; }
-        public string ErrorMessage { get; set; } = string.Empty;
-        public string CreatedTimeFormatted => EnqueuedAt.ToString("HH:mm:ss");
-        public string FinishedTimeFormatted => FinishedAt?.ToString("HH:mm:ss") ?? string.Empty;
     }
 }
