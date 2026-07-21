@@ -125,14 +125,139 @@ namespace AutoCreateImage
             logAction($"[PROXY] Found {aliveProxies.Count} active proxies.");
             return aliveProxies;
         }
+        /// <summary>
+        /// Reads and parses proxy strings from a file.
+        /// Supports JSON format (using the "proxies" key) or plain text format (one proxy per line).
+        /// </summary>
+        public static List<string> LoadProxiesFromFile(string filePath)
+        {
+            var list = new List<string>();
+            if (string.IsNullOrEmpty(filePath) || !File.Exists(filePath))
+            {
+                return list;
+            }
+
+            try
+            {
+                string extension = Path.GetExtension(filePath).ToLower();
+                if (extension == ".json")
+                {
+                    return LoadProxies(filePath);
+                }
+                else
+                {
+                    // Plain text file, line by line
+                    var lines = File.ReadAllLines(filePath);
+                    foreach (var line in lines)
+                    {
+                        var trimmed = line.Trim();
+                        if (!string.IsNullOrEmpty(trimmed) && !trimmed.StartsWith("#"))
+                        {
+                            list.Add(trimmed);
+                        }
+                    }
+                }
+            }
+            catch
+            {
+                // Suppress exceptions
+            }
+
+            return list;
+        }
+
+        /// <summary>
+        /// Parses a proxy string into a WebProxy instance, supporting username/password credentials.
+        /// Formats supported:
+        /// - username:password@ip:port
+        /// - ip:port:username:password
+        /// - ip:port
+        /// - protocol://username:password@ip:port
+        /// </summary>
+        public static System.Net.WebProxy? ParseProxy(string proxyStr)
+        {
+            if (string.IsNullOrWhiteSpace(proxyStr)) return null;
+
+            proxyStr = proxyStr.Trim();
+
+            try
+            {
+                string scheme = "http";
+                string hostPort = "";
+                string? username = null;
+                string? password = null;
+
+                if (proxyStr.Contains("://"))
+                {
+                    var uri = new Uri(proxyStr);
+                    scheme = uri.Scheme;
+                    hostPort = uri.Authority;
+                    if (!string.IsNullOrEmpty(uri.UserInfo))
+                    {
+                        var parts = uri.UserInfo.Split(':');
+                        username = parts[0];
+                        if (parts.Length > 1) password = parts[1];
+                    }
+                }
+                else
+                {
+                    if (proxyStr.Contains("@"))
+                    {
+                        var mainParts = proxyStr.Split('@');
+                        var credsPart = mainParts[0];
+                        hostPort = mainParts[1];
+
+                        var creds = credsPart.Split(':');
+                        username = creds[0];
+                        if (creds.Length > 1) password = creds[1];
+                    }
+                    else
+                    {
+                        var parts = proxyStr.Split(':');
+                        if (parts.Length == 4)
+                        {
+                            // host:port:username:password format
+                            hostPort = $"{parts[0]}:{parts[1]}";
+                            username = parts[2];
+                            password = parts[3];
+                        }
+                        else
+                        {
+                            hostPort = proxyStr;
+                        }
+                    }
+                }
+
+                var partsHost = hostPort.Split(':');
+                var host = partsHost[0];
+                int port = partsHost.Length > 1 ? int.Parse(partsHost[1]) : 80;
+
+                var proxyUri = new UriBuilder(scheme, host) { Port = port }.Uri;
+                var webProxy = new System.Net.WebProxy(proxyUri);
+
+                if (!string.IsNullOrEmpty(username))
+                {
+                    webProxy.Credentials = new System.Net.NetworkCredential(username, password);
+                }
+
+                return webProxy;
+            }
+            catch
+            {
+                return null;
+            }
+        }
 
         private static async Task<bool> TestProxyAsync(string proxy, int timeoutSeconds, CancellationToken cancellationToken)
         {
             try
             {
+                var webProxy = ParseProxy(proxy);
+                if (webProxy == null) return false;
+
                 var handler = new HttpClientHandler
                 {
-                    Proxy = new System.Net.WebProxy(proxy),
+                    Proxy = webProxy,
                     UseProxy = true
                 };
 

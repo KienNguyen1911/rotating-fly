@@ -21,8 +21,18 @@ namespace AutoCreateImage
             string? transcriptText = null;
             try
             {
-                var allProxies = ProxyHelper.LoadProxies(ConfigService.CurrentSettings.ProxiesFilePath);
-                var activeProxies = await ProxyHelper.GetAliveProxiesAsync(allProxies, msg => logTask(task, msg));
+                // 1. Try manual proxies first
+                logTask(task, "[PROXY] Loading manual proxies...");
+                var manualProxies = ProxyHelper.LoadProxiesFromFile(ConfigService.CurrentSettings.ManualProxiesFilePath);
+                var activeProxies = await ProxyHelper.GetAliveProxiesAsync(manualProxies, msg => logTask(task, msg), timeoutSeconds: 10);
+
+                // 2. If no manual proxies are active, fallback to free proxies
+                if (activeProxies.Count == 0)
+                {
+                    logTask(task, "[PROXY] No active manual proxies. Falling back to free proxies...");
+                    var freeProxies = ProxyHelper.LoadProxiesFromFile(ConfigService.CurrentSettings.ProxiesFilePath);
+                    activeProxies = await ProxyHelper.GetAliveProxiesAsync(freeProxies, msg => logTask(task, msg), timeoutSeconds: 10);
+                }
 
                 var proxyList = new System.Collections.Generic.List<string?>(activeProxies);
                 // Add null at the end as direct connection fallback
@@ -39,9 +49,15 @@ namespace AutoCreateImage
                         if (proxy != null)
                         {
                             logTask(task, $"[PROXY] Trying YouTube request via proxy: {proxy}");
+                            var webProxy = ProxyHelper.ParseProxy(proxy);
+                            if (webProxy == null)
+                            {
+                                logTask(task, $"[WARNING] Failed to parse proxy string: {proxy}");
+                                continue;
+                            }
                             var handler = new HttpClientHandler
                             {
-                                Proxy = new System.Net.WebProxy(proxy),
+                                Proxy = webProxy,
                                 UseProxy = true
                             };
                             httpClient = new HttpClient(handler);

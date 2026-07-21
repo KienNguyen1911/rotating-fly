@@ -31,6 +31,74 @@ namespace AutoCreateImage
         private readonly VoiceoverGenerationStep _step4;
         private readonly ImageGenerationStep _step5;
 
+        private bool _isDarkMode = false;
+
+        /// <summary>
+        /// Replaces a SolidColorBrush in Application.Resources at runtime.
+        /// All XAML elements using DynamicResource on the brush key will auto-update.
+        /// </summary>
+        private void SetThemeBrush(string brushKey, string hexColor)
+        {
+            try
+            {
+                var color = (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(hexColor);
+                Application.Current.Resources[brushKey] = new System.Windows.Media.SolidColorBrush(color);
+            }
+            catch (Exception ex)
+            {
+                Log($"[ThemeError] Failed to set brush {brushKey}: {ex.Message}");
+            }
+        }
+
+        private void BtnThemeToggle_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                _isDarkMode = !_isDarkMode;
+
+                if (_isDarkMode)
+                {
+                    // Dark Theme: replace SolidColorBrush objects - DynamicResource in XAML auto-updates
+                    SetThemeBrush("CanvasBrush",       "#0C0F1D");
+                    SetThemeBrush("InkBrush",          "#FFFFFF");
+                    SetThemeBrush("BodyBrush",         "#D0D5EE");
+                    SetThemeBrush("PrimaryBrush",      "#1E2442");
+                    SetThemeBrush("PrimaryActiveBrush","#2A325C");
+                    SetThemeBrush("PrimaryDisabledBrush","#3A4A6A");
+                    SetThemeBrush("OnPrimaryBrush",    "#FFFFFF");
+                    SetThemeBrush("SurfaceSoftBrush",  "#14192E");
+                    SetThemeBrush("SurfaceCardBrush",  "#1E2644");
+                    SetThemeBrush("SurfaceStrongBrush","#2B355A");
+                    SetThemeBrush("HairlineBrush",     "#34406A");
+
+                    if (BtnThemeToggle?.Template?.FindName("TxtThemeIcon", BtnThemeToggle) is TextBlock txtIcon) txtIcon.Text = "☀️";
+                    if (BtnThemeToggle?.Template?.FindName("TxtThemeLabel", BtnThemeToggle) is TextBlock txtLabel) txtLabel.Text = "Light Mode";
+                }
+                else
+                {
+                    // Light Theme: restore original Clay colors
+                    SetThemeBrush("CanvasBrush",       "#FFFAF0");
+                    SetThemeBrush("InkBrush",          "#0A0A0A");
+                    SetThemeBrush("BodyBrush",         "#3A3A3A");
+                    SetThemeBrush("PrimaryBrush",      "#0A0A0A");
+                    SetThemeBrush("PrimaryActiveBrush","#1F1F1F");
+                    SetThemeBrush("PrimaryDisabledBrush","#E5E5E5");
+                    SetThemeBrush("OnPrimaryBrush",    "#FFFFFF");
+                    SetThemeBrush("SurfaceSoftBrush",  "#FAF5E8");
+                    SetThemeBrush("SurfaceCardBrush",  "#F5F0E0");
+                    SetThemeBrush("SurfaceStrongBrush","#EBE6D6");
+                    SetThemeBrush("HairlineBrush",     "#E5E5E5");
+
+                    if (BtnThemeToggle?.Template?.FindName("TxtThemeIcon", BtnThemeToggle) is TextBlock txtIcon) txtIcon.Text = "🌙";
+                    if (BtnThemeToggle?.Template?.FindName("TxtThemeLabel", BtnThemeToggle) is TextBlock txtLabel) txtLabel.Text = "Dark Mode";
+                }
+            }
+            catch (Exception ex)
+            {
+                Log($"[ThemeToggle] Error: {ex.Message}");
+            }
+        }
+
         // UI state
         private DateTime _lastUiUpdateTime = DateTime.MinValue;
 
@@ -122,6 +190,14 @@ namespace AutoCreateImage
                 TxtSettingsOutputsDir.Text = settings.OutputsDir;
                 TxtSettingsMaxConcurrentTasks.Text = settings.MaxConcurrentTasks.ToString();
                 TxtSettingsProxiesFilePath.Text = settings.ProxiesFilePath;
+                if (!string.IsNullOrEmpty(settings.ManualProxiesFilePath) && File.Exists(settings.ManualProxiesFilePath))
+                {
+                    TxtSettingsManualProxies.Text = File.ReadAllText(settings.ManualProxiesFilePath);
+                }
+                else
+                {
+                    TxtSettingsManualProxies.Text = string.Empty;
+                }
                 OnPropertyChanged(nameof(IsSrtMethod2Enabled));
                 OnPropertyChanged(nameof(IsSrtMethod2Visible));
             }
@@ -148,6 +224,23 @@ namespace AutoCreateImage
                 settings.OutputsDir = TxtSettingsOutputsDir.Text.Trim();
                 settings.MaxConcurrentTasks = maxTasks;
                 settings.ProxiesFilePath = TxtSettingsProxiesFilePath.Text.Trim();
+
+                if (!string.IsNullOrEmpty(settings.ManualProxiesFilePath))
+                {
+                    try
+                    {
+                        var dir = Path.GetDirectoryName(settings.ManualProxiesFilePath);
+                        if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
+                        {
+                            Directory.CreateDirectory(dir);
+                        }
+                        File.WriteAllText(settings.ManualProxiesFilePath, TxtSettingsManualProxies.Text);
+                    }
+                    catch (Exception ex)
+                    {
+                        Log($"[ERROR] Failed to save manual proxies file: {ex.Message}");
+                    }
+                }
 
                 ConfigService.SaveSettings(settings);
                 OnPropertyChanged(nameof(IsSrtMethod2Enabled));
@@ -397,6 +490,104 @@ namespace AutoCreateImage
             {
                 BtnTestProxies.IsEnabled = true;
                 BtnTestProxies.Content = "Test Proxies";
+            }
+        }
+
+        private async void BtnTestManualProxies_Click(object sender, RoutedEventArgs e)
+        {
+            string content = TxtSettingsManualProxies.Text;
+            var rawLines = content.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.RemoveEmptyEntries);
+            var proxyList = rawLines.Select(l => l.Trim()).Where(l => !string.IsNullOrEmpty(l)).ToList();
+
+            if (proxyList.Count == 0)
+            {
+                MessageBox.Show("Vui lòng nhập danh sách proxy để kiểm tra.", "Trống", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            BtnTestManualProxies.IsEnabled = false;
+            BtnTestManualProxies.Content = "Đang kiểm tra...";
+            Log($"Starting testing {proxyList.Count} manual proxies...");
+
+            try
+            {
+                var tasks = new System.Collections.Generic.List<Task<(string proxy, bool success, string error)>>();
+                foreach (var proxyStr in proxyList)
+                {
+                    tasks.Add(Task.Run(async () =>
+                    {
+                        try
+                        {
+                            var webProxy = ProxyHelper.ParseProxy(proxyStr);
+                            if (webProxy == null)
+                            {
+                                return (proxyStr, false, "Lỗi phân tích cú pháp");
+                            }
+
+                            var handler = new System.Net.Http.HttpClientHandler
+                            {
+                                Proxy = webProxy,
+                                UseProxy = true
+                            };
+
+                            using var client = new System.Net.Http.HttpClient(handler);
+                            client.Timeout = TimeSpan.FromSeconds(10); // Timeout 10s as requested by user
+
+                            using var response = await client.GetAsync("https://www.youtube.com");
+                            if (response.IsSuccessStatusCode)
+                            {
+                                return (proxyStr, true, "OK");
+                            }
+                            else
+                            {
+                                return (proxyStr, false, $"Status code: {(int)response.StatusCode}");
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            return (proxyStr, false, ex.Message);
+                        }
+                    }));
+                }
+
+                var results = await Task.WhenAll(tasks);
+                
+                int onlineCount = 0;
+                int offlineCount = 0;
+                var displayList = new System.Collections.Generic.List<ProxyTestResultItem>();
+
+                foreach (var res in results)
+                {
+                    var item = new ProxyTestResultItem
+                    {
+                        Proxy = res.proxy,
+                        Status = res.success ? "ONLINE" : "OFFLINE",
+                        Response = res.error
+                    };
+                    displayList.Add(item);
+
+                    if (res.success)
+                    {
+                        onlineCount++;
+                    }
+                    else
+                    {
+                        offlineCount++;
+                    }
+                }
+
+                var resultWindow = new ProxyTestResultWindow(displayList, onlineCount, offlineCount);
+                resultWindow.Owner = this;
+                resultWindow.ShowDialog();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Có lỗi xảy ra: {ex.Message}", "Lỗi", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+            finally
+            {
+                BtnTestManualProxies.IsEnabled = true;
+                BtnTestManualProxies.Content = "Kiểm tra Proxy thủ công";
             }
         }
 
