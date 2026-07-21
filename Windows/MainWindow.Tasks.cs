@@ -27,7 +27,7 @@ namespace AutoCreateImage
                 {
                     return;
                 }
-                _ = Task.Run(() => _historyService.SaveTaskToHistoryAsync(task));
+                // Removed: _ = Task.Run(() => _historyService.SaveTaskToHistoryAsync(task));
             }
         }
 
@@ -70,7 +70,6 @@ namespace AutoCreateImage
 
             task.PropertyChanged += Task_PropertyChanged;
             Tasks.Insert(0, task);
-            _ = Task.Run(() => _historyService.SaveTaskToHistoryAsync(task));
             Log("Created new empty task in the table.");
         }
 
@@ -109,7 +108,6 @@ namespace AutoCreateImage
 
                     task.PropertyChanged += Task_PropertyChanged;
                     Tasks.Insert(0, task);
-                    _ = Task.Run(() => _historyService.SaveTaskToHistoryAsync(task));
 
                     if (!string.IsNullOrEmpty(apiKey) && !string.IsNullOrEmpty(entry.VoiceId))
                     {
@@ -203,6 +201,10 @@ namespace AutoCreateImage
                             task.Status = "Failed";
                             LogTask(task, $"[ERROR] Task failed: {ex.Message}");
                         }
+                        finally
+                        {
+                            await _historyService.SaveTaskToHistoryAsync(task);
+                        }
                     });
                 }
                 finally
@@ -280,6 +282,7 @@ namespace AutoCreateImage
                         }
                         finally
                         {
+                            await _historyService.SaveTaskToHistoryAsync(task);
                             concurrencySemaphore.Release();
                         }
                     });

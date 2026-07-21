@@ -63,7 +63,7 @@
                     </Grid.RowDefinitions>
 
                     <!-- Top Toolbar for Tasks -->
-                    <Border Grid.Row="0" Background="{DynamicResource SurfaceSoftBrush}" CornerRadius="16" Padding="15" Margin="0,0,0,15" BorderBrush="{DynamicResource HairlineBrush}" BorderThickness="1">
+                    <Border Grid.Row="0" Style="{StaticResource Card}" Background="{DynamicResource SurfaceSoftBrush}" Padding="15" Margin="0,0,0,15">
                         <Grid>
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto"/>
@@ -97,14 +97,14 @@
                     <!-- Tasks Table & Logs Sidebar -->
                     <Grid Grid.Row="1">
                         <!-- Main Area: DataGrid of Tasks (always fills full width) -->
-                        <Border Background="{DynamicResource CanvasBrush}" CornerRadius="16" Padding="15" BorderBrush="{DynamicResource HairlineBrush}" BorderThickness="1">
+                        <Border Style="{StaticResource Card}" Background="{DynamicResource CanvasBrush}" Padding="15">
                             <Grid>
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="Auto"/> <!-- Title -->
                                     <RowDefinition Height="Auto"/> <!-- Filters -->
                                     <RowDefinition Height="*"/>    <!-- DataGrid -->
                                 </Grid.RowDefinitions>
-                                <TextBlock Grid.Row="0" Text="Task Queue &amp; Automation Control" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,15"/>
+                                <TextBlock Grid.Row="0" Text="Task Queue &amp; Automation Control" Style="{StaticResource SectionTitle}" Margin="0,0,0,15"/>
                                 
                                 <!-- Filters Bar -->
                                 <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,12" VerticalAlignment="Center">
@@ -183,7 +183,7 @@
                                                             <ColumnDefinition Width="Auto"/>
                                                         </Grid.ColumnDefinitions>
                                                         <TextBox Grid.Column="0" Text="{Binding VoiceId, UpdateSourceTrigger=PropertyChanged}" Height="28" VerticalAlignment="Center" VerticalContentAlignment="Center"/>
-                                                        <Button Grid.Column="1" Content="🔍" Style="{StaticResource PrimaryButton}" Width="28" Height="28" Margin="4,0,0,0" VerticalAlignment="Center" Click="BtnBrowseVoice_Click" ToolTip="Browse shared voices">
+                                                        <Button Grid.Column="1" Content="🔍" Style="{StaticResource IconButton}" Background="{DynamicResource PrimaryBrush}" Foreground="{DynamicResource OnPrimaryBrush}" BorderThickness="0" Margin="4,0,0,0" VerticalAlignment="Center" Click="BtnBrowseVoice_Click" ToolTip="Browse shared voices">
                                                         </Button>
                                                     </Grid>
                                                 </DataTemplate>

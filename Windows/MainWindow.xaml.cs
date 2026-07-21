@@ -92,6 +92,7 @@ namespace AutoCreateImage
                     if (BtnThemeToggle?.Template?.FindName("TxtThemeIcon", BtnThemeToggle) is TextBlock txtIcon) txtIcon.Text = "🌙";
                     if (BtnThemeToggle?.Template?.FindName("TxtThemeLabel", BtnThemeToggle) is TextBlock txtLabel) txtLabel.Text = "Dark Mode";
                 }
+                ThemeService.Apply(_isDarkMode);
             }
             catch (Exception ex)
             {
