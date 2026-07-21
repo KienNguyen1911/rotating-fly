@@ -2,7 +2,7 @@ using System;
 using System.Threading.Tasks;
 using Microsoft.Playwright;
 
-namespace AutoCreateImage
+namespace AssetAutomator
 {
     /// <summary>
     /// Encapsulates ChatGPT browser interaction logic: drag-drop file upload, prompt submission,

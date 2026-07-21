@@ -1,4 +1,4 @@
-# Script đóng gói ứng dụng AutoCreateImage v1.1
+# Script đóng gói ứng dụng AssetAutomator v1.1
 
 $ErrorActionPreference = "Stop"
 
@@ -6,7 +6,7 @@ $ErrorActionPreference = "Stop"
 $projectRoot = Get-Location
 $publishDir = Join-Path $projectRoot "bin\Release\net10.0-windows\win-x64\publish"
 $packageOutDir = Join-Path $projectRoot "dist_package"
-$zipFile = Join-Path $projectRoot "AutoCreateImage_v1.1.zip"
+$zipFile = Join-Path $projectRoot "AssetAutomator_v1.1.zip"
 
 Write-Host "=== BẮT ĐẦU ĐÓNG GÓI ỨNG DỤNG v1.1 ===" -ForegroundColor Cyan
 
@@ -21,7 +21,7 @@ if (Test-Path $zipFile) {
 
 # 3. Chạy dotnet publish
 Write-Host "Đang build và publish ứng dụng..." -ForegroundColor Green
-dotnet publish AutoCreateImage.csproj -c Release -r win-x64 --self-contained true
+dotnet publish AssetAutomator.csproj -c Release -r win-x64 --self-contained true
 
 # 4. Tạo thư mục package mới
 New-Item -ItemType Directory -Path $packageOutDir | Out-Null

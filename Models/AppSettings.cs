@@ -1,4 +1,4 @@
-namespace AutoCreateImage
+namespace AssetAutomator
 {
     /// <summary>
     /// Application configuration model. Serialized to/from appsettings.json.
@@ -16,7 +16,7 @@ namespace AutoCreateImage
         public string DefaultChromeProfile { get; set; } = string.Empty;
         public string CustomGptUrl { get; set; } = "https://chatgpt.com/g/g-6a4083a0e37081919a248ef7721dae3d-dich-chay";
         public string SubtitleApiUrl { get; set; } = "https://1834-34-28-139-249.ngrok-free.app/api/transcribe";
-        public string ProxiesFilePath { get; set; } = "C:\\Users\\ngkie\\Dev\\AutoCreateImage\\free-proxies.json";
-        public string ManualProxiesFilePath { get; set; } = "C:\\Users\\ngkie\\Dev\\AutoCreateImage\\manual-proxies.txt";
+        public string ProxiesFilePath { get; set; } = "C:\\Users\\ngkie\\Dev\\AssetAutomator\\free-proxies.json";
+        public string ManualProxiesFilePath { get; set; } = "C:\\Users\\ngkie\\Dev\\AssetAutomator\\manual-proxies.txt";
     }
 }

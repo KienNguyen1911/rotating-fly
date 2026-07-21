@@ -7,7 +7,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace AutoCreateImage
+namespace AssetAutomator
 {
     /// <summary>
     /// Helper class for loading proxies from JSON file and validating if they are currently functional.

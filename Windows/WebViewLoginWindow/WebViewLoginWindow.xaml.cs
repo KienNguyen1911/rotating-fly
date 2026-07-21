@@ -3,7 +3,7 @@ using System.Diagnostics;
 using System.Windows;
 using Microsoft.Web.WebView2.Core;
 
-namespace AutoCreateImage
+namespace AssetAutomator
 {
     public partial class WebViewLoginWindow : Window
     {

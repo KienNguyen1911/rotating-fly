@@ -1,6 +1,6 @@
 # Nguyên tắc Phát triển & Cấu trúc Code (Developer Rules)
 
-Tài liệu này đóng vai trò hướng dẫn phát triển cho các AI assistant (Gemini, Antigravity) và lập trình viên khi tiếp tục làm việc trên dự án `AutoCreateImage`.
+Tài liệu này đóng vai trò hướng dẫn phát triển cho các AI assistant (Gemini, Antigravity) và lập trình viên khi tiếp tục làm việc trên dự án `AssetAutomator`.
 
 ---
 

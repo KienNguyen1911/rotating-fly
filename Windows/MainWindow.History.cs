@@ -3,7 +3,7 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 
-namespace AutoCreateImage
+namespace AssetAutomator
 {
     /// <summary>
     /// History tab UI handlers. All persistence logic delegated to HistoryService.

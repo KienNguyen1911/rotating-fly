@@ -1,6 +1,6 @@
 using System.Collections.Generic;
 
-namespace AutoCreateImage
+namespace AssetAutomator
 {
     public static class AppConstants
     {

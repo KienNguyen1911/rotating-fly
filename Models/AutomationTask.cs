@@ -4,7 +4,7 @@ using System.Text.RegularExpressions;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 
-namespace AutoCreateImage
+namespace AssetAutomator
 {
     public class AutomationTask : INotifyPropertyChanged
     {

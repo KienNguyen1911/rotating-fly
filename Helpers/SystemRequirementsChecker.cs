@@ -5,7 +5,7 @@ using System.Threading.Tasks;
 using Microsoft.Playwright;
 using Microsoft.Win32;
 
-namespace AutoCreateImage
+namespace AssetAutomator
 {
     public class SystemRequirementResult
     {

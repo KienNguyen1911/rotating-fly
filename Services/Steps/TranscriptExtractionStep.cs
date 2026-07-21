@@ -7,7 +7,7 @@ using Microsoft.Playwright;
 using YoutubeExplode;
 using YoutubeExplode.Videos.ClosedCaptions;
 
-namespace AutoCreateImage
+namespace AssetAutomator
 {
     /// <summary>
     /// Step 2: Extracts video transcript using YoutubeExplode library.

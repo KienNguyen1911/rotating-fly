@@ -1,4 +1,4 @@
-# Quy chuẩn Code Quality & Architecture cho dự án AutoCreateImage
+# Quy chuẩn Code Quality & Architecture cho dự án AssetAutomator
 
 Tập tin này chứa cấu hình tự động (agent rules) cho các phiên làm việc tiếp theo của AI Assistant.
 
@@ -25,5 +25,5 @@ Tuân thủ cấu trúc thư mục phân cụm chức năng sau:
 
 ## 3. Quy trình thực hiện
 1. Luôn ưu tiên tạo mới/sửa đổi Service hoặc Model riêng trước khi liên kết với giao diện.
-2. Tránh làm thay đổi cấu trúc namespace `AutoCreateImage` để không ảnh hưởng XAML bindings.
+2. Tránh làm thay đổi cấu trúc namespace `AssetAutomator` để không ảnh hưởng XAML bindings.
 3. Build dự án bằng `dotnet build` và kiểm tra 0 lỗi, 0 warnings sau mỗi thay đổi lớn.

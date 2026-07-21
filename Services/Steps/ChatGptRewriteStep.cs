@@ -3,7 +3,7 @@ using System.IO;
 using System.Threading.Tasks;
 using Microsoft.Playwright;
 
-namespace AutoCreateImage
+namespace AssetAutomator
 {
     /// <summary>
     /// Step 3: Rewrites the transcript using ChatGPT via browser automation.

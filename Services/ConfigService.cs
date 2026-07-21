@@ -2,7 +2,7 @@ using System;
 using System.IO;
 using System.Text.Json;
 
-namespace AutoCreateImage
+namespace AssetAutomator
 {
 
     public static class ConfigService

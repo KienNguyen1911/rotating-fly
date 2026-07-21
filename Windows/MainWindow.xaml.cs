@@ -4,7 +4,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Collections.ObjectModel;
 
-namespace AutoCreateImage
+namespace AssetAutomator
 {
     public partial class MainWindow : Window, System.ComponentModel.INotifyPropertyChanged
     {

@@ -1,4 +1,4 @@
-# AutoCreateImage - Clean Architecture & SOLID Refactored
+# AssetAutomator - Clean Architecture & SOLID Refactored
 
 Hệ thống tự động hóa quy trình tải hình thu nhỏ (thumbnail), dịch thuật kịch bản thông qua AI, chuyển đổi văn bản thành giọng nói (TTS) và tạo video tự động tích hợp quản lý Chrome Profiles. Codebase đã được tái cấu trúc triệt để theo mô hình **Clean Architecture**, tuân thủ nguyên lý **SOLID** và **DRY**.
 
@@ -7,7 +7,7 @@ Hệ thống tự động hóa quy trình tải hình thu nhỏ (thumbnail), d�
 ## 📁 Cấu trúc Thư mục & Chức năng
 
 ```
-AutoCreateImage/
+AssetAutomator/
 ├── Converters/               # Các bộ chuyển đổi dữ liệu hiển thị (XAML Data Binding)
 │   └── YoutubeUrlConverter.cs  # Chuẩn hóa đường dẫn YouTube URL sang dạng ID 11 ký tự
 │
@@ -50,7 +50,7 @@ AutoCreateImage/
 │
 ├── App.xaml + App.xaml.cs    # Cấu hình khởi tạo và điểm khởi chạy của ứng dụng WPF
 ├── AssemblyInfo.cs           # Khai báo thông tin và phiên bản Assembly của ứng dụng
-├── AutoCreateImage.csproj    # File dự án MSBuild định nghĩa các gói phụ thuộc (.NET 10.0-windows)
+├── AssetAutomator.csproj    # File dự án MSBuild định nghĩa các gói phụ thuộc (.NET 10.0-windows)
 ├── free-proxies.json         # Danh sách proxy dự phòng dùng khi gọi API
 └── requirement.md            # Tài liệu yêu cầu chức năng và sơ đồ luồng dữ liệu
 ```

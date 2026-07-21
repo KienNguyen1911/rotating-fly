@@ -2,7 +2,7 @@ using System.Configuration;
 using System.Data;
 using System.Windows;
 
-namespace AutoCreateImage;
+namespace AssetAutomator;
 
 /// <summary>
 /// Interaction logic for App.xaml

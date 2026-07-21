@@ -1,6 +1,6 @@
 using System;
 
-namespace AutoCreateImage
+namespace AssetAutomator
 {
     /// <summary>
     /// Represents a request in the image generation pool queue.

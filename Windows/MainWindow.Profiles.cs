@@ -4,7 +4,7 @@ using System.Threading.Tasks;
 using System.Windows;
 using Microsoft.Playwright;
 
-namespace AutoCreateImage
+namespace AssetAutomator
 {
     /// <summary>
     /// Chrome Profile management UI handlers. Browser lifecycle delegated to BrowserService.

@@ -2,7 +2,7 @@ using System;
 using System.IO;
 using System.Text.RegularExpressions;
 
-namespace AutoCreateImage
+namespace AssetAutomator
 {
     public class HistoryTaskModel
     {

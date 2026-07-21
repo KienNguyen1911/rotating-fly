@@ -7,7 +7,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.ComponentModel;
 
-namespace AutoCreateImage
+namespace AssetAutomator
 {
     /// <summary>
     /// Task tab UI handlers. History persistence delegated to HistoryService.

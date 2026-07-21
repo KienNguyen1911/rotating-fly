@@ -3,7 +3,7 @@ using System.IO;
 using System.Net.Http;
 using System.Threading.Tasks;
 
-namespace AutoCreateImage
+namespace AssetAutomator
 {
     /// <summary>
     /// Step 5: Generates edited images via Image Edits API (Legacy or G-Labs).

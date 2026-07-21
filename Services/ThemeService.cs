@@ -1,6 +1,6 @@
 using System.Windows;
 
-namespace AutoCreateImage;
+namespace AssetAutomator;
 
 public static class ThemeService
 {

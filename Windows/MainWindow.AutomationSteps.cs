@@ -4,7 +4,7 @@ using System.Threading.Tasks;
 using System.Windows;
 using Microsoft.Playwright;
 
-namespace AutoCreateImage
+namespace AssetAutomator
 {
     /// <summary>
     /// Orchestrates the automation pipeline by delegating to individual step services.
@@ -135,7 +135,7 @@ namespace AutoCreateImage
                     if (needStep2 || needStep3)
                     {
                         string originalProfilePath = Path.Combine(GetProfilesBaseDir(), task.SelectedProfile);
-                        tempProfilePath = Path.Combine(Path.GetTempPath(), "AutoCreateImage", $"TempProfile_{task.VideoId}_{Guid.NewGuid()}");
+                        tempProfilePath = Path.Combine(Path.GetTempPath(), "AssetAutomator", $"TempProfile_{task.VideoId}_{Guid.NewGuid()}");
 
                         LogTask(task, $"[SCRIPT-BRANCH] Cloning Chrome Profile '{task.SelectedProfile}' to temporary folder...");
                         try

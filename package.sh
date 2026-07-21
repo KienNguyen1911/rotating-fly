@@ -15,7 +15,7 @@ echo -e "${CYAN}=== BẮT ĐẦU ĐÓNG GÓI ỨNG DỤNG v1.1 ===${NC}"
 PROJECT_ROOT=$(pwd)
 PUBLISH_DIR="$PROJECT_ROOT/bin/Release/net10.0-windows/win-x64/publish"
 PACKAGE_OUT_DIR="$PROJECT_ROOT/dist_package"
-ZIP_FILE="$PROJECT_ROOT/AutoCreateImage_v1.1.zip"
+ZIP_FILE="$PROJECT_ROOT/AssetAutomator_v1.1.zip"
 
 # 2. Xóa các thư mục build cũ nếu có
 if [ -d "$PACKAGE_OUT_DIR" ]; then
@@ -29,7 +29,7 @@ fi
 
 # 3. Chạy lệnh dotnet publish
 echo -e "${GREEN}Đang build và publish ứng dụng...${NC}"
-dotnet publish AutoCreateImage.csproj -c Release -r win-x64 --self-contained true
+dotnet publish AssetAutomator.csproj -c Release -r win-x64 --self-contained true
 
 # 4. Tạo thư mục package mới và sao chép bản build sang (bao gồm cả thư mục ẩn .playwright)
 echo -e "${GREEN}Đang chuẩn bị thư mục package...${NC}"

@@ -5,7 +5,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace AutoCreateImage
+namespace AssetAutomator
 {
     /// <summary>
     /// Manages task history persistence (save/load/delete) to JSON files organized by date.

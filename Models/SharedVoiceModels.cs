@@ -1,6 +1,6 @@
 using System.Collections.Generic;
 
-namespace AutoCreateImage
+namespace AssetAutomator
 {
     /// <summary>
     /// API response model for shared voices listing.

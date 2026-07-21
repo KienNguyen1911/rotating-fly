@@ -7,7 +7,7 @@ using System.Threading.Tasks;
 using System.Windows;
 using Microsoft.Playwright;
 
-namespace AutoCreateImage
+namespace AssetAutomator
 {
     /// <summary>
     /// Manages Playwright browser lifecycle: initialization, slot allocation, profile cloning, and cleanup.

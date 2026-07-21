@@ -2,7 +2,7 @@ using System;
 using System.Threading.Tasks;
 using Microsoft.Playwright;
 
-namespace AutoCreateImage
+namespace AssetAutomator
 {
     /// <summary>
     /// Simulates human-like browser interactions to avoid bot detection.

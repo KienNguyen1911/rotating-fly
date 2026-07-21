@@ -2,7 +2,7 @@ using System;
 using System.Windows.Data;
 using System.Globalization;
 
-namespace AutoCreateImage
+namespace AssetAutomator
 {
     public class YoutubeUrlConverter : IValueConverter
     {

@@ -4,7 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 
-namespace AutoCreateImage
+namespace AssetAutomator
 {
     /// <summary>
     /// Manages the image generation request pool with worker-based concurrency.

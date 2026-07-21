@@ -1,5 +1,0 @@
-tôi muốn filter status theo các chữ cái như hiện tại: T R W V S G
-nếu chọn T thì show ra các task có status failed tại step T
-nếu chọn R thì show ra các task có status faied tại step R
-tương tự và các chữ cái còn lại
-

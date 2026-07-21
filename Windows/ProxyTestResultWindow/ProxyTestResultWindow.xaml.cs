@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Windows;
 
-namespace AutoCreateImage
+namespace AssetAutomator
 {
     /// <summary>
     /// Interaction logic for ProxyTestResultWindow.xaml

@@ -3,7 +3,7 @@ using System.IO;
 using System.Net.Http;
 using System.Threading.Tasks;
 
-namespace AutoCreateImage
+namespace AssetAutomator
 {
     /// <summary>
     /// Step 4: Generates voiceover via AI84 TTS API (async job + polling)

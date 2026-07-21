@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Windows;
 
-namespace AutoCreateImage
+namespace AssetAutomator
 {
     public partial class BulkTaskWindow : Window
     {
