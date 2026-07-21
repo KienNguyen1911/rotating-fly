@@ -8,11 +8,31 @@ namespace AssetAutomator
     public static class ConfigService
     {
         public static AppSettings CurrentSettings { get; set; } = new AppSettings();
-        private static readonly string ConfigPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "appsettings.json");
+        
+        private static readonly string AppDataFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "AssetAutomator");
+        private static readonly string ConfigPath = Path.Combine(AppDataFolder, "appsettings.json");
 
         public static AppSettings LoadSettings()
         {
             var settings = new AppSettings();
+
+            // Migrate local appsettings.json to AppData if local exists but AppData doesn't
+            string localConfigPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "appsettings.json");
+            if (File.Exists(localConfigPath) && !File.Exists(ConfigPath))
+            {
+                try 
+                {
+                    if (!Directory.Exists(AppDataFolder))
+                    {
+                        Directory.CreateDirectory(AppDataFolder);
+                    }
+                    File.Copy(localConfigPath, ConfigPath);
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[ConfigService] Error migrating local config: {ex.Message}");
+                }
+            }
 
             // 1. Load from JSON config file if it exists
             if (File.Exists(ConfigPath))
@@ -65,6 +85,11 @@ namespace AssetAutomator
             CurrentSettings = settings;
             try
             {
+                if (!Directory.Exists(AppDataFolder))
+                {
+                    Directory.CreateDirectory(AppDataFolder);
+                }
+
                 var options = new JsonSerializerOptions { WriteIndented = true };
                 string json = JsonSerializer.Serialize(settings, options);
                 File.WriteAllText(ConfigPath, json);
