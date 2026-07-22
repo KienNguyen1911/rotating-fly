@@ -1,6 +1,7 @@
 using System.Configuration;
 using System.Data;
 using System.Windows;
+using AssetAutomator.Services;
 
 namespace AssetAutomator;
 
@@ -14,7 +15,7 @@ public partial class App : Application
         base.OnStartup(e);
         
         // Bắt đầu cập nhật tự động từ GitHub
-        AutoUpdaterDotNET.AutoUpdater.Start("https://raw.githubusercontent.com/KienNguyen1911/AssetAutomator-Releases/main/update.xml");
-        
+        var updateService = new UpdateService();
+        updateService.CheckForUpdates(isManualCheck: false);
     }
 }

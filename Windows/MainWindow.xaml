@@ -29,27 +29,58 @@
                     <TextBlock Text="YOUTUBE SCRIPT &amp; VOICEOVER AUTOMATION" Foreground="{DynamicResource OnPrimaryBrush}" FontSize="18" FontWeight="Bold"/>
                     <TextBlock Text="Prototype V3 - C# Playwright Automation Flow" Foreground="{DynamicResource MutedSoftBrush}" FontSize="12" Margin="0,4,0,0"/>
                 </StackPanel>
-                <ToggleButton x:Name="BtnThemeToggle" Grid.Column="1" VerticalAlignment="Center" Click="BtnThemeToggle_Click" Cursor="Hand">
-                    <ToggleButton.Style>
-                        <Style TargetType="ToggleButton">
-                            <Setter Property="Background" Value="{DynamicResource SurfaceCardBrush}"/>
-                            <Setter Property="BorderThickness" Value="0"/>
-                            <Setter Property="Padding" Value="12,6"/>
-                            <Setter Property="Template">
-                                <Setter.Value>
-                                    <ControlTemplate TargetType="ToggleButton">
-                                        <Border Background="{TemplateBinding Background}" CornerRadius="12" Padding="{TemplateBinding Padding}">
-                                            <StackPanel Orientation="Horizontal">
-                                                <TextBlock x:Name="TxtThemeIcon" Text="🌙" FontSize="14" Margin="0,0,6,0" VerticalAlignment="Center"/>
-                                                <TextBlock x:Name="TxtThemeLabel" Text="Dark Mode" Foreground="{DynamicResource InkBrush}" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                                            </StackPanel>
-                                        </Border>
-                                    </ControlTemplate>
-                                </Setter.Value>
-                            </Setter>
-                        </Style>
-                    </ToggleButton.Style>
-                </ToggleButton>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Button x:Name="BtnCheckUpdate" Click="BtnCheckUpdate_Click" Cursor="Hand" Margin="0,0,10,0" ToolTip="Kiểm tra phiên bản cập nhật mới nhất">
+                        <Button.Style>
+                            <Style TargetType="Button">
+                                <Setter Property="Background" Value="{DynamicResource SurfaceCardBrush}"/>
+                                <Setter Property="BorderThickness" Value="0"/>
+                                <Setter Property="Padding" Value="12,6"/>
+                                <Setter Property="Template">
+                                    <Setter.Value>
+                                        <ControlTemplate TargetType="Button">
+                                            <Border x:Name="border" Background="{TemplateBinding Background}" CornerRadius="12" Padding="{TemplateBinding Padding}">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <TextBlock Text="🔄" FontSize="14" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                                    <TextBlock Text="Check Update" Foreground="{DynamicResource InkBrush}" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                                </StackPanel>
+                                            </Border>
+                                            <ControlTemplate.Triggers>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Setter TargetName="border" Property="Opacity" Value="0.85"/>
+                                                </Trigger>
+                                                <Trigger Property="IsPressed" Value="True">
+                                                    <Setter TargetName="border" Property="Opacity" Value="0.7"/>
+                                                </Trigger>
+                                            </ControlTemplate.Triggers>
+                                        </ControlTemplate>
+                                    </Setter.Value>
+                                </Setter>
+                            </Style>
+                        </Button.Style>
+                    </Button>
+                    <ToggleButton x:Name="BtnThemeToggle" Click="BtnThemeToggle_Click" Cursor="Hand">
+                        <ToggleButton.Style>
+                            <Style TargetType="ToggleButton">
+                                <Setter Property="Background" Value="{DynamicResource SurfaceCardBrush}"/>
+                                <Setter Property="BorderThickness" Value="0"/>
+                                <Setter Property="Padding" Value="12,6"/>
+                                <Setter Property="Template">
+                                    <Setter.Value>
+                                        <ControlTemplate TargetType="ToggleButton">
+                                            <Border Background="{TemplateBinding Background}" CornerRadius="12" Padding="{TemplateBinding Padding}">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <TextBlock x:Name="TxtThemeIcon" Text="🌙" FontSize="14" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                                    <TextBlock x:Name="TxtThemeLabel" Text="Dark Mode" Foreground="{DynamicResource InkBrush}" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                                </StackPanel>
+                                            </Border>
+                                        </ControlTemplate>
+                                    </Setter.Value>
+                                </Setter>
+                            </Style>
+                        </ToggleButton.Style>
+                    </ToggleButton>
+                </StackPanel>
             </Grid>
         </Border>
 

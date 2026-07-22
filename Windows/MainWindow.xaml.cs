@@ -3,6 +3,7 @@ using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Collections.ObjectModel;
+using AssetAutomator.Services;
 
 namespace AssetAutomator
 {
@@ -23,6 +24,7 @@ namespace AssetAutomator
         private readonly HistoryService _historyService;
         private readonly ImagePoolService _imagePoolService;
         private readonly ChatGptService _chatGptService;
+        private readonly UpdateService _updateService;
 
         // Step services
         private readonly ThumbnailDownloadStep _step1;
@@ -100,6 +102,11 @@ namespace AssetAutomator
             }
         }
 
+        private void BtnCheckUpdate_Click(object sender, RoutedEventArgs e)
+        {
+            _updateService.CheckForUpdates(isManualCheck: true);
+        }
+
         // UI state
         private DateTime _lastUiUpdateTime = DateTime.MinValue;
 
@@ -120,6 +127,7 @@ namespace AssetAutomator
             _imagePoolService = new ImagePoolService();
             _imagePoolService.LogTask = LogTask;
             _imagePoolService.OnPoolStateChanged += UpdatePoolUi;
+            _updateService = new UpdateService(Log);
 
             // Initialize step services
             _step1 = new ThumbnailDownloadStep();
