@@ -58,8 +58,7 @@ namespace AssetAutomator
             if (sender is Button btn && btn.DataContext is HistoryTaskModel task)
             {
                 TxtSidebarLog.DataContext = task;
-                TxtSidebarLog.Text = task.Logs;
-                TxtSidebarLog.ScrollToEnd();
+                SetLogsToRichTextBox(task.Logs ?? string.Empty);
                 SidebarLogs.Visibility = Visibility.Visible;
             }
         }

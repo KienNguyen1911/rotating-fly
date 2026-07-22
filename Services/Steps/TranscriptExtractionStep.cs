@@ -218,9 +218,15 @@ namespace AssetAutomator
                 var output = await process.StandardOutput.ReadToEndAsync();
                 var error = await process.StandardError.ReadToEndAsync();
                 await process.WaitForExitAsync();
+
+                if (!string.IsNullOrWhiteSpace(error))
+                {
+                    logTask(task, $"[PYTHON] {error.Trim()}");
+                }
+
                 if (process.ExitCode != 0)
                 {
-                    logTask(task, $"[ERROR] Python fallback exited with code {process.ExitCode}: {error}");
+                    logTask(task, $"[ERROR] Python fallback exited with code {process.ExitCode}");
                     return null;
                 }
                 return string.IsNullOrWhiteSpace(output) ? null : output.Trim();

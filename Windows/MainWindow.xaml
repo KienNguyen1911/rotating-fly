@@ -1016,9 +1016,15 @@
                     </Grid>
 
                     <!-- Log content (stretches to fill sidebar width) -->
-                    <TextBox Grid.Row="1" x:Name="TxtSidebarLog" Background="{DynamicResource CanvasBrush}" Foreground="{DynamicResource InkBrush}" BorderBrush="{DynamicResource HairlineBrush}" BorderThickness="1" 
-                              Margin="15,0,15,15" Padding="10" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" IsReadOnly="True" 
-                              FontSize="12" FontFamily="Consolas" AcceptsReturn="True"/>
+                    <RichTextBox Grid.Row="1" x:Name="TxtSidebarLog" Background="{DynamicResource CanvasBrush}" Foreground="{DynamicResource InkBrush}" BorderBrush="{DynamicResource HairlineBrush}" BorderThickness="1" 
+                                 Margin="15,0,15,15" Padding="10" VerticalScrollBarVisibility="Auto" IsReadOnly="True" IsDocumentEnabled="True"
+                                 FontSize="12" FontFamily="Consolas">
+                        <RichTextBox.Resources>
+                            <Style TargetType="Paragraph">
+                                <Setter Property="Margin" Value="0,1,0,1"/>
+                            </Style>
+                        </RichTextBox.Resources>
+                    </RichTextBox>
                 </Grid>
             </Border>
         </Grid>

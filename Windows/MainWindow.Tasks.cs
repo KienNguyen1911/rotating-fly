@@ -4,6 +4,8 @@ using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Documents;
+using System.Windows.Media;
 using System.Windows.Input;
 using System.ComponentModel;
 
@@ -31,6 +33,70 @@ namespace AssetAutomator
             }
         }
 
+        private static Brush? GetLogLineBrush(string text)
+        {
+            if (text.Contains("[ERROR]", StringComparison.OrdinalIgnoreCase) || text.Contains("failed", StringComparison.OrdinalIgnoreCase) || text.Contains("Exception", StringComparison.OrdinalIgnoreCase) || text.Contains("ERR_"))
+            {
+                return new SolidColorBrush((Color)ColorConverter.ConvertFromString("#EF4444")); // Red
+            }
+            if (text.Contains("[INFO]", StringComparison.OrdinalIgnoreCase) || text.Contains("[SUCCESS]", StringComparison.OrdinalIgnoreCase) || text.Contains("Success", StringComparison.OrdinalIgnoreCase) || text.Contains("Saved ", StringComparison.OrdinalIgnoreCase) || text.Contains("[ALIVE]", StringComparison.OrdinalIgnoreCase) || text.Contains("completed successfully", StringComparison.OrdinalIgnoreCase))
+            {
+                return new SolidColorBrush((Color)ColorConverter.ConvertFromString("#10B981")); // Emerald Green
+            }
+            if (text.Contains("[WARNING]", StringComparison.OrdinalIgnoreCase) || text.Contains("[FALLBACK]", StringComparison.OrdinalIgnoreCase) || text.Contains("Retrying", StringComparison.OrdinalIgnoreCase))
+            {
+                return new SolidColorBrush((Color)ColorConverter.ConvertFromString("#F59E0B")); // Amber Orange
+            }
+            if (text.Contains("[STEP", StringComparison.OrdinalIgnoreCase) || text.Contains("[FLOW]", StringComparison.OrdinalIgnoreCase) || text.Contains("[SCRIPT-BRANCH]", StringComparison.OrdinalIgnoreCase) || text.Contains("[IMAGE-BRANCH]", StringComparison.OrdinalIgnoreCase) || text.Contains("[PROXY]", StringComparison.OrdinalIgnoreCase) || text.Contains("[POOL]", StringComparison.OrdinalIgnoreCase))
+            {
+                return new SolidColorBrush((Color)ColorConverter.ConvertFromString("#0EA5E9")); // Sky Blue / Cyan
+            }
+            return null; // Return null to inherit DynamicResource InkBrush (White in Dark mode, Black in Light mode)
+        }
+
+        private void AppendLogToRichTextBox(string logLine)
+        {
+            if (TxtSidebarLog.Document == null)
+            {
+                TxtSidebarLog.Document = new FlowDocument();
+            }
+            var brush = GetLogLineBrush(logLine);
+            var paragraph = new Paragraph(new Run(logLine.TrimEnd('\r', '\n')))
+            {
+                Margin = new Thickness(0, 1, 0, 1)
+            };
+            if (brush != null)
+            {
+                paragraph.Foreground = brush;
+            }
+            TxtSidebarLog.Document.Blocks.Add(paragraph);
+            TxtSidebarLog.ScrollToEnd();
+        }
+
+        public void SetLogsToRichTextBox(string fullLogs)
+        {
+            var doc = new FlowDocument();
+            if (!string.IsNullOrEmpty(fullLogs))
+            {
+                var lines = fullLogs.Split(new[] { "\r\n", "\n" }, StringSplitOptions.RemoveEmptyEntries);
+                foreach (var line in lines)
+                {
+                    var brush = GetLogLineBrush(line);
+                    var paragraph = new Paragraph(new Run(line))
+                    {
+                        Margin = new Thickness(0, 1, 0, 1)
+                    };
+                    if (brush != null)
+                    {
+                        paragraph.Foreground = brush;
+                    }
+                    doc.Blocks.Add(paragraph);
+                }
+            }
+            TxtSidebarLog.Document = doc;
+            TxtSidebarLog.ScrollToEnd();
+        }
+
         private void LogTask(AutomationTask task, string message)
         {
             string formattedMessage = $"[{DateTime.Now:HH:mm:ss}] {message}\n";
@@ -40,8 +106,7 @@ namespace AssetAutomator
             {
                 if (SidebarLogs.Visibility == Visibility.Visible && TxtSidebarLog.DataContext == task)
                 {
-                    TxtSidebarLog.AppendText(formattedMessage);
-                    TxtSidebarLog.ScrollToEnd();
+                    AppendLogToRichTextBox(formattedMessage);
                 }
             }));
         }
@@ -304,8 +369,7 @@ namespace AssetAutomator
             {
                 _currentLogTask = task;
                 TxtSidebarLog.DataContext = task;
-                TxtSidebarLog.Text = task.Logs;
-                TxtSidebarLog.ScrollToEnd();
+                SetLogsToRichTextBox(task.Logs ?? string.Empty);
                 SidebarLogs.Width = _sidebarWidth;
                 SidebarLogs.Visibility = Visibility.Visible;
             }
@@ -316,6 +380,7 @@ namespace AssetAutomator
             SidebarLogs.Visibility = Visibility.Collapsed;
             _currentLogTask = null;
             TxtSidebarLog.DataContext = null;
+            TxtSidebarLog.Document = new FlowDocument();
         }
 
         private void BtnViewTaskAssets_Click(object sender, RoutedEventArgs e)
