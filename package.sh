@@ -93,8 +93,8 @@ cat > "$PROJECT_ROOT/update.xml" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <item>
     <version>${VERSION}</version>
-    <url>https://github.com/KienNguyen1911/rotating-fly/releases/download/v${VERSION}/AssetAutomator_v${VERSION}.zip</url>
-    <changelog>https://github.com/KienNguyen1911/rotating-fly/releases/tag/v${VERSION}</changelog>
+    <url>https://github.com/KienNguyen1911/AssetAutomator-Releases/releases/download/v${VERSION}/AssetAutomator_v${VERSION}.zip</url>
+    <changelog>https://github.com/KienNguyen1911/AssetAutomator-Releases/releases/tag/v${VERSION}</changelog>
     <mandatory>false</mandatory>
 </item>
 EOF

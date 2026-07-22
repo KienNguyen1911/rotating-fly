@@ -973,7 +973,7 @@
             </Border>
  
             <!-- Sidebar content -->
-            <Border Grid.Column="1" Background="{DynamicResource InkBrush}" BorderBrush="{DynamicResource HairlineBrush}" BorderThickness="1,0,0,0">
+            <Border Grid.Column="1" Background="{DynamicResource SurfaceSoftBrush}" BorderBrush="{DynamicResource HairlineBrush}" BorderThickness="1,0,0,0">
                 <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
@@ -986,13 +986,38 @@
                             <ColumnDefinition Width="*"/>
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
-                        <TextBlock Text="Task Live Logs" Foreground="White" FontSize="14" FontWeight="Bold" VerticalAlignment="Center"/>
-                        <Button Grid.Column="1" Content="✕" Width="30" Height="30" Background="Transparent" Foreground="White" BorderThickness="0" FontSize="16" Click="BtnCloseSidebar_Click"/>
+                        <TextBlock Text="Task Live Logs" Foreground="{DynamicResource InkBrush}" FontSize="14" FontWeight="Bold" VerticalAlignment="Center"/>
+                        <Button Grid.Column="1" Content="✕" Width="32" Height="32" FontSize="14" FontWeight="ExtraBold" Cursor="Hand" Click="BtnCloseSidebar_Click">
+                            <Button.Style>
+                                <Style TargetType="Button">
+                                    <Setter Property="Background" Value="{DynamicResource SurfaceCardBrush}"/>
+                                    <Setter Property="Foreground" Value="{DynamicResource InkBrush}"/>
+                                    <Setter Property="BorderBrush" Value="{DynamicResource HairlineBrush}"/>
+                                    <Setter Property="BorderThickness" Value="1"/>
+                                    <Setter Property="Template">
+                                        <Setter.Value>
+                                            <ControlTemplate TargetType="Button">
+                                                <Border CornerRadius="16" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}">
+                                                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                </Border>
+                                                <ControlTemplate.Triggers>
+                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                        <Setter Property="Background" Value="#EF4444"/>
+                                                        <Setter Property="Foreground" Value="White"/>
+                                                        <Setter Property="BorderBrush" Value="#EF4444"/>
+                                                    </Trigger>
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </Setter.Value>
+                                    </Setter>
+                                </Style>
+                            </Button.Style>
+                        </Button>
                     </Grid>
 
                     <!-- Log content (stretches to fill sidebar width) -->
-                    <TextBox Grid.Row="1" x:Name="TxtSidebarLog" Background="Transparent" Foreground="#F8FAFC" BorderThickness="0" 
-                              Margin="15,0,15,15" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" IsReadOnly="True" 
+                    <TextBox Grid.Row="1" x:Name="TxtSidebarLog" Background="{DynamicResource CanvasBrush}" Foreground="{DynamicResource InkBrush}" BorderBrush="{DynamicResource HairlineBrush}" BorderThickness="1" 
+                              Margin="15,0,15,15" Padding="10" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" IsReadOnly="True" 
                               FontSize="12" FontFamily="Consolas" AcceptsReturn="True"/>
                 </Grid>
             </Border>

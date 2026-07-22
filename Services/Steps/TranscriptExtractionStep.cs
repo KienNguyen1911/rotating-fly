@@ -1,4 +1,6 @@
 using System;
+using System.Diagnostics;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
@@ -92,27 +94,23 @@ namespace AssetAutomator
 
                 if (trackManifest == null || !trackManifest.Tracks.Any())
                 {
-                    logTask(task, "[ERROR] No closed caption tracks found for this video.");
-                    return null;
+                    logTask(task, "[WARNING] No closed caption tracks found for this video.");
+                    // Fallback to Python transcript API
+                    var fallbackTranscript = await FallbackToPythonAsync(task.VideoId, task.TargetLanguage, proxyList, task, logTask);
+                    if (!string.IsNullOrWhiteSpace(fallbackTranscript))
+                    {
+                        transcriptText = fallbackTranscript;
+                        // Save fallback transcript
+                        string outputPath = Path.Combine(task.OutputDir, "transcript.txt");
+                        await File.WriteAllTextAsync(outputPath, transcriptText);
+                        logTask(task, $"[INFO] Saved fallback transcript to: {outputPath}");
+                    }
+                    return transcriptText;
                 }
 
                 // Try to find target language or default tracks
                 logTask(task, "Selecting best caption track...");
-                string targetLangCode = "en";
-                if (task.TargetLanguage.Contains(" - "))
-                {
-                    targetLangCode = task.TargetLanguage.Split(new[] { " - " }, StringSplitOptions.None)[1].Trim();
-                }
-                else if (task.TargetLanguage.StartsWith("Viet", StringComparison.OrdinalIgnoreCase))
-                {
-                    targetLangCode = "vi";
-                }
-
-                var trackInfo = trackManifest.Tracks.FirstOrDefault(t => t.Language.Code.Equals(targetLangCode, StringComparison.OrdinalIgnoreCase))
-                             ?? trackManifest.Tracks.FirstOrDefault(t => t.Language.Name.Contains(task.TargetLanguage.Contains(" - ") ? task.TargetLanguage.Split(new[] { " - " }, StringSplitOptions.None)[0].Trim() : task.TargetLanguage, StringComparison.OrdinalIgnoreCase))
-                             ?? trackManifest.Tracks.FirstOrDefault(t => t.Language.Code.Equals("vi", StringComparison.OrdinalIgnoreCase))
-                             ?? trackManifest.Tracks.FirstOrDefault(t => t.Language.Code.Equals("en", StringComparison.OrdinalIgnoreCase))
-                             ?? trackManifest.Tracks.FirstOrDefault();
+                var trackInfo = SelectBestTrack(trackManifest, task.TargetLanguage);
 
                 if (trackInfo == null)
                 {
@@ -145,6 +143,93 @@ namespace AssetAutomator
             }
 
             return transcriptText;
+        }
+        private ClosedCaptionTrackInfo? SelectBestTrack(ClosedCaptionManifest manifest, string targetLanguage)
+        {
+            // Determine language code from targetLanguage
+            string targetLangCode = "en";
+            if (targetLanguage.Contains(" - "))
+                targetLangCode = targetLanguage.Split(new[] { " - " }, StringSplitOptions.None)[1].Trim();
+            else if (targetLanguage.StartsWith("Viet", StringComparison.OrdinalIgnoreCase))
+                targetLangCode = "vi";
+
+            var track = manifest.Tracks.FirstOrDefault(t => t.Language.Code.Equals(targetLangCode, StringComparison.OrdinalIgnoreCase))
+                ?? manifest.Tracks.FirstOrDefault(t => t.Language.Name.Contains(
+                    targetLanguage.Contains(" - ")
+                        ? targetLanguage.Split(new[] { " - " }, StringSplitOptions.None)[0].Trim()
+                        : targetLanguage,
+                    StringComparison.OrdinalIgnoreCase))
+                ?? manifest.Tracks.FirstOrDefault(t => t.Language.Code.Equals("vi", StringComparison.OrdinalIgnoreCase))
+                ?? manifest.Tracks.FirstOrDefault(t => t.Language.Code.Equals("en", StringComparison.OrdinalIgnoreCase))
+                ?? manifest.Tracks.FirstOrDefault();
+
+            return track;
+        }
+
+        private async Task<string?> FallbackToPythonAsync(string videoId, string targetLanguage, System.Collections.Generic.List<string?> proxyList, AutomationTask task, Action<AutomationTask, string> logTask)
+        {
+            logTask(task, "[FALLBACK] Running python fallback script for transcript extraction...");
+            
+            string scriptPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Scripts", "fallback_transcript.py");
+            if (!File.Exists(scriptPath))
+            {
+                scriptPath = Path.Combine(Directory.GetCurrentDirectory(), "Scripts", "fallback_transcript.py");
+            }
+
+            if (!File.Exists(scriptPath))
+            {
+                logTask(task, $"[ERROR] Fallback script not found at: {scriptPath}");
+                return null;
+            }
+
+            // Choose first available proxy for python fallback, if any
+            var proxy = proxyList.FirstOrDefault(p => !string.IsNullOrWhiteSpace(p));
+            var args = new System.Collections.Generic.List<string>();
+            args.Add($"\"{scriptPath}\"");
+            args.Add("--video-id");
+            args.Add($"\"{videoId}\"");
+            args.Add("--lang");
+            args.Add($"\"{targetLanguage}\"");
+            if (!string.IsNullOrWhiteSpace(proxy))
+            {
+                args.Add("--proxy");
+                args.Add($"\"{proxy}\"");
+            }
+
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = "python",
+                Arguments = string.Join(" ", args),
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                StandardOutputEncoding = System.Text.Encoding.UTF8
+            };
+
+            try
+            {
+                using var process = Process.Start(startInfo);
+                if (process == null)
+                {
+                    logTask(task, "[ERROR] Failed to start python fallback process.");
+                    return null;
+                }
+                var output = await process.StandardOutput.ReadToEndAsync();
+                var error = await process.StandardError.ReadToEndAsync();
+                await process.WaitForExitAsync();
+                if (process.ExitCode != 0)
+                {
+                    logTask(task, $"[ERROR] Python fallback exited with code {process.ExitCode}: {error}");
+                    return null;
+                }
+                return string.IsNullOrWhiteSpace(output) ? null : output.Trim();
+            }
+            catch (Exception ex)
+            {
+                logTask(task, $"[ERROR] Exception while running python fallback: {ex.Message}");
+                return null;
+            }
         }
     }
 }

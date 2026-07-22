@@ -14,7 +14,7 @@ public partial class App : Application
         base.OnStartup(e);
         
         // Bắt đầu cập nhật tự động từ GitHub
-        AutoUpdaterDotNET.AutoUpdater.Start("https://raw.githubusercontent.com/KienNguyen1911/rotating-fly/main/update.xml");
+        AutoUpdaterDotNET.AutoUpdater.Start("https://raw.githubusercontent.com/KienNguyen1911/AssetAutomator-Releases/main/update.xml");
         
     }
 }
