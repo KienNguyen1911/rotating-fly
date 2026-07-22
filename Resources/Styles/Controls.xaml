@@ -35,4 +35,35 @@
     <Style TargetType="DataGridCell"><Setter Property="Foreground" Value="{DynamicResource Content.Primary}"/><Setter Property="BorderThickness" Value="0"/><Setter Property="Padding" Value="12,8"/><Style.Triggers><Trigger Property="IsSelected" Value="True"><Setter Property="Background" Value="{DynamicResource Surface.Selected}"/></Trigger></Style.Triggers></Style>
     <Style TargetType="DataGridRow"><Setter Property="Foreground" Value="{DynamicResource Content.Primary}"/><Style.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter Property="Background" Value="{DynamicResource Surface.Hover}"/></Trigger><Trigger Property="IsSelected" Value="True"><Setter Property="Background" Value="{DynamicResource Surface.Selected}"/></Trigger></Style.Triggers></Style>
     <Style TargetType="ListBox"><Setter Property="Background" Value="{DynamicResource Surface.Default}"/><Setter Property="Foreground" Value="{DynamicResource Content.Primary}"/><Setter Property="BorderBrush" Value="{DynamicResource Border.Default}"/></Style>
+
+    <!-- Global ToolTip Style following dynamic theme -->
+    <Style TargetType="ToolTip">
+        <Setter Property="Background" Value="{DynamicResource Surface.Raised}"/>
+        <Setter Property="Foreground" Value="{DynamicResource Content.Primary}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource Border.Default}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="Padding" Value="8,5"/>
+        <Setter Property="FontSize" Value="12"/>
+        <Setter Property="HasDropShadow" Value="True"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ToolTip">
+                    <Border Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="6"
+                            Padding="{TemplateBinding Padding}"
+                            SnapsToDevicePixels="True">
+                        <Border.Effect>
+                            <DropShadowEffect Color="#000000" BlurRadius="6" ShadowDepth="2" Opacity="0.3"/>
+                        </Border.Effect>
+                        <ContentPresenter Content="{TemplateBinding Content}"
+                                          ContentTemplate="{TemplateBinding ContentTemplate}"
+                                          ContentTemplateSelector="{TemplateBinding ContentTemplateSelector}"
+                                          TextElement.Foreground="{TemplateBinding Foreground}"/>
+                    </Border>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
 </ResourceDictionary>

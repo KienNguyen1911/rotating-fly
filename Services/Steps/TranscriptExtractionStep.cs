@@ -196,9 +196,11 @@ namespace AssetAutomator
                 args.Add($"\"{proxy}\"");
             }
 
+            string pythonExe = ResolvePythonExecutable(task, logTask);
+
             var startInfo = new ProcessStartInfo
             {
-                FileName = "python",
+                FileName = pythonExe,
                 Arguments = string.Join(" ", args),
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
@@ -236,6 +238,29 @@ namespace AssetAutomator
                 logTask(task, $"[ERROR] Exception while running python fallback: {ex.Message}");
                 return null;
             }
+        }
+
+        private string ResolvePythonExecutable(AutomationTask task, Action<AutomationTask, string> logTask)
+        {
+            string[] candidatePaths = new[]
+            {
+                Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "PythonEmbed", "python.exe"),
+                Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Scripts", "PythonEmbed", "python.exe"),
+                Path.Combine(Directory.GetCurrentDirectory(), "PythonEmbed", "python.exe"),
+                Path.Combine(Directory.GetCurrentDirectory(), "Scripts", "PythonEmbed", "python.exe")
+            };
+
+            foreach (var path in candidatePaths)
+            {
+                if (File.Exists(path))
+                {
+                    logTask(task, $"[PYTHON] Using embedded Python runtime: {path}");
+                    return path;
+                }
+            }
+
+            logTask(task, "[PYTHON] Embedded Python not found. Falling back to system 'python' command.");
+            return "python";
         }
     }
 }

@@ -26,8 +26,7 @@
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
                 <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                    <TextBlock Text="YOUTUBE SCRIPT &amp; VOICEOVER AUTOMATION" Foreground="{DynamicResource OnPrimaryBrush}" FontSize="18" FontWeight="Bold"/>
-                    <TextBlock Text="Prototype V3 - C# Playwright Automation Flow" Foreground="{DynamicResource MutedSoftBrush}" FontSize="12" Margin="0,4,0,0"/>
+                    <TextBlock Text="YOUTUBE SCRIPT &amp; VOICEOVER AUTOMATION" Foreground="{DynamicResource OnPrimaryBrush}" FontSize="16" FontWeight="Bold"/>
                 </StackPanel>
                 <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                     <Button x:Name="BtnCheckUpdate" Click="BtnCheckUpdate_Click" Cursor="Hand" Margin="0,0,10,0" ToolTip="Kiểm tra phiên bản cập nhật mới nhất">
@@ -105,9 +104,7 @@
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
 
-                            <TextBlock Grid.Row="0" Grid.Column="0" Text="Manage tasks configuration directly inside the table rows below. Press 'Tạo Task' to add a new row." VerticalAlignment="Center" Foreground="{DynamicResource BodyBrush}" FontSize="12" FontStyle="Italic"/>
-
-                            <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                            <StackPanel Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="2" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
                                 <Button x:Name="BtnAddTask" Content="Tạo Task" Height="32" Width="100" Style="{StaticResource GreenButton}" FontSize="12" FontWeight="Bold" Click="BtnAddTask_Click" Margin="0,0,10,0"/>
                                 <Button x:Name="BtnAddBulkTasks" Content="Tạo Nhiều" Height="32" Width="100" Style="{StaticResource PrimaryButton}" FontSize="12" FontWeight="Bold" Click="BtnAddBulkTasks_Click" Margin="0,0,10,0"/>
                                 <Button x:Name="BtnRun" Content="Chạy Task Đã Chọn" Height="32" Width="150" Style="{StaticResource PrimaryButton}" FontSize="12" FontWeight="Bold" Click="BtnRun_Click"/>
@@ -139,9 +136,7 @@
                                 
                                 <!-- Filters Bar -->
                                 <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,12" VerticalAlignment="Center">
-                                    <TextBlock Text="Bộ lọc:" VerticalAlignment="Center" Foreground="{DynamicResource BodyBrush}" Margin="0,0,10,0" FontSize="12" FontWeight="SemiBold"/>
-                                    
-                                    <TextBlock Text="Link Video:" VerticalAlignment="Center" Foreground="{DynamicResource BodyBrush}" Margin="10,0,5,0" FontSize="12"/>
+                                    <TextBlock Text="Link Video:" VerticalAlignment="Center" Foreground="{DynamicResource BodyBrush}" Margin="0,0,5,0" FontSize="12"/>
                                     <TextBox x:Name="TxtFilterVideoUrl" Width="140" Height="28" VerticalContentAlignment="Center" TextChanged="FilterFields_TextChanged"/>
                                     
                                     <TextBlock Text="Ngôn ngữ:" VerticalAlignment="Center" Foreground="{DynamicResource BodyBrush}" Margin="15,0,5,0" FontSize="12"/>

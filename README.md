@@ -69,6 +69,35 @@ Công cụ hỗ trợ kiểm tra danh sách kết nối trung gian có sẵn ho�
 - Lưu và nạp lại các thiết lập để thuận tiện khi đổi máy hoặc sao lưu cấu hình.
 - Kiểm tra các điều kiện cần thiết trước khi sử dụng.
 
+## Hướng dẫn Cài đặt & Sử dụng
+
+### 📦 Dành cho Người dùng cuối (End-User)
+
+1. Tải bản phát hành mới nhất dạng file `.zip` từ mục Release.
+2. Giải nén file `.zip` vào một thư mục bất kỳ trên máy tính.
+3. Chạy trực tiếp file `AssetAutomator.exe`.
+4. Điền các cấu hình cần thiết trong mục Cài đặt và sử dụng ngay lập tức (Bộ phần mềm đã tích hợp sẵn môi trường chạy tự động, **không yêu cầu cài đặt thêm Python hay thao tác qua CMD**).
+
+### 🛠️ Dành cho Lập trình viên (Developer & Build Guide)
+
+1. **Clone repository**:
+   ```bash
+   git clone <URL_REPOSITORY>
+   cd AssetAutomator
+   ```
+
+2. **Khởi tạo môi trường Python Portable (Chỉ thực hiện 1 lần trước khi build/đóng gói)**:
+   Chạy script tự động tải và cấu hình Python Portable kèm thư viện cần thiết:
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File .\Scripts\Setup-PythonEmbed.ps1
+   ```
+
+3. **Biên dịch & Đóng gói ứng dụng**:
+   ```bash
+   dotnet build -c Release
+   ```
+   *Lưu ý: Thư mục `PythonEmbed/` sẽ tự động được đóng gói chung vào output để gửi cho người dùng cuối.*
+
 ## Quy trình sử dụng gợi ý
 
 1. Hoàn tất các thông tin cần thiết trong mục cài đặt và chọn thư mục lưu kết quả.
@@ -83,3 +112,4 @@ Công cụ hỗ trợ kiểm tra danh sách kết nối trung gian có sẵn ho�
 - Chỉ sử dụng nội dung video khi bạn có quyền phù hợp hoặc được phép sử dụng.
 - Chất lượng đầu ra phụ thuộc vào nội dung gốc, ngôn ngữ được chọn và giọng đọc sử dụng.
 - Khi chạy số lượng lớn, nên bắt đầu với một vài tác vụ để kiểm tra thiết lập và chất lượng kết quả.
+

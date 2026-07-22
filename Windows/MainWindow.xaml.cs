@@ -780,8 +780,6 @@ namespace AssetAutomator
                 statusMessage += $"   -> Chi tiết: {result.PlaywrightError}\n";
             }
             statusMessage += $"3. Python: {(result.IsPythonInstalled ? $"Đã cài đặt ({result.PythonVersion})" : "CHƯA CÀI ĐẶT hoặc chưa thêm vào PATH (Yêu cầu để tạo video)")}\n";
-            statusMessage += $"   -> Thư viện MoviePy: {(result.IsMoviePyInstalled ? "Đã cài đặt" : "Chưa cài đặt (Yêu cầu để tạo video)")}\n";
-            statusMessage += $"   -> Thư viện Pillow (PIL): {(result.IsPillowInstalled ? "Đã cài đặt" : "Chưa cài đặt (Yêu cầu để tạo video)")}\n";
 
             Log(statusMessage);
 
@@ -789,13 +787,11 @@ namespace AssetAutomator
             {
                 string title = result.IsAllOk ? "Kiểm tra hệ thống hoàn tất (OK)" : "Cảnh báo: Thiếu yêu cầu hệ thống!";
                 string userMessage = result.IsAllOk 
-                    ? "Mọi yêu cầu hệ thống (Chrome, Playwright, Python, MoviePy, Pillow) đã sẵn sàng để chạy tool."
+                    ? "Mọi yêu cầu hệ thống (Chrome, Playwright, Python) đã sẵn sàng để chạy tool."
                     : "Ứng dụng phát hiện máy tính này chưa được cài đặt đầy đủ các yêu cầu cần thiết:\n\n" +
                       $"- Chrome: {(result.IsChromeInstalled ? "OK" : "Chưa cài đặt. Vui lòng tải và cài đặt Google Chrome.")}\n" +
                       $"- Playwright: {(result.IsPlaywrightOk ? "OK" : $"Lỗi: {result.PlaywrightError}. Vui lòng đảm bảo đã copy thư mục 'runtimes' đi kèm bản build.")}\n" +
-                      $"- Python: {(result.IsPythonInstalled ? "OK" : "Chưa cài đặt hoặc chưa thêm vào biến môi trường PATH. Cần thiết để tạo video.")}\n" +
-                      $"- Thư viện MoviePy: {(result.IsMoviePyInstalled ? "OK" : "Chưa cài đặt. Chạy lệnh: pip install moviepy")}\n" +
-                      $"- Thư viện Pillow: {(result.IsPillowInstalled ? "OK" : "Chưa cài đặt. Chạy lệnh: pip install Pillow")}\n\n" +
+                      $"- Python: {(result.IsPythonInstalled ? "OK" : "Chưa cài đặt hoặc chưa thêm vào biến môi trường PATH. Cần thiết để tạo video.")}\n\n" +
                       "Nếu bạn vừa cài đặt/sửa đổi xong, hãy nhấn nút 'Kiểm Tra Hệ Thống' trong phần Cấu Hình để quét lại.";
 
                 MessageBox.Show(userMessage, title, MessageBoxButton.OK, 

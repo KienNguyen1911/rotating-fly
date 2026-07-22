@@ -7,7 +7,10 @@ try:
     from youtube_transcript_api.proxies import GenericProxyConfig
 except ImportError:
     try:
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "youtube-transcript-api", "--quiet"])
+        try:
+            subprocess.check_call([sys.executable, "-m", "pip", "install", "youtube-transcript-api", "--quiet"])
+        except Exception:
+            subprocess.check_call([sys.executable, "-m", "pip", "install", "--user", "youtube-transcript-api", "--quiet"])
         from youtube_transcript_api import YouTubeTranscriptApi, TranscriptsDisabled, NoTranscriptFound, CouldNotRetrieveTranscript
         from youtube_transcript_api.proxies import GenericProxyConfig
     except Exception as err:
