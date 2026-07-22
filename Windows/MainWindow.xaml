@@ -29,6 +29,35 @@
                     <TextBlock Text="YOUTUBE SCRIPT &amp; VOICEOVER AUTOMATION" Foreground="{DynamicResource OnPrimaryBrush}" FontSize="16" FontWeight="Bold"/>
                 </StackPanel>
                 <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Button x:Name="BtnLicense" Click="BtnLicense_Click" Cursor="Hand" Margin="0,0,10,0" ToolTip="Quản lý bản quyền ứng dụng">
+                        <Button.Style>
+                            <Style TargetType="Button">
+                                <Setter Property="Background" Value="{DynamicResource SurfaceCardBrush}"/>
+                                <Setter Property="BorderThickness" Value="0"/>
+                                <Setter Property="Padding" Value="12,6"/>
+                                <Setter Property="Template">
+                                    <Setter.Value>
+                                        <ControlTemplate TargetType="Button">
+                                            <Border x:Name="border" Background="{TemplateBinding Background}" CornerRadius="12" Padding="{TemplateBinding Padding}">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <TextBlock Text="🔑" FontSize="14" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                                    <TextBlock Text="Bản Quyền" Foreground="{DynamicResource InkBrush}" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                                </StackPanel>
+                                            </Border>
+                                            <ControlTemplate.Triggers>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Setter TargetName="border" Property="Opacity" Value="0.85"/>
+                                                </Trigger>
+                                                <Trigger Property="IsPressed" Value="True">
+                                                    <Setter TargetName="border" Property="Opacity" Value="0.7"/>
+                                                </Trigger>
+                                            </ControlTemplate.Triggers>
+                                        </ControlTemplate>
+                                    </Setter.Value>
+                                </Setter>
+                            </Style>
+                        </Button.Style>
+                    </Button>
                     <Button x:Name="BtnCheckUpdate" Click="BtnCheckUpdate_Click" Cursor="Hand" Margin="0,0,10,0" ToolTip="Kiểm tra phiên bản cập nhật mới nhất">
                         <Button.Style>
                             <Style TargetType="Button">

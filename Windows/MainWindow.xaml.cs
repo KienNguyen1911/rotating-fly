@@ -25,6 +25,7 @@ namespace AssetAutomator
         private readonly ImagePoolService _imagePoolService;
         private readonly ChatGptService _chatGptService;
         private readonly UpdateService _updateService;
+        private readonly LicenseService _licenseService;
 
         // Step services
         private readonly ThumbnailDownloadStep _step1;
@@ -108,6 +109,42 @@ namespace AssetAutomator
             _updateService.CheckForUpdates(isManualCheck: true);
         }
 
+        private async void BtnLicense_Click(object sender, RoutedEventArgs e)
+        {
+            var licenseWin = new Windows.LicenseWindow(_licenseService)
+            {
+                Owner = this
+            };
+            licenseWin.ShowDialog();
+
+            var recheck = await _licenseService.VerifyAsync();
+            if (!recheck.Success)
+            {
+                MessageBox.Show("Ứng dụng chưa được kích hoạt bản quyền hợp lệ hoặc đã bị hủy. Ứng dụng sẽ tự động đóng.", 
+                    "Yêu cầu bản quyền", MessageBoxButton.OK, MessageBoxImage.Warning);
+                Application.Current.Shutdown();
+            }
+        }
+
+        private void LicenseService_OnSessionInvalidated(object? sender, string reason)
+        {
+            Dispatcher.Invoke(async () =>
+            {
+                MessageBox.Show($"CẢNH BÁO BẢN QUYỀN:\n{reason}\n\nỨng dụng sẽ mở cửa sổ Quản Lý Bản Quyền.", "Phiên bản quyền bị hủy", MessageBoxButton.OK, MessageBoxImage.Warning);
+                
+                var win = new Windows.LicenseWindow(_licenseService) { Owner = this };
+                win.ShowDialog();
+
+                var recheck = await _licenseService.VerifyAsync();
+                if (!recheck.Success)
+                {
+                    MessageBox.Show("Phiên bản quyền của bạn đã kết thúc. Ứng dụng sẽ tự động đóng.", 
+                        "Tắt ứng dụng", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    Application.Current.Shutdown();
+                }
+            });
+        }
+
         // UI state
         private DateTime _lastUiUpdateTime = DateTime.MinValue;
 
@@ -129,6 +166,8 @@ namespace AssetAutomator
             _imagePoolService.LogTask = LogTask;
             _imagePoolService.OnPoolStateChanged += UpdatePoolUi;
             _updateService = new UpdateService(Log);
+            _licenseService = new LicenseService();
+            _licenseService.OnSessionInvalidated += LicenseService_OnSessionInvalidated;
 
             // Initialize step services
             _step1 = new ThumbnailDownloadStep();
@@ -151,6 +190,7 @@ namespace AssetAutomator
         private void MainWindow_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
         {
             SaveApplicationSettings();
+            _licenseService.Dispose();
         }
 
         private void UpdatePoolUi()
@@ -757,6 +797,51 @@ namespace AssetAutomator
         private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
         {
             await RunSystemCheckAsync(showIfAllOk: false);
+            await CheckLicenseOnStartupAsync();
+        }
+
+        private async Task CheckLicenseOnStartupAsync()
+        {
+            var resp = await _licenseService.VerifyAsync();
+            if (!resp.Success)
+            {
+                Log($"[License] Startup check result: {resp.Message}");
+                var win = new Windows.LicenseWindow(_licenseService) { Owner = this };
+                win.ShowDialog();
+
+                var recheck = await _licenseService.VerifyAsync();
+                if (!recheck.Success)
+                {
+                    MessageBox.Show("Ứng dụng chưa được kích hoạt bản quyền hợp lệ. Ứng dụng sẽ tự động đóng.", 
+                        "Yêu cầu bản quyền", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    Application.Current.Shutdown();
+                }
+            }
+            else
+            {
+                Log($"[License] Verification successful. Remaining days: {resp.RemainingDays}");
+            }
+        }
+
+        public async Task<bool> EnsureLicenseValidAsync()
+        {
+            var resp = await _licenseService.VerifyAsync();
+            if (!resp.Success)
+            {
+                Log($"[LicenseGuard] Verification check failed: {resp.Message}");
+                var win = new Windows.LicenseWindow(_licenseService) { Owner = this };
+                win.ShowDialog();
+
+                var recheck = await _licenseService.VerifyAsync();
+                if (!recheck.Success)
+                {
+                    MessageBox.Show("Ứng dụng chưa được kích hoạt bản quyền hợp lệ. Ứng dụng sẽ tự động đóng.", 
+                        "Chưa kích hoạt bản quyền", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    Application.Current.Shutdown();
+                    return false;
+                }
+            }
+            return true;
         }
 
         private async void BtnCheckRequirements_Click(object sender, RoutedEventArgs e)

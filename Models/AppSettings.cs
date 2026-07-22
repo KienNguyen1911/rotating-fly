@@ -18,5 +18,7 @@ namespace AssetAutomator
         public string SubtitleApiUrl { get; set; } = "https://1834-34-28-139-249.ngrok-free.app/api/transcribe";
         public string ProxiesFilePath { get; set; } = string.Empty;
         public string ManualProxiesFilePath { get; set; } = string.Empty;
+        public string LicenseServerUrl { get; set; } = "https://script.google.com/macros/s/AKfycbyE4Qhv2gxpPcMIYwL_yZAlRzglaHPSaxfHZarjDOeZ-WOSgqERaZWGBX_Gxrh58H2-/exec";
+        public string LicenseKey { get; set; } = string.Empty;
     }
 }

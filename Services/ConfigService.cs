@@ -123,6 +123,11 @@ namespace AssetAutomator
             {
                 settings.ManualProxiesFilePath = Path.Combine(AppDataFolder, "manual-proxies.txt");
             }
+
+            if (string.IsNullOrWhiteSpace(settings.LicenseServerUrl))
+            {
+                settings.LicenseServerUrl = "https://script.google.com/macros/s/AKfycbyE4Qhv2gxpPcMIYwL_yZAlRzglaHPSaxfHZarjDOeZ-WOSgqERaZWGBX_Gxrh58H2-/exec";
+            }
         }
 
         public static void SaveSettings(AppSettings settings)

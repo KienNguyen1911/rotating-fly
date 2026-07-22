@@ -249,6 +249,8 @@ namespace AssetAutomator
 
         private async void BtnRunSingleTask_Click(object sender, RoutedEventArgs e)
         {
+            if (!await EnsureLicenseValidAsync()) return;
+
             if (sender is Button btn && btn.DataContext is AutomationTask task)
             {
                 if (task.Status == "Running" || task.Status.StartsWith("Step"))
@@ -320,6 +322,8 @@ namespace AssetAutomator
 
         private async void BtnRun_Click(object sender, RoutedEventArgs e)
         {
+            if (!await EnsureLicenseValidAsync()) return;
+
             var selectedTasks = Tasks.Where(t => t.IsSelected).ToArray();
             if (selectedTasks.Length == 0)
             {
