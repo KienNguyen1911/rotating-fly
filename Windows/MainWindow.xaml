@@ -5,7 +5,7 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:AssetAutomator"
         mc:Ignorable="d"
-        Title="AssetAutomator" Height="750" Width="1250"
+        Title="AssetAutomator" Height="700" Width="1240" MinWidth="1240" MinHeight="700" WindowStartupLocation="CenterScreen"
         Background="{DynamicResource CanvasBrush}" FontFamily="Segoe UI"
         Icon="pack://application:,,,/Resources/app_logo.png">
     <Window.Resources>
@@ -99,26 +99,30 @@
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
                             </Grid.RowDefinitions>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                            </Grid.ColumnDefinitions>
 
-                            <StackPanel Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="2" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-                                <Button x:Name="BtnAddTask" Content="Tạo Task" Height="32" Width="100" Style="{StaticResource GreenButton}" FontSize="12" FontWeight="Bold" Click="BtnAddTask_Click" Margin="0,0,10,0"/>
-                                <Button x:Name="BtnAddBulkTasks" Content="Tạo Nhiều" Height="32" Width="100" Style="{StaticResource PrimaryButton}" FontSize="12" FontWeight="Bold" Click="BtnAddBulkTasks_Click" Margin="0,0,10,0"/>
-                                <Button x:Name="BtnRun" Content="Chạy Task Đã Chọn" Height="32" Width="150" Style="{StaticResource PrimaryButton}" FontSize="12" FontWeight="Bold" Click="BtnRun_Click"/>
-                            </StackPanel>
+                            <Grid Grid.Row="0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
 
-                            <StackPanel Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2" Orientation="Horizontal" Margin="0,12,0,0" VerticalAlignment="Center">
-                                <TextBlock Text="Chọn tính năng chạy:" Foreground="{DynamicResource BodyBrush}" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,15,0"/>
-                                <CheckBox x:Name="ChkStepDownloadThumbnail" Content="Download Thumbnail" IsChecked="True" Margin="0,0,15,0" VerticalAlignment="Center"/>
-                                <CheckBox x:Name="ChkStepGenerateThumbnail" Content="Generate Thumbnail" IsChecked="True" Margin="0,0,15,0" VerticalAlignment="Center"/>
-                                <CheckBox x:Name="ChkStepGetTranscript" Content="Get Transcript" IsChecked="True" Margin="0,0,15,0" VerticalAlignment="Center"/>
-                                <CheckBox x:Name="ChkStepRewrittenTranscript" Content="Rewritten Transcript" IsChecked="True" Margin="0,0,15,0" VerticalAlignment="Center"/>
-                                <CheckBox x:Name="ChkStepVoiceover" Content="Voiceover" IsChecked="True" Margin="0,0,15,0" VerticalAlignment="Center"/>
-                                <CheckBox x:Name="ChkStepSrt" Content="SRT" IsChecked="True" Margin="0,0,15,0" VerticalAlignment="Center"/>
-                            </StackPanel>
+                                <TextBlock Grid.Column="0" Text="Chọn tính năng chạy:" Foreground="{DynamicResource InkBrush}" FontSize="13" FontWeight="Bold" VerticalAlignment="Center"/>
+
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                    <Button x:Name="BtnAddTask" Content="Tạo Task" Height="32" Width="100" Style="{StaticResource GreenButton}" FontSize="12" FontWeight="Bold" Click="BtnAddTask_Click" Margin="0,0,10,0"/>
+                                    <Button x:Name="BtnAddBulkTasks" Content="Tạo Nhiều" Height="32" Width="100" Style="{StaticResource PrimaryButton}" FontSize="12" FontWeight="Bold" Click="BtnAddBulkTasks_Click" Margin="0,0,10,0"/>
+                                    <Button x:Name="BtnRun" Content="Chạy Task Đã Chọn" Height="32" Width="150" Style="{StaticResource PrimaryButton}" FontSize="12" FontWeight="Bold" Click="BtnRun_Click"/>
+                                </StackPanel>
+                            </Grid>
+
+                            <WrapPanel Grid.Row="1" Margin="0,12,0,0" VerticalAlignment="Center">
+                                <CheckBox x:Name="ChkStepDownloadThumbnail" Content="Download Thumbnail" IsChecked="True" Margin="0,0,20,0" VerticalAlignment="Center"/>
+                                <CheckBox x:Name="ChkStepGenerateThumbnail" Content="Generate Thumbnail" IsChecked="True" Margin="0,0,20,0" VerticalAlignment="Center"/>
+                                <CheckBox x:Name="ChkStepGetTranscript" Content="Get Transcript" IsChecked="True" Margin="0,0,20,0" VerticalAlignment="Center"/>
+                                <CheckBox x:Name="ChkStepRewrittenTranscript" Content="Rewritten Transcript" IsChecked="True" Margin="0,0,20,0" VerticalAlignment="Center"/>
+                                <CheckBox x:Name="ChkStepVoiceover" Content="Voiceover" IsChecked="True" Margin="0,0,20,0" VerticalAlignment="Center"/>
+                                <CheckBox x:Name="ChkStepSrt" Content="SRT" IsChecked="True" Margin="0,0,20,0" VerticalAlignment="Center"/>
+                            </WrapPanel>
                         </Grid>
                     </Border>
 
@@ -135,38 +139,43 @@
                                 <TextBlock Grid.Row="0" Text="Task Queue &amp; Automation Control" Style="{StaticResource SectionTitle}" Margin="0,0,0,15"/>
                                 
                                 <!-- Filters Bar -->
-                                <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,12" VerticalAlignment="Center">
-                                    <TextBlock Text="Link Video:" VerticalAlignment="Center" Foreground="{DynamicResource BodyBrush}" Margin="0,0,5,0" FontSize="12"/>
-                                    <TextBox x:Name="TxtFilterVideoUrl" Width="140" Height="28" VerticalContentAlignment="Center" TextChanged="FilterFields_TextChanged"/>
+                                <WrapPanel Grid.Row="1" Margin="0,0,0,12" VerticalAlignment="Center">
+                                    <TextBlock Text="Link Video:" VerticalAlignment="Center" Foreground="{DynamicResource BodyBrush}" Margin="0,2,5,2" FontSize="12"/>
+                                    <TextBox x:Name="TxtFilterVideoUrl" Width="130" Height="28" VerticalContentAlignment="Center" Margin="0,2,0,2" TextChanged="FilterFields_TextChanged"/>
                                     
-                                    <TextBlock Text="Ngôn ngữ:" VerticalAlignment="Center" Foreground="{DynamicResource BodyBrush}" Margin="15,0,5,0" FontSize="12"/>
-                                    <TextBox x:Name="TxtFilterLanguage" Width="90" Height="28" VerticalContentAlignment="Center" TextChanged="FilterFields_TextChanged"/>
+                                    <TextBlock Text="Ngôn ngữ:" VerticalAlignment="Center" Foreground="{DynamicResource BodyBrush}" Margin="12,2,5,2" FontSize="12"/>
+                                    <TextBox x:Name="TxtFilterLanguage" Width="85" Height="28" VerticalContentAlignment="Center" Margin="0,2,0,2" TextChanged="FilterFields_TextChanged"/>
                                     
-                                    <TextBlock Text="Voice ID:" VerticalAlignment="Center" Foreground="{DynamicResource BodyBrush}" Margin="15,0,5,0" FontSize="12"/>
-                                    <TextBox x:Name="TxtFilterVoiceId" Width="90" Height="28" VerticalContentAlignment="Center" TextChanged="FilterFields_TextChanged"/>
+                                    <TextBlock Text="Voice ID:" VerticalAlignment="Center" Foreground="{DynamicResource BodyBrush}" Margin="12,2,5,2" FontSize="12"/>
+                                    <TextBox x:Name="TxtFilterVoiceId" Width="85" Height="28" VerticalContentAlignment="Center" Margin="0,2,0,2" TextChanged="FilterFields_TextChanged"/>
                                     
-                                    <TextBlock Text="Failures:" VerticalAlignment="Center" Foreground="{DynamicResource BodyBrush}" Margin="15,0,5,0" FontSize="12" FontWeight="SemiBold"/>
-                                    <CheckBox x:Name="ChkFilterT" Content="T" VerticalAlignment="Center" Foreground="{DynamicResource SemanticDownBrush}" Margin="3,0" Checked="FilterCheckbox_Changed" Unchecked="FilterCheckbox_Changed"/>
-                                    <CheckBox x:Name="ChkFilterR" Content="R" VerticalAlignment="Center" Foreground="{DynamicResource SemanticDownBrush}" Margin="3,0" Checked="FilterCheckbox_Changed" Unchecked="FilterCheckbox_Changed"/>
-                                    <CheckBox x:Name="ChkFilterW" Content="W" VerticalAlignment="Center" Foreground="{DynamicResource SemanticDownBrush}" Margin="3,0" Checked="FilterCheckbox_Changed" Unchecked="FilterCheckbox_Changed"/>
-                                    <CheckBox x:Name="ChkFilterV" Content="V" VerticalAlignment="Center" Foreground="{DynamicResource SemanticDownBrush}" Margin="3,0" Checked="FilterCheckbox_Changed" Unchecked="FilterCheckbox_Changed"/>
-                                    <CheckBox x:Name="ChkFilterS" Content="S" VerticalAlignment="Center" Foreground="{DynamicResource SemanticDownBrush}" Margin="3,0" Checked="FilterCheckbox_Changed" Unchecked="FilterCheckbox_Changed"/>
-                                    <CheckBox x:Name="ChkFilterG" Content="G" VerticalAlignment="Center" Foreground="{DynamicResource SemanticDownBrush}" Margin="3,0" Checked="FilterCheckbox_Changed" Unchecked="FilterCheckbox_Changed"/>
- 
-                                    <Button x:Name="BtnClearFilters" Content="Xoá Lọc" Width="75" Height="28" Margin="15,0,0,0" FontSize="11" FontWeight="SemiBold" Click="BtnClearFilters_Click"/>
-                                </StackPanel>
+                                    <TextBlock Text="Failures:" VerticalAlignment="Center" Foreground="{DynamicResource BodyBrush}" Margin="12,2,5,2" FontSize="12" FontWeight="SemiBold"/>
+                                    <CheckBox x:Name="ChkFilterT" Content="T" VerticalAlignment="Center" Foreground="{DynamicResource SemanticDownBrush}" Margin="3,2" Checked="FilterCheckbox_Changed" Unchecked="FilterCheckbox_Changed"/>
+                                    <CheckBox x:Name="ChkFilterR" Content="R" VerticalAlignment="Center" Foreground="{DynamicResource SemanticDownBrush}" Margin="3,2" Checked="FilterCheckbox_Changed" Unchecked="FilterCheckbox_Changed"/>
+                                    <CheckBox x:Name="ChkFilterW" Content="W" VerticalAlignment="Center" Foreground="{DynamicResource SemanticDownBrush}" Margin="3,2" Checked="FilterCheckbox_Changed" Unchecked="FilterCheckbox_Changed"/>
+                                    <CheckBox x:Name="ChkFilterV" Content="V" VerticalAlignment="Center" Foreground="{DynamicResource SemanticDownBrush}" Margin="3,2" Checked="FilterCheckbox_Changed" Unchecked="FilterCheckbox_Changed"/>
+                                    <CheckBox x:Name="ChkFilterS" Content="S" VerticalAlignment="Center" Foreground="{DynamicResource SemanticDownBrush}" Margin="3,2" Checked="FilterCheckbox_Changed" Unchecked="FilterCheckbox_Changed"/>
+                                    <CheckBox x:Name="ChkFilterG" Content="G" VerticalAlignment="Center" Foreground="{DynamicResource SemanticDownBrush}" Margin="3,2" Checked="FilterCheckbox_Changed" Unchecked="FilterCheckbox_Changed"/>
+
+                                    <Button x:Name="BtnClearFilters" Content="Xoá Lọc" Width="75" Height="28" Margin="12,2,0,2" FontSize="11" FontWeight="SemiBold" Click="BtnClearFilters_Click"/>
+                                </WrapPanel>
                                 
                                 <DataGrid Grid.Row="2" x:Name="DgridTasks" AutoGenerateColumns="False" CanUserAddRows="False" 
                                           Background="Transparent" BorderThickness="0" HeadersVisibility="Column" GridLinesVisibility="Horizontal"
                                           RowHeaderWidth="0" IsReadOnly="False" RowHeight="36" FontSize="13">
                                     <DataGrid.Columns>
-                                        <DataGridTemplateColumn Header="Chọn" Width="0.6*">
-                                            <DataGridTemplateColumn.CellTemplate>
-                                                <DataTemplate>
-                                                    <CheckBox IsChecked="{Binding IsSelected, UpdateSourceTrigger=PropertyChanged}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                                </DataTemplate>
-                                            </DataGridTemplateColumn.CellTemplate>
-                                        </DataGridTemplateColumn>
+                                        <DataGridTemplateColumn Width="0.6*">
+                                             <DataGridTemplateColumn.Header>
+                                                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                     <CheckBox x:Name="ChkSelectAllTasks" Click="ChkSelectAllTasks_Click" ToolTip="Chọn / Bỏ chọn tất cả" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                                                 </StackPanel>
+                                             </DataGridTemplateColumn.Header>
+                                             <DataGridTemplateColumn.CellTemplate>
+                                                 <DataTemplate>
+                                                     <CheckBox IsChecked="{Binding IsSelected, UpdateSourceTrigger=PropertyChanged}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                 </DataTemplate>
+                                             </DataGridTemplateColumn.CellTemplate>
+                                         </DataGridTemplateColumn>
  
                                         <DataGridTextColumn Header="Ngày tạo" Binding="{Binding CreatedAtFormatted}" Width="1.4*" IsReadOnly="True">
                                             <DataGridTextColumn.ElementStyle>
@@ -784,30 +793,30 @@
                                 <RowDefinition Height="*"/>
                             </Grid.RowDefinitions>
                             <TextBlock Grid.Row="0" Text="Danh sách task đã tạo" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,15"/>
-                            
+
                             <!-- Filters Bar for History -->
-                            <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,12" VerticalAlignment="Center">
-                                <TextBlock Text="Bộ lọc:" VerticalAlignment="Center" Foreground="{DynamicResource BodyBrush}" Margin="0,0,10,0" FontSize="12" FontWeight="SemiBold"/>
+                            <WrapPanel Grid.Row="1" Margin="0,0,0,12" VerticalAlignment="Center">
+                                <TextBlock Text="Bộ lọc:" VerticalAlignment="Center" Foreground="{DynamicResource BodyBrush}" Margin="0,2,8,2" FontSize="12" FontWeight="SemiBold"/>
                                 
-                                <TextBlock Text="Link Video:" VerticalAlignment="Center" Foreground="{DynamicResource BodyBrush}" Margin="10,0,5,0" FontSize="12"/>
-                                <TextBox x:Name="TxtHistoryFilterVideoUrl" Width="140" Height="28" VerticalContentAlignment="Center" TextChanged="HistoryFilterFields_TextChanged"/>
+                                <TextBlock Text="Link Video:" VerticalAlignment="Center" Foreground="{DynamicResource BodyBrush}" Margin="8,2,4,2" FontSize="12"/>
+                                <TextBox x:Name="TxtHistoryFilterVideoUrl" Width="120" Height="28" VerticalContentAlignment="Center" Margin="0,2,0,2" TextChanged="HistoryFilterFields_TextChanged"/>
                                 
-                                <TextBlock Text="Ngôn ngữ:" VerticalAlignment="Center" Foreground="{DynamicResource BodyBrush}" Margin="15,0,5,0" FontSize="12"/>
-                                <TextBox x:Name="TxtHistoryFilterLanguage" Width="90" Height="28" VerticalContentAlignment="Center" TextChanged="HistoryFilterFields_TextChanged"/>
+                                <TextBlock Text="Ngôn ngữ:" VerticalAlignment="Center" Foreground="{DynamicResource BodyBrush}" Margin="10,2,4,2" FontSize="12"/>
+                                <TextBox x:Name="TxtHistoryFilterLanguage" Width="80" Height="28" VerticalContentAlignment="Center" Margin="0,2,0,2" TextChanged="HistoryFilterFields_TextChanged"/>
                                 
-                                <TextBlock Text="Voice ID:" VerticalAlignment="Center" Foreground="{DynamicResource BodyBrush}" Margin="15,0,5,0" FontSize="12"/>
-                                <TextBox x:Name="TxtHistoryFilterVoiceId" Width="90" Height="28" VerticalContentAlignment="Center" TextChanged="HistoryFilterFields_TextChanged"/>
+                                <TextBlock Text="Voice ID:" VerticalAlignment="Center" Foreground="{DynamicResource BodyBrush}" Margin="10,2,4,2" FontSize="12"/>
+                                <TextBox x:Name="TxtHistoryFilterVoiceId" Width="80" Height="28" VerticalContentAlignment="Center" Margin="0,2,0,2" TextChanged="HistoryFilterFields_TextChanged"/>
                                 
-                                <TextBlock Text="Failures:" VerticalAlignment="Center" Foreground="{DynamicResource BodyBrush}" Margin="15,0,5,0" FontSize="12" FontWeight="SemiBold"/>
-                                <CheckBox x:Name="ChkHistoryFilterT" Content="T" VerticalAlignment="Center" Foreground="{DynamicResource SemanticDownBrush}" Margin="3,0" Checked="HistoryFilterCheckbox_Changed" Unchecked="HistoryFilterCheckbox_Changed"/>
-                                <CheckBox x:Name="ChkHistoryFilterR" Content="R" VerticalAlignment="Center" Foreground="{DynamicResource SemanticDownBrush}" Margin="3,0" Checked="HistoryFilterCheckbox_Changed" Unchecked="HistoryFilterCheckbox_Changed"/>
-                                <CheckBox x:Name="ChkHistoryFilterW" Content="W" VerticalAlignment="Center" Foreground="{DynamicResource SemanticDownBrush}" Margin="3,0" Checked="HistoryFilterCheckbox_Changed" Unchecked="HistoryFilterCheckbox_Changed"/>
-                                <CheckBox x:Name="ChkHistoryFilterV" Content="V" VerticalAlignment="Center" Foreground="{DynamicResource SemanticDownBrush}" Margin="3,0" Checked="HistoryFilterCheckbox_Changed" Unchecked="HistoryFilterCheckbox_Changed"/>
-                                <CheckBox x:Name="ChkHistoryFilterS" Content="S" VerticalAlignment="Center" Foreground="{DynamicResource SemanticDownBrush}" Margin="3,0" Checked="HistoryFilterCheckbox_Changed" Unchecked="HistoryFilterCheckbox_Changed"/>
-                                <CheckBox x:Name="ChkHistoryFilterG" Content="G" VerticalAlignment="Center" Foreground="{DynamicResource SemanticDownBrush}" Margin="3,0" Checked="HistoryFilterCheckbox_Changed" Unchecked="HistoryFilterCheckbox_Changed"/>
- 
-                                <Button x:Name="BtnHistoryClearFilters" Content="Xoá Lọc" Width="75" Height="28" Margin="15,0,0,0" FontSize="11" FontWeight="SemiBold" Click="BtnHistoryClearFilters_Click"/>
-                            </StackPanel>
+                                <TextBlock Text="Failures:" VerticalAlignment="Center" Foreground="{DynamicResource BodyBrush}" Margin="10,2,4,2" FontSize="12" FontWeight="SemiBold"/>
+                                <CheckBox x:Name="ChkHistoryFilterT" Content="T" VerticalAlignment="Center" Foreground="{DynamicResource SemanticDownBrush}" Margin="2,2" Checked="HistoryFilterCheckbox_Changed" Unchecked="HistoryFilterCheckbox_Changed"/>
+                                <CheckBox x:Name="ChkHistoryFilterR" Content="R" VerticalAlignment="Center" Foreground="{DynamicResource SemanticDownBrush}" Margin="2,2" Checked="HistoryFilterCheckbox_Changed" Unchecked="HistoryFilterCheckbox_Changed"/>
+                                <CheckBox x:Name="ChkHistoryFilterW" Content="W" VerticalAlignment="Center" Foreground="{DynamicResource SemanticDownBrush}" Margin="2,2" Checked="HistoryFilterCheckbox_Changed" Unchecked="HistoryFilterCheckbox_Changed"/>
+                                <CheckBox x:Name="ChkHistoryFilterV" Content="V" VerticalAlignment="Center" Foreground="{DynamicResource SemanticDownBrush}" Margin="2,2" Checked="HistoryFilterCheckbox_Changed" Unchecked="HistoryFilterCheckbox_Changed"/>
+                                <CheckBox x:Name="ChkHistoryFilterS" Content="S" VerticalAlignment="Center" Foreground="{DynamicResource SemanticDownBrush}" Margin="2,2" Checked="HistoryFilterCheckbox_Changed" Unchecked="HistoryFilterCheckbox_Changed"/>
+                                <CheckBox x:Name="ChkHistoryFilterG" Content="G" VerticalAlignment="Center" Foreground="{DynamicResource SemanticDownBrush}" Margin="2,2" Checked="HistoryFilterCheckbox_Changed" Unchecked="HistoryFilterCheckbox_Changed"/>
+
+                                <Button x:Name="BtnHistoryClearFilters" Content="Xoá Lọc" Width="70" Height="28" Margin="10,2,0,2" FontSize="11" FontWeight="SemiBold" Click="BtnHistoryClearFilters_Click"/>
+                            </WrapPanel>
 
                             <DataGrid Grid.Row="2" x:Name="DgridHistoryTasks" ItemsSource="{Binding HistoryTasks}" AutoGenerateColumns="False" CanUserAddRows="False" 
                                       Background="Transparent" BorderThickness="0" HeadersVisibility="Column" GridLinesVisibility="Horizontal"

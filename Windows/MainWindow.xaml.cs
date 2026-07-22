@@ -78,18 +78,19 @@ namespace AssetAutomator
                 }
                 else
                 {
-                    // Light Theme: restore original Clay colors
-                    SetThemeBrush("CanvasBrush",       "#FFFAF0");
-                    SetThemeBrush("InkBrush",          "#0A0A0A");
-                    SetThemeBrush("BodyBrush",         "#3A3A3A");
-                    SetThemeBrush("PrimaryBrush",      "#0A0A0A");
-                    SetThemeBrush("PrimaryActiveBrush","#1F1F1F");
-                    SetThemeBrush("PrimaryDisabledBrush","#E5E5E5");
+                    // Light Theme: deeper muted slate gray palette
+                    SetThemeBrush("CanvasBrush",       "#E2E8F0");
+                    SetThemeBrush("InkBrush",          "#0F172A");
+                    SetThemeBrush("BodyBrush",         "#1E293B");
+                    SetThemeBrush("PrimaryBrush",      "#0F172A");
+                    SetThemeBrush("PrimaryActiveBrush","#1E293B");
+                    SetThemeBrush("PrimaryDisabledBrush","#94A3B8");
                     SetThemeBrush("OnPrimaryBrush",    "#FFFFFF");
-                    SetThemeBrush("SurfaceSoftBrush",  "#FAF5E8");
-                    SetThemeBrush("SurfaceCardBrush",  "#F5F0E0");
-                    SetThemeBrush("SurfaceStrongBrush","#EBE6D6");
-                    SetThemeBrush("HairlineBrush",     "#E5E5E5");
+                    SetThemeBrush("SurfaceSoftBrush",  "#CBD5E1");
+                    SetThemeBrush("SurfaceCardBrush",  "#FFFFFF");
+                    SetThemeBrush("SurfaceStrongBrush","#94A3B8");
+                    SetThemeBrush("HairlineBrush",     "#CBD5E1");
+                    SetThemeBrush("MutedSoftBrush",    "#475569");
 
                     if (BtnThemeToggle?.Template?.FindName("TxtThemeIcon", BtnThemeToggle) is TextBlock txtIcon) txtIcon.Text = "🌙";
                     if (BtnThemeToggle?.Template?.FindName("TxtThemeLabel", BtnThemeToggle) is TextBlock txtLabel) txtLabel.Text = "Dark Mode";

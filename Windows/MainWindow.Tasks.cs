@@ -25,11 +25,50 @@ namespace AssetAutomator
         {
             if (sender is AutomationTask task)
             {
+                if (e.PropertyName == nameof(AutomationTask.IsSelected))
+                {
+                    UpdateSelectAllCheckBoxState();
+                    return;
+                }
                 if (e.PropertyName == nameof(AutomationTask.Logs))
                 {
                     return;
                 }
-                // Removed: _ = Task.Run(() => _historyService.SaveTaskToHistoryAsync(task));
+            }
+        }
+
+        private void ChkSelectAllTasks_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is CheckBox chk && Tasks != null)
+            {
+                bool isChecked = chk.IsChecked == true;
+                foreach (var task in Tasks)
+                {
+                    task.IsSelected = isChecked;
+                }
+            }
+        }
+
+        private void UpdateSelectAllCheckBoxState()
+        {
+            if (ChkSelectAllTasks == null || Tasks == null || Tasks.Count == 0)
+            {
+                if (ChkSelectAllTasks != null) ChkSelectAllTasks.IsChecked = false;
+                return;
+            }
+
+            int selectedCount = Tasks.Count(t => t.IsSelected);
+            if (selectedCount == Tasks.Count)
+            {
+                ChkSelectAllTasks.IsChecked = true;
+            }
+            else if (selectedCount == 0)
+            {
+                ChkSelectAllTasks.IsChecked = false;
+            }
+            else
+            {
+                ChkSelectAllTasks.IsChecked = null;
             }
         }
 
