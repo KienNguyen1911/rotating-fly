@@ -17,3 +17,8 @@ Thumbs.db
 # Build outputs and packaged archives
 dist_package/
 *.zip
+
+# Python Portable runtime & setup files
+PythonEmbed/
+get-pip.py
+

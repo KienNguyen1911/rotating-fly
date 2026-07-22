@@ -15,10 +15,7 @@ namespace AssetAutomator
         public string PlaywrightError { get; set; } = string.Empty;
         public bool IsPythonInstalled { get; set; }
         public string PythonVersion { get; set; } = string.Empty;
-        public bool IsMoviePyInstalled { get; set; }
-        public bool IsPillowInstalled { get; set; }
-
-        public bool IsAllOk => IsChromeInstalled && IsPlaywrightOk && IsPythonInstalled && IsMoviePyInstalled && IsPillowInstalled;
+        public bool IsAllOk => IsChromeInstalled && IsPlaywrightOk && IsPythonInstalled;
     }
 
     public static class SystemRequirementsChecker
@@ -102,10 +99,26 @@ namespace AssetAutomator
         {
             try
             {
+                string pythonExe = "python";
+                string[] portablePaths = new[]
+                {
+                    Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "python", "python.exe"),
+                    Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "runtimes", "python", "python.exe")
+                };
+
+                foreach (var path in portablePaths)
+                {
+                    if (File.Exists(path))
+                    {
+                        pythonExe = path;
+                        break;
+                    }
+                }
+
                 // Check python version
                 var psi = new ProcessStartInfo
                 {
-                    FileName = "python",
+                    FileName = pythonExe,
                     Arguments = "--version",
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
@@ -123,8 +136,6 @@ namespace AssetAutomator
                         result.IsPythonInstalled = true;
                         result.PythonVersion = output;
 
-                        // Check Python modules: moviepy and Pillow (PIL)
-                        CheckPythonModules(result);
                         return;
                     }
                 }
@@ -137,55 +148,5 @@ namespace AssetAutomator
             result.IsPythonInstalled = false;
         }
 
-        private static void CheckPythonModules(SystemRequirementResult result)
-        {
-            try
-            {
-                var psi = new ProcessStartInfo
-                {
-                    FileName = "python",
-                    Arguments = "-c \"import moviepy; print('moviepy_ok')\"",
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    UseShellExecute = false,
-                    CreateNoWindow = true
-                };
-                using var proc = Process.Start(psi);
-                if (proc != null)
-                {
-                    proc.WaitForExit(4000);
-                    string output = proc.StandardOutput.ReadToEnd();
-                    result.IsMoviePyInstalled = output.Contains("moviepy_ok");
-                }
-            }
-            catch
-            {
-                result.IsMoviePyInstalled = false;
-            }
-
-            try
-            {
-                var psi = new ProcessStartInfo
-                {
-                    FileName = "python",
-                    Arguments = "-c \"import PIL; print('pillow_ok')\"",
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    UseShellExecute = false,
-                    CreateNoWindow = true
-                };
-                using var proc = Process.Start(psi);
-                if (proc != null)
-                {
-                    proc.WaitForExit(4000);
-                    string output = proc.StandardOutput.ReadToEnd();
-                    result.IsPillowInstalled = output.Contains("pillow_ok");
-                }
-            }
-            catch
-            {
-                result.IsPillowInstalled = false;
-            }
-        }
     }
 }
