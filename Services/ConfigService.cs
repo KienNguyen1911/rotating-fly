@@ -16,7 +16,7 @@ namespace AssetAutomator
         {
             var settings = new AppSettings();
 
-            // Migrate local appsettings.json to AppData if local exists but AppData doesn't
+            // 1. Migrate local appsettings.json to AppData if local exists but AppData doesn't
             string localConfigPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "appsettings.json");
             if (File.Exists(localConfigPath) && !File.Exists(ConfigPath))
             {
@@ -26,7 +26,7 @@ namespace AssetAutomator
                     {
                         Directory.CreateDirectory(AppDataFolder);
                     }
-                    File.Copy(localConfigPath, ConfigPath);
+                    File.Copy(localConfigPath, ConfigPath, overwrite: true);
                 }
                 catch (Exception ex)
                 {
@@ -34,7 +34,7 @@ namespace AssetAutomator
                 }
             }
 
-            // 1. Load from JSON config file if it exists
+            // 2. Load from JSON config file in AppData if it exists
             if (File.Exists(ConfigPath))
             {
                 try
@@ -57,7 +57,10 @@ namespace AssetAutomator
                 MigrateLegacyFiles(settings);
             }
 
-            // 2. Override with Environment Variables if defined (Precedence: Env > Config File)
+            // 3. Ensure smart defaults for empty or invalid paths
+            EnsureDefaults(settings);
+
+            // 4. Override with Environment Variables if defined (Precedence: Env > Config File)
             string? envAi84Key = Environment.GetEnvironmentVariable("AI84_API_KEY");
             if (!string.IsNullOrEmpty(envAi84Key))
             {
@@ -77,7 +80,49 @@ namespace AssetAutomator
             }
 
             CurrentSettings = settings;
+
+            // Auto-save to AppData to ensure any missing fields or defaults are persisted
+            SaveSettings(settings);
+
             return settings;
+        }
+
+        public static void EnsureDefaults(AppSettings settings)
+        {
+            if (string.IsNullOrWhiteSpace(settings.ImageApiUrl))
+                settings.ImageApiUrl = "http://localhost:8765";
+
+            if (string.IsNullOrWhiteSpace(settings.ImageApiKey))
+                settings.ImageApiKey = "chatgpt2api";
+
+            if (string.IsNullOrWhiteSpace(settings.CustomGptUrl))
+                settings.CustomGptUrl = "https://chatgpt.com/g/g-6a4083a0e37081919a248ef7721dae3d-dich-chay";
+
+            if (string.IsNullOrWhiteSpace(settings.SubtitleApiUrl))
+                settings.SubtitleApiUrl = "https://1834-34-28-139-249.ngrok-free.app/api/transcribe";
+
+            if (settings.MaxConcurrentTasks <= 0)
+                settings.MaxConcurrentTasks = 4;
+
+            if (string.IsNullOrWhiteSpace(settings.ChromeProfilesDir))
+                settings.ChromeProfilesDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ChromeProfiles");
+
+            if (string.IsNullOrWhiteSpace(settings.OutputsDir))
+                settings.OutputsDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Outputs");
+
+            if (string.IsNullOrWhiteSpace(settings.ProxiesFilePath) || (!File.Exists(settings.ProxiesFilePath) && settings.ProxiesFilePath.Contains(@"\Users\")))
+            {
+                string localProxies = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "free-proxies.json");
+                if (File.Exists(localProxies))
+                {
+                    settings.ProxiesFilePath = localProxies;
+                }
+            }
+
+            if (string.IsNullOrWhiteSpace(settings.ManualProxiesFilePath) || (!File.Exists(settings.ManualProxiesFilePath) && settings.ManualProxiesFilePath.Contains(@"\Users\")))
+            {
+                settings.ManualProxiesFilePath = Path.Combine(AppDataFolder, "manual-proxies.txt");
+            }
         }
 
         public static void SaveSettings(AppSettings settings)

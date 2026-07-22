@@ -251,6 +251,7 @@ namespace AssetAutomator
                     }
                 }
 
+                ConfigService.EnsureDefaults(settings);
                 ConfigService.SaveSettings(settings);
                 OnPropertyChanged(nameof(IsSrtMethod2Enabled));
                 OnPropertyChanged(nameof(IsSrtMethod2Visible));

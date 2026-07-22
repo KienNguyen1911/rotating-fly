@@ -14,6 +14,9 @@ public partial class App : Application
     {
         base.OnStartup(e);
         
+        // Load application settings on startup
+        ConfigService.LoadSettings();
+
         // Bắt đầu cập nhật tự động từ GitHub
         var updateService = new UpdateService();
         updateService.CheckForUpdates(isManualCheck: false);
