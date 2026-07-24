@@ -1296,13 +1296,17 @@
                                     <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
                                         <Button x:Name="BtnBackToProjects" Content="⬅️ Danh sách Dự án" Height="32" Padding="12,0" Margin="0,0,14,0" Style="{StaticResource PrimaryButton}" FontSize="11" FontWeight="Bold" Click="BtnBackToProjects_Click"/>
                                         <StackPanel VerticalAlignment="Center">
-                                            <TextBlock x:Name="TxtVideoTitle" Text="Bedtime Psychology" FontSize="20" FontWeight="Bold" Foreground="{DynamicResource InkBrush}" Margin="0,0,0,2"/>
-                                            <TextBlock x:Name="TxtBatchSubtitle" Text="Tạo tối đa 4 ảnh song song với khoảng nghỉ 8 giây giữa các đợt." FontSize="11" Foreground="{DynamicResource BodyBrush}"/>
+                                            <TextBlock x:Name="TxtVideoTitle" Text="Bedtime Psychology" FontSize="18" FontWeight="Bold" Foreground="{DynamicResource InkBrush}" Margin="0,0,0,3"/>
+                                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                <ProgressBar x:Name="ProgressBatchGen" Height="8" Width="180" Value="0" Maximum="100" VerticalAlignment="Center" Margin="0,0,10,0" Background="#2B2D37" Foreground="#10B981" BorderThickness="0"/>
+                                                <TextBlock x:Name="TxtBatchProgress" Text="Đã tạo 0/0 ảnh (0%)" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource BodyBrush}" VerticalAlignment="Center"/>
+                                            </StackPanel>
                                         </StackPanel>
                                     </StackPanel>
 
                                     <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                                         <Button x:Name="BtnSaveProjectEditor" Content="💾 Lưu dự án" Height="32" Padding="12,0" Margin="0,0,8,0" Style="{StaticResource GreenButton}" FontSize="11" FontWeight="Bold" Click="BtnSaveProject_Click"/>
+                                        <Button x:Name="BtnOpenFlowProjectUrl" Content="🌐 Google Flow Web" Height="32" Padding="12,0" Margin="0,0,8,0" Style="{StaticResource PrimaryButton}" FontSize="11" FontWeight="Bold" Click="BtnOpenFlowProjectUrl_Click" ToolTip="Mở dự án này trực tiếp trên Web Google Flow (labs.google)"/>
                                         <Button x:Name="BtnBatchViewToggle" Content="📋 Table Queue View" Height="32" Padding="12,0" Margin="0,0,8,0" Style="{StaticResource PrimaryButton}" FontSize="11" Click="BtnBatchViewToggle_Click"/>
                                         <Button x:Name="BtnBatchOpenFolder" Content="📁 Open Folder" Height="32" Padding="12,0" Style="{StaticResource PrimaryButton}" FontSize="11" Click="BtnBatchOpenFolder_Click"/>
                                     </StackPanel>

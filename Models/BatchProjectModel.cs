@@ -24,6 +24,8 @@ namespace AssetAutomator.Models
         public string AspectRatio { get; set; } = "16:9";
         public string Upscale { get; set; } = "none";
         public int Concurrency { get; set; } = 4;
+        public string? FlowProjectId { get; set; }
+        public string? FlowProjectUrl { get; set; }
 
         public List<BatchImageItemState> Items { get; set; } = new List<BatchImageItemState>();
 
@@ -44,6 +46,9 @@ namespace AssetAutomator.Models
         public string ErrorMessage { get; set; } = string.Empty;
         public string? MediaId { get; set; }
         public string? ReferenceMediaId { get; set; }
+        public string? FlowProjectId { get; set; }
+        public string? FlowProjectTitle { get; set; }
+        public string? FlowProjectUrl { get; set; }
         public string Engine { get; set; } = "flow";
         public string Model { get; set; } = "nano_banana_2";
         public string AspectRatio { get; set; } = "16:9";

@@ -250,7 +250,77 @@ Nếu gặp lỗi `HTTP 403: reCAPTCHA evaluation failed`:
 
 ---
 
-## 5. Danh Sách Các Model Hỗ Trợ (Available Models)
+---
+
+## 5. Tích Hợp Tự Động Khởi Tạo Project Trực Tiếp Trên Website Google Flow (labs.google)
+
+Hệ thống cho phép ứng dụng của bạn tự động bấm tạo **Project mới trên trang Web Google Flow (`https://labs.google/fx/tools/flow`)** thông qua các API sau:
+
+### 5.1. API Chủ Động Tạo Project Mới (`POST /v1/projects`)
+
+**Endpoint**: `POST /v1/projects`  
+**Headers**: `Authorization: Bearer flow-local-key`, `Content-Type: application/json`
+
+**Request Payload**:
+```json
+{
+  "title": "Dự Án 01 - Game Art"
+}
+```
+
+**Response Payload**:
+```json
+{
+  "status": "success",
+  "project_id": "5ad9f031-7757-4dfd-b89e-f8bd8533b2f9",
+  "title": "Dự Án 01 - Game Art",
+  "project_url": "https://labs.google/fx/tools/flow/project/5ad9f031-7757-4dfd-b89e-f8bd8533b2f9"
+}
+```
+*Sau khi gọi API này, Project mới có tên `"Dự Án 01 - Game Art"` sẽ ngay lập tức xuất hiện dưới dạng một Card trên trang chủ `https://labs.google/fx/tools/flow`.*
+
+---
+
+### 5.2. Gắn Project ID / Title Khi Sinh Ảnh (`POST /v1/images/generations`)
+
+Khi gọi API sinh ảnh, bạn có thể đính kèm tham số `project_id` (hoặc `project_title`) để chỉ định chính xác ảnh sinh ra thuộc về Project nào trên Web Google Flow:
+
+**Request Payload đính kèm Project ID**:
+```json
+{
+  "model": "gemini-3.1-flash-image-landscape",
+  "prompt": "A heroic fantasy knight holding a glowing sword",
+  "project_id": "5ad9f031-7757-4dfd-b89e-f8bd8533b2f9"
+}
+```
+
+**Hoặc Tự Tạo & Gắn Theo Tiêu Đề (`project_title`)**:
+```json
+{
+  "model": "gemini-3.1-flash-image-landscape",
+  "prompt": "A heroic fantasy knight holding a glowing sword",
+  "project_title": "Dự Án 02 - Storybook"
+}
+```
+
+**Response Payload đính kèm Link Web Project**:
+```json
+{
+  "created": 1718400000,
+  "data": [
+    {
+      "url": "http://127.0.0.1:8787/v1/files/gen_1784882776_21d203e8.png",
+      "media_id": "79b83051-602a-41eb-9622-be81afea54b0",
+      "project_id": "5ad9f031-7757-4dfd-b89e-f8bd8533b2f9",
+      "project_url": "https://labs.google/fx/tools/flow/project/5ad9f031-7757-4dfd-b89e-f8bd8533b2f9"
+    }
+  ]
+}
+```
+
+---
+
+## 6. Danh Sách Các Model Hỗ Trợ (Available Models)
 
 - `gemini-3.1-flash-image-landscape` (Tỷ lệ 16:9 - Khuyên dùng)
 - `gemini-3.1-flash-image-portrait` (Tỷ lệ 9:16)
@@ -258,3 +328,4 @@ Nếu gặp lỗi `HTTP 403: reCAPTCHA evaluation failed`:
 - `gemini-3.0-pro-image-landscape`
 - `imagen-4.0-generate-preview-landscape`
 - `nano-banana-2-landscape`
+

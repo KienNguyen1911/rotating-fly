@@ -386,11 +386,8 @@ namespace AssetAutomator
             {
                 BtnBatchGenerate.Content = $"⚡ Tạo hàng loạt ({count} ảnh song song)";
             }
-            if (TxtBatchSubtitle != null)
-            {
-                TxtBatchSubtitle.Text = $"Tạo tối đa {count} ảnh song song với khoảng nghỉ 8 giây giữa các đợt.";
-            }
 
+            UpdateBatchProgressUI();
             return count;
         }
 
@@ -474,29 +471,83 @@ namespace AssetAutomator
             }
             Directory.CreateDirectory(outputDir);
 
-            BtnBatchGenerate.IsEnabled = false;
+            // Auto-detect existing images on disk before starting batch run
+            AutoDetectAndMatchExistingImages(outputDir);
 
-            // Reset item statuses
-            foreach (var item in BatchImageItems)
+            // Filter items that are missing image files or not completed
+            var itemsToGenerate = BatchImageItems
+                .Where(i => i.Status != "Done" || string.IsNullOrEmpty(i.ImagePath) || !File.Exists(i.ImagePath))
+                .ToList();
+
+            if (itemsToGenerate.Count == 0)
             {
-                item.Provider = provider;
-                item.Engine = engine;
-                item.Model = model;
-                item.AspectRatio = aspectRatio;
-                item.Upscale = upscale;
-                item.Status = "Waiting";
-                item.ErrorMessage = string.Empty;
-                item.ImagePath = string.Empty;
+                MessageBox.Show("Tất cả các cảnh trong dự án đã có ảnh hợp lệ trên đĩa!\n\nNếu muốn tạo lại cảnh nào, bạn chỉ cần dùng nút 'Tạo lại' trên card cảnh đó hoặc xóa file ảnh trong thư mục rồi bấm nút này.", "Thông báo", MessageBoxButton.OK, MessageBoxImage.Information);
+                BtnBatchGenerate.IsEnabled = true;
+                return;
+            }
+
+            // If using Flow Local provider, ensure a Google Flow Project is explicitly created on server first if not existing yet
+            if (provider == "flow_local")
+            {
+                string projectTitle = !string.IsNullOrWhiteSpace(_activeProject?.ProjectName) 
+                    ? _activeProject.ProjectName 
+                    : (!string.IsNullOrWhiteSpace(TxtVideoTitle?.Text) ? TxtVideoTitle.Text : "Batch Project");
+
+                string? flowProjId = _activeProject?.FlowProjectId;
+                if (string.IsNullOrEmpty(flowProjId))
+                {
+                    var (pId, pUrl, pErr) = await AssetAutomator.Services.Providers.FlowLocalImageGenProvider.CreateProjectAsync(serverUrl, apiKey, projectTitle);
+                    if (!string.IsNullOrEmpty(pId))
+                    {
+                        flowProjId = pId;
+                        if (_activeProject != null)
+                        {
+                            _activeProject.FlowProjectId = pId;
+                            _activeProject.FlowProjectUrl = pUrl;
+                            await SaveCurrentProjectStateAsync();
+                        }
+                    }
+                }
+
+                // Assign FlowProjectId & parameters to missing items
+                foreach (var item in itemsToGenerate)
+                {
+                    item.Provider = provider;
+                    item.Engine = engine;
+                    item.Model = model;
+                    item.AspectRatio = aspectRatio;
+                    item.Upscale = upscale;
+                    item.Status = "Waiting";
+                    item.ErrorMessage = string.Empty;
+                    item.ImagePath = string.Empty;
+                    item.FlowProjectId = flowProjId;
+                    item.FlowProjectTitle = projectTitle;
+                }
+            }
+            else
+            {
+                // Reset item statuses for glabs provider
+                foreach (var item in itemsToGenerate)
+                {
+                    item.Provider = provider;
+                    item.Engine = engine;
+                    item.Model = model;
+                    item.AspectRatio = aspectRatio;
+                    item.Upscale = upscale;
+                    item.Status = "Waiting";
+                    item.ErrorMessage = string.Empty;
+                    item.ImagePath = string.Empty;
+                }
             }
 
             // Clear Flow Local reference media ID cache for new batch run
             AssetAutomator.Services.Providers.FlowLocalImageGenProvider.ClearReferenceMediaCache();
 
-            // Run processing in background with parallel concurrency control
+            // Run processing in background with parallel concurrency control ONLY for missing items
             await Task.Run(async () =>
             {
                 using var semaphore = new SemaphoreSlim(maxConcurrency, maxConcurrency);
-                var tasks = BatchImageItems.Select(async item =>
+                var tasks = itemsToGenerate.Select(async item =>
                 {
                     await semaphore.WaitAsync();
                     try
@@ -512,6 +563,7 @@ namespace AssetAutomator
                         // Save progress real-time on UI thread
                         _ = Dispatcher.InvokeAsync(async () =>
                         {
+                            UpdateBatchProgressUI();
                             if (_activeProject != null)
                             {
                                 await SaveCurrentProjectStateAsync();
@@ -527,13 +579,14 @@ namespace AssetAutomator
                 await Task.WhenAll(tasks);
             });
 
+            UpdateBatchProgressUI();
             if (_activeProject != null)
             {
                 await SaveCurrentProjectStateAsync();
             }
 
             BtnBatchGenerate.IsEnabled = true;
-            MessageBox.Show($"Đã hoàn tất sinh {BatchImageItems.Count} ảnh cảnh hàng loạt!", "Hoàn thành", MessageBoxButton.OK, MessageBoxImage.Information);
+            MessageBox.Show($"Đã hoàn tất sinh {itemsToGenerate.Count} ảnh cảnh hàng loạt!", "Hoàn thành", MessageBoxButton.OK, MessageBoxImage.Information);
         }
 
         private void CardImageContainer_Click(object sender, MouseButtonEventArgs e)
@@ -761,6 +814,9 @@ namespace AssetAutomator
                         ErrorMessage = state.ErrorMessage,
                         MediaId = state.MediaId,
                         ReferenceMediaId = state.ReferenceMediaId,
+                        FlowProjectId = state.FlowProjectId ?? project.FlowProjectId,
+                        FlowProjectTitle = state.FlowProjectTitle ?? project.ProjectName,
+                        FlowProjectUrl = state.FlowProjectUrl ?? project.FlowProjectUrl,
                         Engine = state.Engine,
                         Model = state.Model,
                         AspectRatio = state.AspectRatio,
@@ -789,36 +845,102 @@ namespace AssetAutomator
                     .Concat(Directory.GetFiles(outputDir, "*.webp"))
                     .ToList();
 
-                if (files.Count == 0) return;
-
                 foreach (var item in BatchImageItems)
                 {
+                    // 1. If item has an existing image file on disk, keep it marked as Done
                     if (!string.IsNullOrWhiteSpace(item.ImagePath) && File.Exists(item.ImagePath))
                     {
                         item.Status = "Done";
                         continue;
                     }
 
-                    string p1 = $"_{item.Index}_";
-                    string p2 = $"_{item.Index}.";
+                    // 2. File does not exist (or was deleted manually), clear path
+                    item.ImagePath = string.Empty;
 
-                    var matchedFile = files.LastOrDefault(f =>
+                    // 3. Try to match with any remaining image file on disk by scene index
+                    if (files.Count > 0)
                     {
-                        string name = Path.GetFileName(f);
-                        return name.Contains(p1, StringComparison.OrdinalIgnoreCase) ||
-                               name.Contains(p2, StringComparison.OrdinalIgnoreCase);
-                    });
+                        string p1 = $"_{item.Index}_";
+                        string p2 = $"_{item.Index}.";
 
-                    if (!string.IsNullOrEmpty(matchedFile))
-                    {
-                        item.ImagePath = matchedFile;
-                        item.Status = "Done";
+                        var matchedFile = files.LastOrDefault(f =>
+                        {
+                            string name = Path.GetFileName(f);
+                            return name.Contains(p1, StringComparison.OrdinalIgnoreCase) ||
+                                   name.Contains(p2, StringComparison.OrdinalIgnoreCase);
+                        });
+
+                        if (!string.IsNullOrEmpty(matchedFile))
+                        {
+                            item.ImagePath = matchedFile;
+                            item.Status = "Done";
+                            continue;
+                        }
                     }
+
+                    // 4. If no file exists on disk, set status to Waiting for re-generation
+                    item.Status = "Waiting";
                 }
+
+                UpdateBatchProgressUI();
             }
             catch (Exception ex)
             {
                 Debug.WriteLine($"[AutoDetectImages] Error matching files: {ex.Message}");
+            }
+        }
+
+        private void UpdateBatchProgressUI()
+        {
+            if (ProgressBatchGen == null || TxtBatchProgress == null) return;
+
+            int total = BatchImageItems.Count;
+            int done = BatchImageItems.Count(i => i.IsDone || string.Equals(i.Status, "Done", StringComparison.OrdinalIgnoreCase));
+            int percent = total > 0 ? (done * 100) / total : 0;
+
+            ProgressBatchGen.Maximum = Math.Max(1, total);
+            ProgressBatchGen.Value = done;
+            TxtBatchProgress.Text = $"Đã tạo {done}/{total} ảnh ({percent}%)";
+        }
+
+        private void BtnOpenFlowProjectUrl_Click(object sender, RoutedEventArgs e)
+        {
+            string? url = _activeProject?.FlowProjectUrl;
+
+            if (string.IsNullOrWhiteSpace(url) && !string.IsNullOrWhiteSpace(_activeProject?.FlowProjectId))
+            {
+                url = $"https://labs.google/fx/tools/flow/project/{_activeProject.FlowProjectId}";
+            }
+
+            if (string.IsNullOrWhiteSpace(url))
+            {
+                var itemWithProj = BatchImageItems.FirstOrDefault(i => !string.IsNullOrEmpty(i.FlowProjectUrl) || !string.IsNullOrEmpty(i.FlowProjectId));
+                if (itemWithProj != null)
+                {
+                    url = itemWithProj.FlowProjectUrl;
+                    if (string.IsNullOrWhiteSpace(url) && !string.IsNullOrWhiteSpace(itemWithProj.FlowProjectId))
+                    {
+                        url = $"https://labs.google/fx/tools/flow/project/{itemWithProj.FlowProjectId}";
+                    }
+                }
+            }
+
+            if (string.IsNullOrWhiteSpace(url))
+            {
+                url = "https://labs.google/fx/tools/flow";
+            }
+
+            try
+            {
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = url,
+                    UseShellExecute = true
+                });
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Không thể mở liên kết Google Flow: {ex.Message}", "Lỗi", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -864,6 +986,13 @@ namespace AssetAutomator
             _activeProject.Engine = (CboxBatchEngine?.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "flow";
             _activeProject.Provider = RadProviderFlowLocal?.IsChecked == true ? "flow_local" : "glabs";
 
+            var itemWithProj = BatchImageItems.FirstOrDefault(i => !string.IsNullOrEmpty(i.FlowProjectId));
+            if (itemWithProj != null)
+            {
+                _activeProject.FlowProjectId = itemWithProj.FlowProjectId;
+                _activeProject.FlowProjectUrl = itemWithProj.FlowProjectUrl;
+            }
+
             _activeProject.RefImagePaths = _batchRefImages
                 .Select(r => r.filePath)
                 .Where(f => !string.IsNullOrWhiteSpace(f))
@@ -880,6 +1009,9 @@ namespace AssetAutomator
                 ErrorMessage = item.ErrorMessage,
                 MediaId = item.MediaId,
                 ReferenceMediaId = item.ReferenceMediaId,
+                FlowProjectId = item.FlowProjectId,
+                FlowProjectTitle = item.FlowProjectTitle,
+                FlowProjectUrl = item.FlowProjectUrl,
                 Engine = item.Engine,
                 Model = item.Model,
                 AspectRatio = item.AspectRatio,

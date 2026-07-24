@@ -15,6 +15,9 @@ namespace AssetAutomator
         private string _errorMessage = string.Empty;
         private string? _mediaId;
         private string? _referenceMediaId;
+        private string? _flowProjectId;
+        private string? _flowProjectTitle;
+        private string? _flowProjectUrl;
         private DateTime? _startedAt;
         private DateTime? _finishedAt;
 
@@ -118,6 +121,24 @@ namespace AssetAutomator
         {
             get => _referenceMediaId;
             set { _referenceMediaId = value; OnPropertyChanged(); }
+        }
+
+        public string? FlowProjectId
+        {
+            get => _flowProjectId;
+            set { _flowProjectId = value; OnPropertyChanged(); }
+        }
+
+        public string? FlowProjectTitle
+        {
+            get => _flowProjectTitle;
+            set { _flowProjectTitle = value; OnPropertyChanged(); }
+        }
+
+        public string? FlowProjectUrl
+        {
+            get => _flowProjectUrl;
+            set { _flowProjectUrl = value; OnPropertyChanged(); }
         }
 
         public DateTime? StartedAt

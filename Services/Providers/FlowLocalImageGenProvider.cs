@@ -116,7 +116,7 @@ namespace AssetAutomator.Services.Providers
                             {
                                 // Upload once via /v1/images/edits to obtain initial media_id
                                 effectiveRefMediaId = await UploadReferenceImageAndGetMediaIdAsync(
-                                    baseUrl, effApiKey, model, size, quality, item.Prompt, referenceImages, refWithFilePath);
+                                    baseUrl, effApiKey, model, size, quality, item.Prompt, item.FlowProjectId, referenceImages, refWithFilePath);
 
                                 if (!string.IsNullOrEmpty(effectiveRefMediaId) && !string.IsNullOrEmpty(cacheKey))
                                 {
@@ -142,6 +142,51 @@ namespace AssetAutomator.Services.Providers
                 item.Status = "Failed";
                 item.ErrorMessage = $"Error: {ex.Message}";
                 item.FinishedAt = DateTime.Now;
+            }
+        }
+
+        /// <summary>
+        /// Creates a project directly on Google Flow (labs.google) via POST /v1/projects.
+        /// </summary>
+        public static async Task<(string? projectId, string? projectUrl, string? error)> CreateProjectAsync(string serverUrl, string apiKey, string projectTitle)
+        {
+            try
+            {
+                string baseUrl = string.IsNullOrWhiteSpace(serverUrl) ? "http://127.0.0.1:8787/v1" : serverUrl.TrimEnd('/');
+                if (!baseUrl.EndsWith("/v1", StringComparison.OrdinalIgnoreCase) && !baseUrl.Contains("/v1/"))
+                {
+                    baseUrl += "/v1";
+                }
+                string effApiKey = string.IsNullOrWhiteSpace(apiKey) ? "flow-local-key" : apiKey.Trim();
+                string endpoint = $"{baseUrl}/projects";
+
+                var payload = new Dictionary<string, string> { ["title"] = projectTitle };
+                string jsonBody = JsonSerializer.Serialize(payload);
+
+                using var request = new HttpRequestMessage(HttpMethod.Post, endpoint)
+                {
+                    Content = new StringContent(jsonBody, Encoding.UTF8, "application/json")
+                };
+                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", effApiKey);
+
+                var response = await _httpClient.SendAsync(request);
+                string responseContent = await response.Content.ReadAsStringAsync();
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    return (null, null, FormatErrorMessage((int)response.StatusCode, responseContent));
+                }
+
+                using var doc = JsonDocument.Parse(responseContent);
+                var root = doc.RootElement;
+                string? pId = root.TryGetProperty("project_id", out var pidProp) ? pidProp.GetString() : null;
+                string? pUrl = root.TryGetProperty("project_url", out var purlProp) ? purlProp.GetString() : null;
+
+                return (pId, pUrl, null);
+            }
+            catch (Exception ex)
+            {
+                return (null, null, ex.Message);
             }
         }
 
@@ -171,6 +216,15 @@ namespace AssetAutomator.Services.Providers
                 payload["reference_media_id"] = referenceMediaId;
             }
 
+            if (!string.IsNullOrWhiteSpace(item.FlowProjectId))
+            {
+                payload["project_id"] = item.FlowProjectId;
+            }
+            else if (!string.IsNullOrWhiteSpace(item.FlowProjectTitle))
+            {
+                payload["project_title"] = item.FlowProjectTitle;
+            }
+
             string jsonBody = JsonSerializer.Serialize(payload);
             using var request = new HttpRequestMessage(HttpMethod.Post, endpoint)
             {
@@ -183,6 +237,44 @@ namespace AssetAutomator.Services.Providers
 
             if (!response.IsSuccessStatusCode)
             {
+                // Auto-fallback: If the project was deleted on Google Flow website (404/500/invalid project)
+                if (!string.IsNullOrWhiteSpace(item.FlowProjectId) &&
+                    (response.StatusCode == System.Net.HttpStatusCode.NotFound ||
+                     responseContent.Contains("project", StringComparison.OrdinalIgnoreCase) ||
+                     responseContent.Contains("not_found", StringComparison.OrdinalIgnoreCase) ||
+                     responseContent.Contains("404", StringComparison.OrdinalIgnoreCase) ||
+                     responseContent.Contains("UNAUTHORIZED", StringComparison.OrdinalIgnoreCase)))
+                {
+                    item.FlowProjectId = null;
+                    string projectTitle = !string.IsNullOrWhiteSpace(item.FlowProjectTitle) ? item.FlowProjectTitle : "Batch Project";
+                    
+                    var (newPid, newPurl, pErr) = await CreateProjectAsync(baseUrl, apiKey, projectTitle);
+                    if (!string.IsNullOrEmpty(newPid))
+                    {
+                        item.FlowProjectId = newPid;
+                        item.FlowProjectUrl = newPurl;
+
+                        payload["project_id"] = newPid;
+                        if (payload.ContainsKey("project_title")) payload.Remove("project_title");
+
+                        string retryJson = JsonSerializer.Serialize(payload);
+                        using var retryReq = new HttpRequestMessage(HttpMethod.Post, endpoint)
+                        {
+                            Content = new StringContent(retryJson, Encoding.UTF8, "application/json")
+                        };
+                        retryReq.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+
+                        var retryResponse = await _httpClient.SendAsync(retryReq);
+                        string retryContent = await retryResponse.Content.ReadAsStringAsync();
+
+                        if (retryResponse.IsSuccessStatusCode)
+                        {
+                            await HandleOpenAiResponseAsync(item, retryContent, outputDirectory);
+                            return;
+                        }
+                    }
+                }
+
                 item.Status = "Failed";
                 item.ErrorMessage = FormatErrorMessage((int)response.StatusCode, responseContent);
                 item.FinishedAt = DateTime.Now;
@@ -199,6 +291,7 @@ namespace AssetAutomator.Services.Providers
             string size,
             string quality,
             string prompt,
+            string? flowProjectId,
             List<(string base64Data, string tag)>? referenceImages,
             List<(string base64Data, string tag, string filePath)>? refWithFilePath)
         {
@@ -210,6 +303,11 @@ namespace AssetAutomator.Services.Providers
             content.Add(new StringContent(size), "size");
             content.Add(new StringContent(quality), "quality");
             content.Add(new StringContent("url"), "response_format");
+
+            if (!string.IsNullOrWhiteSpace(flowProjectId))
+            {
+                content.Add(new StringContent(flowProjectId), "project_id");
+            }
 
             byte[] imageBytes = Array.Empty<byte>();
             string fileName = "image.png";
@@ -270,6 +368,16 @@ namespace AssetAutomator.Services.Providers
                 if (firstItem.TryGetProperty("media_id", out var mediaIdProp))
                 {
                     item.MediaId = mediaIdProp.GetString();
+                }
+
+                if (firstItem.TryGetProperty("project_id", out var projIdProp) && !string.IsNullOrEmpty(projIdProp.GetString()))
+                {
+                    item.FlowProjectId = projIdProp.GetString();
+                }
+
+                if (firstItem.TryGetProperty("project_url", out var projUrlProp) && !string.IsNullOrEmpty(projUrlProp.GetString()))
+                {
+                    item.FlowProjectUrl = projUrlProp.GetString();
                 }
 
                 if (firstItem.TryGetProperty("url", out var urlProp) && !string.IsNullOrEmpty(urlProp.GetString()))
