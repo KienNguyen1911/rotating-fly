@@ -11,6 +11,7 @@
     <Window.Resources>
         <!-- Value Converters -->
         <local:YoutubeUrlConverter x:Key="YoutubeUrlConverter"/>
+        <local:AspectRatioHeightConverter x:Key="AspectRatioHeightConverter"/>
     </Window.Resources>
     <Grid Margin="20">
         <Grid.RowDefinitions>
@@ -1007,6 +1008,480 @@
                             </DataGrid>
                         </Grid>
                     </Border>
+                </Grid>
+            </TabItem>
+
+            <!-- TabItem: Batch Image Gen -->
+            <TabItem Header="Batch Image Gen" Padding="20,8" FontSize="12" FontWeight="SemiBold">
+                <Grid Margin="0,15,0,0">
+
+                    <!-- Level 1: Projects Dashboard Panel (Grid View) -->
+                    <Grid x:Name="PanelProjectsDashboard" Visibility="Visible">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+
+                        <!-- Dashboard Header Card with Storage Location Setting -->
+                        <Border Grid.Row="0" Style="{StaticResource Card}" Background="{DynamicResource SurfaceSoftBrush}" Padding="15" Margin="0,0,0,15">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+
+                                <StackPanel Grid.Column="0">
+                                    <TextBlock Text="📁 QUẢN LÝ DỰ ÁN (PROJECTS DASHBOARD)" FontSize="20" FontWeight="Bold" Foreground="{DynamicResource InkBrush}" Margin="0,0,0,8"/>
+                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                        <TextBlock Text="⚙️ Thư mục lưu trữ tất cả Projects: " FontSize="11" Foreground="{DynamicResource BodyBrush}" VerticalAlignment="Center"/>
+                                        <TextBox x:Name="TxtProjectsStoragePath" Width="380" Height="28" FontSize="11" VerticalContentAlignment="Center" Padding="6,0" IsReadOnly="True" Margin="6,0,6,0"/>
+                                        <Button x:Name="BtnBrowseProjectsDir" Content="Browse..." Height="28" Padding="10,0" Style="{StaticResource PrimaryButton}" FontSize="11" Click="BtnBrowseProjectsDir_Click"/>
+                                    </StackPanel>
+                                </StackPanel>
+
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                    <Button x:Name="BtnCreateProjectDashboard" Content="➕ Tạo dự án mới" Height="38" Padding="16,0" Style="{StaticResource GreenButton}" FontSize="12" FontWeight="Bold" Click="BtnNewProject_Click"/>
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+
+                        <!-- Projects Cards Grid -->
+                        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                            <ItemsControl x:Name="ItemsControlProjectsGrid">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <UniformGrid Columns="3" VerticalAlignment="Top"/>
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Style="{StaticResource Card}" Background="#18191E" CornerRadius="16" Padding="16" Margin="8" BorderBrush="#2B2D37" BorderThickness="1">
+                                            <Grid>
+                                                <Grid.RowDefinitions>
+                                                    <RowDefinition Height="Auto"/>
+                                                    <RowDefinition Height="Auto"/>
+                                                    <RowDefinition Height="Auto"/>
+                                                    <RowDefinition Height="*"/>
+                                                    <RowDefinition Height="Auto"/>
+                                                </Grid.RowDefinitions>
+
+                                                <!-- Folder Icon & Project Title -->
+                                                <Grid Grid.Row="0" Margin="0,0,0,10">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                    </Grid.ColumnDefinitions>
+
+                                                    <Border Grid.Column="0" Background="#2B2D37" CornerRadius="10" Width="42" Height="42" Margin="0,0,12,0">
+                                                        <TextBlock Text="📁" FontSize="22" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                    </Border>
+
+                                                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                                        <TextBlock Text="{Binding ProjectName}" FontSize="16" FontWeight="Bold" Foreground="#FFFFFF" TextTrimming="CharacterEllipsis"/>
+                                                        <TextBlock Text="{Binding CreatedAt, StringFormat='Ngày tạo: {0:dd/MM/yyyy HH:mm}'}" FontSize="10" Foreground="#8A90A3"/>
+                                                    </StackPanel>
+                                                </Grid>
+
+                                                <!-- Output Path Snippet -->
+                                                <Border Grid.Row="1" Background="#121317" CornerRadius="6" Padding="8,5" Margin="0,0,0,12">
+                                                    <TextBlock Text="{Binding OutputDir, StringFormat='📁 {0}'}" FontSize="10" Foreground="#A0A5B5" TextTrimming="CharacterEllipsis"/>
+                                                </Border>
+
+                                                <!-- Settings Badges -->
+                                                <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,0,0,15">
+                                                    <Border Background="#252733" CornerRadius="4" Padding="6,2" Margin="0,0,6,0">
+                                                        <TextBlock Text="{Binding AspectRatio, StringFormat='Tỷ lệ: {0}'}" FontSize="10" Foreground="#CBD5E1"/>
+                                                    </Border>
+                                                    <Border Background="#252733" CornerRadius="4" Padding="6,2" Margin="0,0,6,0">
+                                                        <TextBlock Text="{Binding Engine, StringFormat='Engine: {0}'}" FontSize="10" Foreground="#CBD5E1"/>
+                                                    </Border>
+                                                </StackPanel>
+
+                                                <!-- Action Buttons -->
+                                                <Grid Grid.Row="4">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="8"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                    </Grid.ColumnDefinitions>
+
+                                                    <Button x:Name="BtnOpenProjectCard" Content="📂 Mở Dự Án" Height="34" Style="{StaticResource GreenButton}" FontSize="11" FontWeight="Bold" Tag="{Binding}" Click="BtnOpenProjectCard_Click"/>
+                                                    <Button Grid.Column="2" x:Name="BtnDeleteProjectCard" Content="🗑️ Xóa" Height="34" Width="60" Style="{StaticResource PrimaryButton}" FontSize="11" Tag="{Binding}" Click="BtnDeleteProjectCard_Click" ToolTip="Xóa dự án này"/>
+                                                </Grid>
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+                    </Grid>
+
+                    <!-- Level 2: Project Editor Panel (Current Generator UI) -->
+                    <Grid x:Name="PanelProjectEditor" Visibility="Collapsed">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="340"/>
+                            <ColumnDefinition Width="20"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+
+                        <!-- Left Sidebar Panel -->
+                        <Grid Grid.Column="0">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="*"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+
+                            <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto" Margin="0,0,0,10">
+                                <StackPanel>
+                                    <!-- Section 1: NHÂN VẬT GỐC (High Contrast Fix) -->
+                                    <Border Style="{StaticResource Card}" Background="{DynamicResource SurfaceSoftBrush}" Padding="15" Margin="0,0,0,15">
+                                        <StackPanel>
+                                            <TextBlock Text="1. NHÂN VẬT GỐC" FontSize="12" FontWeight="Bold" Foreground="{DynamicResource InkBrush}" Margin="0,0,0,10"/>
+                                            
+                                            <!-- Dashed Border Dropzone with Vibrant High-Contrast Blue Accent -->
+                                            <Border x:Name="BorderBatchCharDropzone" BorderBrush="#3B82F6" BorderThickness="2" CornerRadius="0" Background="#161922" Height="150" Cursor="Hand" MouseLeftButtonDown="BtnBatchSelectChar_Click" Margin="0,0,0,10">
+                                                <Grid>
+                                                    <!-- Empty Placeholder with High Contrast -->
+                                                    <StackPanel x:Name="PanelBatchCharEmpty" VerticalAlignment="Center" HorizontalAlignment="Center">
+                                                        <TextBlock Text="👤+" FontSize="32" HorizontalAlignment="Center" Foreground="#3B82F6" Margin="0,0,0,6"/>
+                                                        <TextBlock Text="Chọn ảnh nhân vật" FontSize="13" FontWeight="Bold" Foreground="#FFFFFF" HorizontalAlignment="Center"/>
+                                                    </StackPanel>
+
+                                                    <!-- Image Preview Thumbnail -->
+                                                    <Grid x:Name="PanelBatchCharHasImage" Visibility="Collapsed">
+                                                        <Image x:Name="ImgBatchCharPreview" Stretch="UniformToFill"/>
+                                                        <Button x:Name="BtnBatchClearChar" Content="✕" Width="22" Height="22" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="6" Style="{StaticResource PrimaryButton}" Click="BtnBatchClearChar_Click" ToolTip="Xóa ảnh nhân vật"/>
+                                                    </Grid>
+                                                </Grid>
+                                            </Border>
+
+                                            <TextBlock x:Name="TxtBatchCharInfo" Text="No reference image selected." FontSize="11" Foreground="{DynamicResource BodyBrush}" TextWrapping="Wrap" Margin="0,0,0,4"/>
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="Tag in Prompt: " FontSize="11" Foreground="{DynamicResource BodyBrush}"/>
+                                                <TextBlock x:Name="TxtBatchCharTag" Text="@character" FontSize="11" FontWeight="Bold" Foreground="#3B82F6"/>
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Border>
+
+                                    <!-- Section 2: KỊCH BẢN (JSON OBJECT/ARRAY) -->
+                                    <Border Style="{StaticResource Card}" Background="{DynamicResource SurfaceSoftBrush}" Padding="15" Margin="0,0,0,15">
+                                        <StackPanel>
+                                            <TextBlock Text="2. KỊCH BẢN (JSON OBJECT/ARRAY)" FontSize="12" FontWeight="Bold" Foreground="{DynamicResource InkBrush}" Margin="0,0,0,10"/>
+                                            
+                                            <TextBox x:Name="TxtBatchScriptJson" Height="180" TextWrapping="Wrap" AcceptsReturn="True" VerticalScrollBarVisibility="Auto" FontSize="11" FontFamily="Consolas, Segoe UI" Padding="8" Background="#121316" Foreground="#E2E8F0" BorderBrush="{DynamicResource HairlineBrush}"/>
+
+                                            <Grid Margin="0,10,0,0">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="8"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                </Grid.ColumnDefinitions>
+                                                <Button x:Name="BtnBatchImportJson" Content="📄 Chọn file JSON" Height="36" Style="{StaticResource PrimaryButton}" FontWeight="Bold" Click="BtnBatchImportJson_Click"/>
+                                                <Button x:Name="BtnUpdateScriptJson" Grid.Column="2" Content="{}{ } Cập nhật kịch bản" Height="36" Style="{StaticResource PrimaryButton}" FontWeight="Bold" Click="BtnUpdateScriptJson_Click"/>
+                                            </Grid>
+                                        </StackPanel>
+                                    </Border>
+
+                                    <!-- Section 3: CẤU HÌNH -->
+                                    <Border Style="{StaticResource Card}" Background="{DynamicResource SurfaceSoftBrush}" Padding="15" Margin="0,0,0,10">
+                                        <StackPanel>
+                                            <TextBlock Text="3. CẤU HÌNH" FontSize="12" FontWeight="Bold" Foreground="{DynamicResource InkBrush}" Margin="0,0,0,10"/>
+                                            
+                                            <TextBlock Text="Tỷ lệ khung hình:" FontSize="11" Foreground="{DynamicResource BodyBrush}" Margin="0,0,0,4"/>
+                                            <ComboBox x:Name="CboxBatchAspect" Height="32" SelectedIndex="0" SelectionChanged="CboxBatchAspect_SelectionChanged" Margin="0,0,0,12">
+                                                <ComboBoxItem Content="16:9 (Widescreen)" Tag="16:9"/>
+                                                <ComboBoxItem Content="9:16 (Vertical/Shorts)" Tag="9:16"/>
+                                                <ComboBoxItem Content="1:1 (Square)" Tag="1:1"/>
+                                                <ComboBoxItem Content="4:3 (Classic)" Tag="4:3"/>
+                                                <ComboBoxItem Content="3:4 (Portrait)" Tag="3:4"/>
+                                            </ComboBox>
+
+                                            <TextBlock Text="Thư mục lưu ảnh:" FontSize="11" Foreground="{DynamicResource BodyBrush}" Margin="0,0,0,4"/>
+                                            <Grid Margin="0,0,0,12">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+                                                <TextBox x:Name="TxtBatchOutputDir" Height="30" VerticalContentAlignment="Center" FontSize="11" Padding="6,0"/>
+                                                <Button x:Name="BtnBrowseBatchOutputDir" Grid.Column="1" Content="Browse..." Height="30" Padding="10,0" Margin="6,0,0,0" Style="{StaticResource PrimaryButton}" FontSize="11" Click="BtnBrowseBatchOutputDir_Click"/>
+                                            </Grid>
+
+                                            <!-- Hidden Radios for backward compatibility binding -->
+                                            <StackPanel Visibility="Collapsed">
+                                                <RadioButton x:Name="RadAspect169" Tag="16:9" IsChecked="True" GroupName="GrpAspect"/>
+                                                <RadioButton x:Name="RadAspect11" Tag="1:1" GroupName="GrpAspect"/>
+                                                <RadioButton x:Name="RadAspect916" Tag="9:16" GroupName="GrpAspect"/>
+                                                <RadioButton x:Name="RadAspect43" Tag="4:3" GroupName="GrpAspect"/>
+                                                <RadioButton x:Name="RadAspect34" Tag="3:4" GroupName="GrpAspect"/>
+                                            </StackPanel>
+
+                                            <!-- Advanced AI Engine Settings Expander -->
+                                            <Expander Header="Cấu hình Engine / Model AI..." Foreground="{DynamicResource InkBrush}" FontSize="11" FontWeight="Bold">
+                                                <StackPanel Margin="0,10,0,0">
+                                                    <TextBlock Text="API Service Provider:" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource InkBrush}" Margin="0,0,0,4"/>
+                                                    <StackPanel Margin="0,0,0,10">
+                                                        <RadioButton x:Name="RadProviderGlabs" Content="🔵 G-Labs Webhook API (:8765)" Tag="glabs" IsChecked="True" GroupName="GrpProvider" Foreground="{DynamicResource InkBrush}" Margin="0,2" Checked="RadProvider_Checked"/>
+                                                        <RadioButton x:Name="RadProviderFlowLocal" Content="🟢 Flow Image Local API (:8787)" Tag="flow_local" GroupName="GrpProvider" Foreground="{DynamicResource InkBrush}" Margin="0,2" Checked="RadProvider_Checked"/>
+                                                    </StackPanel>
+
+                                                    <TextBlock Text="Engine:" FontSize="11" Foreground="{DynamicResource BodyBrush}" Margin="0,0,0,4"/>
+                                                    <ComboBox x:Name="CboxBatchEngine" Height="28" SelectedIndex="0" SelectionChanged="CboxBatchEngine_SelectionChanged" Margin="0,0,0,10">
+                                                        <ComboBoxItem Content="Flow Image (/generate)" Tag="flow"/>
+                                                        <ComboBoxItem Content="Meta AI Vibes (/api/meta/generate)" Tag="meta"/>
+                                                        <ComboBoxItem Content="Super Grok AI (/api/grok/generate)" Tag="grok"/>
+                                                    </ComboBox>
+
+                                                    <StackPanel x:Name="PanelBatchFlowOptions">
+                                                        <TextBlock Text="Model:" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource InkBrush}" Margin="0,0,0,4"/>
+                                                        
+                                                        <!-- G-Labs Models Panel -->
+                                                        <StackPanel x:Name="PanelModelsGlabs" Margin="0,0,0,8">
+                                                            <RadioButton x:Name="RadModelBanana2" Content="Nano Banana 2 (Standard)" Tag="nano_banana_2" IsChecked="True" GroupName="GrpModel" Foreground="{DynamicResource InkBrush}" Margin="0,2"/>
+                                                            <RadioButton x:Name="RadModelBananaPro" Content="Nano Banana Pro (Quality)" Tag="nano_banana_pro" GroupName="GrpModel" Foreground="{DynamicResource InkBrush}" Margin="0,2"/>
+                                                            <RadioButton x:Name="RadModelBananaLite" Content="Nano Banana 2 Lite (Fast)" Tag="nano_banana_2_lite" GroupName="GrpModel" Foreground="{DynamicResource InkBrush}" Margin="0,2"/>
+                                                        </StackPanel>
+
+                                                        <!-- Flow Local Models Panel -->
+                                                        <StackPanel x:Name="PanelModelsFlowLocal" Margin="0,0,0,8" Visibility="Collapsed">
+                                                            <RadioButton x:Name="RadModelGemini31Flash" Content="Gemini 3.1 Flash Image" Tag="gemini-3.1-flash-image" IsChecked="True" GroupName="GrpModel" Foreground="{DynamicResource InkBrush}" Margin="0,2"/>
+                                                            <RadioButton x:Name="RadModelGemini30Pro" Content="Gemini 3.0 Pro Image" Tag="gemini-3.0-pro-image" GroupName="GrpModel" Foreground="{DynamicResource InkBrush}" Margin="0,2"/>
+                                                            <RadioButton x:Name="RadModelImagen4Preview" Content="Imagen 4.0 Preview" Tag="imagen-4.0-generate-preview" GroupName="GrpModel" Foreground="{DynamicResource InkBrush}" Margin="0,2"/>
+                                                            <RadioButton x:Name="RadModelNanoBanana2Flow" Content="Nano Banana 2" Tag="nano-banana-2" GroupName="GrpModel" Foreground="{DynamicResource InkBrush}" Margin="0,2"/>
+                                                            <RadioButton x:Name="RadModelNanoBananaProFlow" Content="Nano Banana Pro" Tag="nano-banana-pro" GroupName="GrpModel" Foreground="{DynamicResource InkBrush}" Margin="0,2"/>
+                                                        </StackPanel>
+
+                                                        <TextBlock Text="Upscale / Quality:" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource InkBrush}" Margin="0,0,0,4"/>
+                                                        <StackPanel Margin="0,0,0,8">
+                                                            <RadioButton x:Name="RadUpscaleNone" Content="None / Standard" Tag="none" IsChecked="True" GroupName="GrpUpscale" Foreground="{DynamicResource InkBrush}" Margin="0,2"/>
+                                                            <RadioButton x:Name="RadUpscale2K" Content="2K High Resolution (HD)" Tag="2K" GroupName="GrpUpscale" Foreground="{DynamicResource InkBrush}" Margin="0,2"/>
+                                                            <RadioButton x:Name="RadUpscale4K" Content="4K Ultra Resolution" Tag="4K" GroupName="GrpUpscale" Foreground="{DynamicResource InkBrush}" Margin="0,2"/>
+                                                        </StackPanel>
+                                                    </StackPanel>
+
+                                                    <TextBlock Text="Max Parallel Threads:" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource InkBrush}" Margin="0,0,0,4"/>
+                                                    <ComboBox x:Name="CboxBatchConcurrency" Height="28" SelectedIndex="2" SelectionChanged="CboxBatchConcurrency_SelectionChanged" Margin="0,0,0,5">
+                                                        <ComboBoxItem Content="1 Task (Sequential)" Tag="1"/>
+                                                        <ComboBoxItem Content="2 Tasks Parallel" Tag="2"/>
+                                                        <ComboBoxItem Content="4 Tasks Parallel (Recommended)" Tag="4"/>
+                                                        <ComboBoxItem Content="6 Tasks Parallel (Fast)" Tag="6"/>
+                                                        <ComboBoxItem Content="8 Tasks Parallel (Ultra)" Tag="8"/>
+                                                    </ComboBox>
+                                                </StackPanel>
+                                            </Expander>
+                                        </StackPanel>
+                                    </Border>
+                                </StackPanel>
+                            </ScrollViewer>
+
+                            <!-- Fixed Bottom Generate Button -->
+                            <Button Grid.Row="1" x:Name="BtnBatchGenerate" Content="⚡ Tạo hàng loạt (4 ảnh song song)" Height="44" Style="{StaticResource GreenButton}" FontSize="13" FontWeight="Bold" Click="BtnBatchGenerate_Click"/>
+                        </Grid>
+
+                        <!-- Right Main Panel: Header with Back to Projects & Scene Cards Grid -->
+                        <Grid Grid.Column="2">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                            </Grid.RowDefinitions>
+
+                            <!-- Header Card -->
+                            <Border Grid.Row="0" Style="{StaticResource Card}" Background="{DynamicResource SurfaceSoftBrush}" Padding="15" Margin="0,0,0,15">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+
+                                    <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                                        <Button x:Name="BtnBackToProjects" Content="⬅️ Danh sách Dự án" Height="32" Padding="12,0" Margin="0,0,14,0" Style="{StaticResource PrimaryButton}" FontSize="11" FontWeight="Bold" Click="BtnBackToProjects_Click"/>
+                                        <StackPanel VerticalAlignment="Center">
+                                            <TextBlock x:Name="TxtVideoTitle" Text="Bedtime Psychology" FontSize="20" FontWeight="Bold" Foreground="{DynamicResource InkBrush}" Margin="0,0,0,2"/>
+                                            <TextBlock x:Name="TxtBatchSubtitle" Text="Tạo tối đa 4 ảnh song song với khoảng nghỉ 8 giây giữa các đợt." FontSize="11" Foreground="{DynamicResource BodyBrush}"/>
+                                        </StackPanel>
+                                    </StackPanel>
+
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                        <Button x:Name="BtnSaveProjectEditor" Content="💾 Lưu dự án" Height="32" Padding="12,0" Margin="0,0,8,0" Style="{StaticResource GreenButton}" FontSize="11" FontWeight="Bold" Click="BtnSaveProject_Click"/>
+                                        <Button x:Name="BtnBatchViewToggle" Content="📋 Table Queue View" Height="32" Padding="12,0" Margin="0,0,8,0" Style="{StaticResource PrimaryButton}" FontSize="11" Click="BtnBatchViewToggle_Click"/>
+                                        <Button x:Name="BtnBatchOpenFolder" Content="📁 Open Folder" Height="32" Padding="12,0" Style="{StaticResource PrimaryButton}" FontSize="11" Click="BtnBatchOpenFolder_Click"/>
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
+
+                            <!-- Card Grid View (Main View) -->
+                            <ScrollViewer Grid.Row="1" x:Name="ScrollCardGrid" VerticalScrollBarVisibility="Auto">
+                                <ItemsControl x:Name="ItemsControlBatchCards">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <UniformGrid Columns="2" VerticalAlignment="Top"/>
+                                        </ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid x:Name="CardItemCell" Margin="6,0,6,14" VerticalAlignment="Top">
+                                                <!-- Border with dynamic Height calculated from ActualWidth & AspectRatio -->
+                                                <Border Background="#12141A" CornerRadius="0" BorderBrush="#2B2D37" BorderThickness="1" ClipToBounds="True">
+                                                    <Border.Height>
+                                                        <MultiBinding Converter="{StaticResource AspectRatioHeightConverter}">
+                                                            <Binding Path="ActualWidth" RelativeSource="{RelativeSource AncestorType=Grid}"/>
+                                                            <Binding Path="AspectRatio"/>
+                                                        </MultiBinding>
+                                                    </Border.Height>
+
+                                                    <Grid x:Name="CardGrid">
+                                                        <!-- Waiting/Status Placeholder (Collapsed when image is Done) -->
+                                                        <Grid x:Name="GridPlaceholder" Background="#12141A">
+                                                            <Grid.Style>
+                                                                <Style TargetType="Grid">
+                                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                                    <Style.Triggers>
+                                                                        <DataTrigger Binding="{Binding IsDone}" Value="True">
+                                                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                                                        </DataTrigger>
+                                                                    </Style.Triggers>
+                                                                </Style>
+                                                            </Grid.Style>
+                                                            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                                                                <TextBlock Text="🖼️" FontSize="18" HorizontalAlignment="Center" Foreground="#4A4E5D" Margin="0,0,0,4"/>
+                                                                <TextBlock Text="{Binding Status}" FontSize="10" Foreground="#6C7284" HorizontalAlignment="Center" FontWeight="SemiBold"/>
+                                                            </StackPanel>
+                                                        </Grid>
+
+                                                        <!-- Clear Crisp Generated Image (100% Un-dimmed) -->
+                                                        <Image Source="{Binding ImagePath}" Stretch="UniformToFill" Cursor="Hand" Tag="{Binding}" MouseLeftButtonDown="CardImageContainer_Click"/>
+
+                                                        <!-- Transparent Glass Overlay Container (Appears ONLY on MouseOver!) -->
+                                                        <Grid x:Name="OverlayContainer" Background="Transparent">
+                                                            <Grid.Style>
+                                                                <Style TargetType="Grid">
+                                                                    <Setter Property="Opacity" Value="0"/>
+                                                                    <Setter Property="IsHitTestVisible" Value="False"/>
+                                                                    <Style.Triggers>
+                                                                        <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=Border}}" Value="True">
+                                                                            <Setter Property="Opacity" Value="1"/>
+                                                                            <Setter Property="IsHitTestVisible" Value="True"/>
+                                                                        </DataTrigger>
+                                                                    </Style.Triggers>
+                                                                </Style>
+                                                            </Grid.Style>
+
+                                                            <!-- Top Bar: Scene Title, Status Badge & Action Buttons -->
+                                                            <Grid VerticalAlignment="Top" Margin="10">
+                                                                <Grid.ColumnDefinitions>
+                                                                    <ColumnDefinition Width="Auto"/>
+                                                                    <ColumnDefinition Width="*"/>
+                                                                    <ColumnDefinition Width="Auto"/>
+                                                                </Grid.ColumnDefinitions>
+
+                                                                <!-- Left: Scene Badge & Status Badge -->
+                                                                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                                                                    <Border Background="#CC0F172A" CornerRadius="6" Padding="8,4" Margin="0,0,6,0" BorderBrush="#40FFFFFF" BorderThickness="1">
+                                                                        <TextBlock Text="{Binding SceneTitle}" FontSize="11" FontWeight="Bold" Foreground="#FFFFFF"/>
+                                                                    </Border>
+                                                                    <Border Background="#CC1E293B" CornerRadius="6" Padding="7,4" BorderBrush="#30FFFFFF" BorderThickness="1">
+                                                                        <TextBlock Text="{Binding Status}" FontSize="10" FontWeight="SemiBold" Foreground="#E2E8F0"/>
+                                                                    </Border>
+                                                                </StackPanel>
+
+                                                                <!-- Right: Quick Action Buttons (Re-gen 🔄, Open 📁, Copy 📋) -->
+                                                                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                                                                    <!-- Re-generate Button -->
+                                                                    <Button x:Name="BtnCardRegenerate" Tag="{Binding}" Click="BtnCardRegenerate_Click" ToolTip="Tạo lại ảnh cảnh này (Re-generate)" Cursor="Hand" Margin="0,0,6,0">
+                                                                        <Button.Template>
+                                                                            <ControlTemplate TargetType="Button">
+                                                                                <Border x:Name="btnBorder" Background="#CC0F172A" BorderBrush="#50FFFFFF" BorderThickness="1" CornerRadius="13" Width="26" Height="26">
+                                                                                    <TextBlock Text="🔄" FontSize="11" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="#FFFFFF"/>
+                                                                                </Border>
+                                                                                <ControlTemplate.Triggers>
+                                                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                                                        <Setter TargetName="btnBorder" Property="Background" Value="#E62563EB"/>
+                                                                                        <Setter TargetName="btnBorder" Property="BorderBrush" Value="#80FFFFFF"/>
+                                                                                    </Trigger>
+                                                                                </ControlTemplate.Triggers>
+                                                                            </ControlTemplate>
+                                                                        </Button.Template>
+                                                                    </Button>
+
+                                                                    <!-- Open Image File Button -->
+                                                                    <Button x:Name="BtnCardOpenImage" Tag="{Binding}" Click="BtnBatchOpenImage_Click" ToolTip="Mở file ảnh" Cursor="Hand" Margin="0,0,6,0">
+                                                                        <Button.Template>
+                                                                            <ControlTemplate TargetType="Button">
+                                                                                <Border x:Name="btnBorder" Background="#CC0F172A" BorderBrush="#50FFFFFF" BorderThickness="1" CornerRadius="13" Width="26" Height="26">
+                                                                                    <TextBlock Text="📁" FontSize="11" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="#FFFFFF"/>
+                                                                                </Border>
+                                                                                <ControlTemplate.Triggers>
+                                                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                                                        <Setter TargetName="btnBorder" Property="Background" Value="#E610B981"/>
+                                                                                        <Setter TargetName="btnBorder" Property="BorderBrush" Value="#80FFFFFF"/>
+                                                                                    </Trigger>
+                                                                                </ControlTemplate.Triggers>
+                                                                            </ControlTemplate>
+                                                                        </Button.Template>
+                                                                    </Button>
+
+                                                                    <!-- Copy Prompt Button -->
+                                                                    <Button x:Name="BtnCardCopyPrompt" Tag="{Binding}" Click="BtnCardCopyPrompt_Click" ToolTip="Sao chép prompt" Cursor="Hand">
+                                                                        <Button.Template>
+                                                                            <ControlTemplate TargetType="Button">
+                                                                                <Border x:Name="btnBorder" Background="#CC0F172A" BorderBrush="#50FFFFFF" BorderThickness="1" CornerRadius="13" Width="26" Height="26">
+                                                                                    <TextBlock Text="📋" FontSize="11" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="#FFFFFF"/>
+                                                                                </Border>
+                                                                                <ControlTemplate.Triggers>
+                                                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                                                        <Setter TargetName="btnBorder" Property="Background" Value="#E68B5CF6"/>
+                                                                                        <Setter TargetName="btnBorder" Property="BorderBrush" Value="#80FFFFFF"/>
+                                                                                    </Trigger>
+                                                                                </ControlTemplate.Triggers>
+                                                                            </ControlTemplate>
+                                                                        </Button.Template>
+                                                                    </Button>
+                                                                </StackPanel>
+                                                            </Grid>
+
+                                                            <!-- Bottom Glass Bar: Transcript & Prompt Snippet -->
+                                                            <Border VerticalAlignment="Bottom" Margin="10" Background="#D9090D16" CornerRadius="8" Padding="10,8" BorderBrush="#30FFFFFF" BorderThickness="1">
+                                                                <StackPanel>
+                                                                    <TextBlock Text="{Binding Transcript}" FontSize="11" FontWeight="SemiBold" Foreground="#FFFFFF" TextWrapping="Wrap" MaxHeight="36" TextTrimming="CharacterEllipsis" Margin="0,0,0,3"/>
+                                                                    <TextBlock Text="{Binding Prompt}" FontSize="10" FontStyle="Italic" Foreground="#CBD5E1" TextWrapping="Wrap" MaxHeight="28" TextTrimming="CharacterEllipsis"/>
+                                                                </StackPanel>
+                                                            </Border>
+                                                        </Grid>
+                                                    </Grid>
+                                                </Border>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </ScrollViewer>
+
+                            <!-- Fallback Table View (Hidden by default, togglable) -->
+                            <Border Grid.Row="1" x:Name="BorderTableView" Style="{StaticResource Card}" Background="{DynamicResource CanvasBrush}" Padding="15" Visibility="Collapsed">
+                                <DataGrid x:Name="DgridBatchImageItems" AutoGenerateColumns="False" CanUserAddRows="False" 
+                                          Background="Transparent" BorderThickness="0" HeadersVisibility="Column" GridLinesVisibility="Horizontal"
+                                          RowHeaderWidth="0" IsReadOnly="True" RowHeight="40" FontSize="12">
+                                    <DataGrid.Columns>
+                                        <DataGridTextColumn Header="#" Binding="{Binding Index}" Width="40"/>
+                                        <DataGridTextColumn Header="Scene" Binding="{Binding SceneTitle}" Width="80"/>
+                                        <DataGridTextColumn Header="Prompt" Binding="{Binding Prompt}" Width="3*"/>
+                                        <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="100"/>
+                                        <DataGridTextColumn Header="Engine" Binding="{Binding Engine}" Width="80"/>
+                                        <DataGridTextColumn Header="Aspect" Binding="{Binding AspectRatio}" Width="60"/>
+                                        <DataGridTextColumn Header="Finished" Binding="{Binding FinishedTimeFormatted}" Width="80"/>
+                                        <DataGridTextColumn Header="Error / Info" Binding="{Binding ErrorMessage}" Width="2*"/>
+                                        <DataGridTemplateColumn Header="Action" Width="100">
+                                            <DataGridTemplateColumn.CellTemplate>
+                                                <DataTemplate>
+                                                    <Button Content="Open Image" Padding="6,3" Click="BtnBatchOpenImage_Click" FontSize="11"/>
+                                                </DataTemplate>
+                                            </DataGridTemplateColumn.CellTemplate>
+                                        </DataGridTemplateColumn>
+                                    </DataGrid.Columns>
+                                </DataGrid>
+                            </Border>
+                        </Grid>
+                    </Grid>
                 </Grid>
             </TabItem>
         </TabControl>

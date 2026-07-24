@@ -1,0 +1,1127 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>G-Labs Batch Character Image Generator</title>
+  <!-- Google Fonts: Outfit & Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <!-- JSZip & FileSaver CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+
+  <style>
+    :root {
+      --bg-gradient: linear-gradient(135deg, #0f172a 0%, #090d16 100%);
+      --card-bg: rgba(30, 41, 59, 0.7);
+      --card-border: rgba(255, 255, 255, 0.08);
+      --card-hover-border: rgba(99, 102, 241, 0.4);
+      --accent-primary: #6366f1;
+      --accent-secondary: #a855f7;
+      --accent-glow: rgba(99, 102, 241, 0.35);
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --text-dim: #64748b;
+      --success-color: #10b981;
+      --warning-color: #f59e0b;
+      --danger-color: #ef4444;
+      --radius-lg: 16px;
+      --radius-md: 12px;
+      --radius-sm: 8px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--bg-gradient);
+      color: var(--text-main);
+      min-height: 100vh;
+      padding: 2rem 1.5rem;
+      line-height: 1.5;
+    }
+
+    h1, h2, h3, h4, .brand-text {
+      font-family: 'Outfit', sans-serif;
+    }
+
+    /* Container Layout */
+    .app-container {
+      max-width: 1400px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 1.75rem;
+    }
+
+    /* Header Bar */
+    header.app-header {
+      background: var(--card-bg);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius-lg);
+      padding: 1.25rem 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+    }
+
+    .brand-group {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+
+    .brand-icon {
+      width: 44px;
+      height: 44px;
+      background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.4rem;
+      box-shadow: 0 0 20px var(--accent-glow);
+    }
+
+    .brand-title {
+      font-size: 1.4rem;
+      font-weight: 700;
+      background: linear-gradient(90deg, #ffffff, #c084fc);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .brand-subtitle {
+      font-size: 0.825rem;
+      color: var(--text-muted);
+    }
+
+    /* Server Config Strip */
+    .server-config {
+      display: flex;
+      align-items: center;
+      gap: 0.85rem;
+      background: rgba(15, 23, 42, 0.6);
+      padding: 0.5rem 1rem;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--card-border);
+    }
+
+    .input-field {
+      background: rgba(30, 41, 59, 0.8);
+      border: 1px solid var(--card-border);
+      color: var(--text-main);
+      padding: 0.45rem 0.75rem;
+      border-radius: var(--radius-sm);
+      font-size: 0.875rem;
+      outline: none;
+      transition: all 0.2s ease;
+    }
+
+    .input-field:focus {
+      border-color: var(--accent-primary);
+      box-shadow: 0 0 0 2px var(--accent-glow);
+    }
+
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      font-size: 0.8rem;
+      padding: 0.3rem 0.75rem;
+      border-radius: 20px;
+      font-weight: 500;
+      background: rgba(239, 68, 68, 0.15);
+      color: var(--danger-color);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+    }
+
+    .status-pill.connected {
+      background: rgba(16, 185, 129, 0.15);
+      color: var(--success-color);
+      border-color: rgba(16, 185, 129, 0.3);
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+
+    /* Main Grid */
+    .main-grid {
+      display: grid;
+      grid-template-columns: 420px 1fr;
+      gap: 1.5rem;
+    }
+
+    @media (max-width: 1024px) {
+      .main-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    /* Glass Cards */
+    .glass-card {
+      background: var(--card-bg);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius-lg);
+      padding: 1.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+    }
+
+    .card-title {
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: var(--text-main);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    /* Character Upload Area */
+    .drop-zone {
+      border: 2px dashed rgba(99, 102, 241, 0.4);
+      background: rgba(15, 23, 42, 0.4);
+      border-radius: var(--radius-md);
+      padding: 1.5rem 1rem;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.25s ease;
+    }
+
+    .drop-zone:hover, .drop-zone.dragover {
+      border-color: var(--accent-primary);
+      background: rgba(99, 102, 241, 0.08);
+      box-shadow: 0 0 20px rgba(99, 102, 241, 0.15);
+    }
+
+    .drop-zone-icon {
+      font-size: 2rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .drop-zone-text {
+      font-size: 0.875rem;
+      color: var(--text-muted);
+    }
+
+    .character-list {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+      gap: 0.85rem;
+      max-height: 240px;
+      overflow-y: auto;
+    }
+
+    .char-card {
+      position: relative;
+      background: rgba(15, 23, 42, 0.7);
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius-md);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .char-card img {
+      width: 100%;
+      height: 100px;
+      object-fit: cover;
+    }
+
+    .char-info {
+      padding: 0.4rem;
+      background: rgba(15, 23, 42, 0.9);
+    }
+
+    .char-tag-input {
+      width: 100%;
+      font-size: 0.75rem;
+      padding: 0.25rem 0.4rem;
+      background: rgba(30, 41, 59, 0.9);
+      border: 1px solid var(--card-border);
+      color: #a7f3d0;
+      font-weight: 600;
+      border-radius: 4px;
+      text-align: center;
+    }
+
+    .char-remove-btn {
+      position: absolute;
+      top: 4px;
+      right: 4px;
+      background: rgba(239, 68, 68, 0.85);
+      color: white;
+      border: none;
+      border-radius: 50%;
+      width: 20px;
+      height: 20px;
+      font-size: 11px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.2s;
+    }
+
+    .char-remove-btn:hover {
+      background: var(--danger-color);
+    }
+
+    /* Form Controls */
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+    }
+
+    .form-label {
+      font-size: 0.85rem;
+      font-weight: 500;
+      color: var(--text-muted);
+    }
+
+    select.input-field {
+      appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%2394a3b8'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 0.75rem center;
+      background-size: 1rem;
+      padding-right: 2.2rem;
+    }
+
+    .radio-group {
+      display: flex;
+      gap: 0.5rem;
+    }
+
+    .radio-btn {
+      flex: 1;
+      text-align: center;
+      padding: 0.45rem;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--card-border);
+      background: rgba(15, 23, 42, 0.5);
+      font-size: 0.825rem;
+      cursor: pointer;
+      transition: all 0.2s;
+      user-select: none;
+    }
+
+    .radio-btn.active {
+      background: var(--accent-primary);
+      border-color: var(--accent-primary);
+      color: white;
+      font-weight: 600;
+      box-shadow: 0 0 12px var(--accent-glow);
+    }
+
+    /* Prompts Input Area */
+    .prompt-tabs {
+      display: flex;
+      gap: 0.5rem;
+      border-bottom: 1px solid var(--card-border);
+      padding-bottom: 0.5rem;
+    }
+
+    .tab-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      padding: 0.4rem 0.8rem;
+      font-size: 0.875rem;
+      font-weight: 500;
+      cursor: pointer;
+      border-radius: var(--radius-sm);
+      transition: all 0.2s;
+    }
+
+    .tab-btn.active {
+      background: rgba(99, 102, 241, 0.15);
+      color: #a5b4fc;
+      font-weight: 600;
+    }
+
+    textarea.input-field {
+      width: 100%;
+      min-height: 180px;
+      resize: vertical;
+      font-family: inherit;
+      font-size: 0.9rem;
+      line-height: 1.6;
+    }
+
+    /* Action Buttons */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      padding: 0.75rem 1.5rem;
+      border-radius: var(--radius-md);
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+      color: white;
+      box-shadow: 0 4px 20px var(--accent-glow);
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 24px rgba(168, 85, 247, 0.4);
+    }
+
+    .btn-secondary {
+      background: rgba(30, 41, 59, 0.9);
+      border: 1px solid var(--card-border);
+      color: var(--text-main);
+    }
+
+    .btn-secondary:hover {
+      background: rgba(51, 65, 85, 0.9);
+      border-color: var(--text-muted);
+    }
+
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none !important;
+    }
+
+    /* Gallery & Progress Grid */
+    .stats-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: rgba(15, 23, 42, 0.6);
+      padding: 0.75rem 1.25rem;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--card-border);
+    }
+
+    .stat-item {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.875rem;
+    }
+
+    .stat-value {
+      font-weight: 700;
+      color: var(--text-main);
+    }
+
+    .gallery-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+      gap: 1.25rem;
+      max-height: 620px;
+      overflow-y: auto;
+      padding-right: 0.25rem;
+    }
+
+    .task-card {
+      background: rgba(15, 23, 42, 0.7);
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius-md);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      transition: all 0.25s ease;
+      position: relative;
+    }
+
+    .task-card:hover {
+      border-color: var(--card-hover-border);
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+    }
+
+    .task-preview {
+      width: 100%;
+      height: 180px;
+      background: rgba(30, 41, 59, 0.5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .task-preview img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      cursor: pointer;
+    }
+
+    .spinner {
+      width: 32px;
+      height: 32px;
+      border: 3px solid rgba(255, 255, 255, 0.1);
+      border-top-color: var(--accent-primary);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .task-body {
+      padding: 0.85rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      flex: 1;
+    }
+
+    .task-prompt {
+      font-size: 0.825rem;
+      color: var(--text-main);
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      line-height: 1.4;
+    }
+
+    .task-meta {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: auto;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+
+    .badge {
+      padding: 0.2rem 0.5rem;
+      border-radius: 4px;
+      font-size: 0.7rem;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+
+    .badge-pending { background: rgba(148, 163, 184, 0.2); color: #cbd5e1; }
+    .badge-running { background: rgba(99, 102, 241, 0.25); color: #a5b4fc; }
+    .badge-completed { background: rgba(16, 185, 129, 0.25); color: #6ee7b7; }
+    .badge-failed { background: rgba(239, 68, 68, 0.25); color: #fca5a5; }
+
+    /* Modal / Lightbox */
+    .lightbox-overlay {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0, 0, 0, 0.85);
+      backdrop-filter: blur(8px);
+      z-index: 1000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.25s ease;
+    }
+
+    .lightbox-overlay.active {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .lightbox-content {
+      max-width: 90vw;
+      max-height: 90vh;
+      border-radius: var(--radius-lg);
+      box-shadow: 0 12px 48px rgba(0, 0, 0, 0.6);
+      object-fit: contain;
+    }
+
+    /* Helper Utilities */
+    .flex-row { display: flex; gap: 0.75rem; align-items: center; }
+    .w-full { width: 100%; }
+    .mt-auto { margin-top: auto; }
+
+    /* Custom Scrollbars */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: rgba(15, 23, 42, 0.5); }
+    ::-webkit-scrollbar-thumb { background: rgba(99, 102, 241, 0.4); border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--accent-primary); }
+  </style>
+</head>
+<body>
+
+  <div class="app-container">
+    <!-- Top Header -->
+    <header class="app-header">
+      <div class="brand-group">
+        <div class="brand-icon">🎨</div>
+        <div>
+          <h1 class="brand-title">G-Labs Batch Character Generator</h1>
+          <p class="brand-subtitle">Tạo nhiều ảnh đồng thời giữ nhất quán Nhân Vật Gốc (OC)</p>
+        </div>
+      </div>
+
+      <!-- Server Config & Health -->
+      <div class="server-config">
+        <span style="font-size:0.85rem; color:var(--text-muted);">Webhook API:</span>
+        <input type="text" id="serverUrl" class="input-field" value="http://127.0.0.1:8765" style="width: 170px;" placeholder="http://127.0.0.1:8765" />
+        <input type="password" id="apiKey" class="input-field" value="" style="width: 140px;" placeholder="X-API-Key" />
+        <button class="btn btn-secondary" onclick="checkHealth()" style="padding: 0.4rem 0.8rem; font-size: 0.8rem;">Kiểm tra</button>
+        <div id="healthStatus" class="status-pill">
+          <div class="status-dot"></div>
+          <span id="healthText">Chưa kết nối</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Workspace Grid -->
+    <div class="main-grid">
+      <!-- Left Column: Character & Settings -->
+      <div class="glass-card">
+        <h2 class="card-title">
+          <span>👤</span> 1. Quản lý Nhân Vật Gốc (Reference Image)
+        </h2>
+        
+        <!-- Drag & Drop Zone -->
+        <div class="drop-zone" id="dropZone" onclick="document.getElementById('fileInput').click()">
+          <div class="drop-zone-icon">📷</div>
+          <p class="drop-zone-text">Kéo thả ảnh Nhân vật gốc vào đây<br>hoặc <strong>Bấm để chọn file</strong></p>
+          <input type="file" id="fileInput" accept="image/png, image/jpeg, image/webp" multiple style="display:none;" onchange="handleFileSelect(event)" />
+        </div>
+
+        <!-- Uploaded Character List -->
+        <div class="character-list" id="charList">
+          <!-- Dynamically populated char cards -->
+        </div>
+
+        <h2 class="card-title" style="margin-top: 0.5rem;">
+          <span>⚙️</span> 2. Cấu hình Engine AI
+        </h2>
+
+        <!-- Engine Select -->
+        <div class="form-group">
+          <label class="form-label">API Engine:</label>
+          <select id="engineSelect" class="input-field" onchange="updateEngineOptions()">
+            <option value="flow" selected>G-Labs Flow Image (/api/image/generate)</option>
+            <option value="meta">Meta AI Vibes (/api/meta/generate)</option>
+            <option value="grok">Super Grok AI (/api/grok/generate)</option>
+          </select>
+        </div>
+
+        <!-- Model Select -->
+        <div class="form-group" id="modelGroup">
+          <label class="form-label">Model AI:</label>
+          <select id="modelSelect" class="input-field">
+            <option value="nano_banana_2" selected>Nano Banana 2 (Cân bằng & Tốc độ)</option>
+            <option value="nano_banana_pro">Nano Banana Pro (Nâng cao)</option>
+            <option value="nano_banana_2_lite">Nano Banana 2 Lite (Siêu nhanh)</option>
+          </select>
+        </div>
+
+        <!-- Aspect Ratio -->
+        <div class="form-group">
+          <label class="form-label">Tỉ lệ Khung hình (Aspect Ratio):</label>
+          <div class="radio-group" id="aspectRatioGroup">
+            <div class="radio-btn active" data-val="1:1" onclick="selectRadio(this, 'aspectRatioGroup')">1:1</div>
+            <div class="radio-btn" data-val="16:9" onclick="selectRadio(this, 'aspectRatioGroup')">16:9</div>
+            <div class="radio-btn" data-val="9:16" onclick="selectRadio(this, 'aspectRatioGroup')">9:16</div>
+            <div class="radio-btn" data-val="4:3" onclick="selectRadio(this, 'aspectRatioGroup')">4:3</div>
+            <div class="radio-btn" data-val="3:4" onclick="selectRadio(this, 'aspectRatioGroup')">3:4</div>
+          </div>
+        </div>
+
+        <!-- Upscale Option -->
+        <div class="form-group" id="upscaleGroup">
+          <label class="form-label">Chất lượng Upscale:</label>
+          <div class="radio-group" id="upscaleRadioGroup">
+            <div class="radio-btn active" data-val="none" onclick="selectRadio(this, 'upscaleRadioGroup')">Gốc (Standard)</div>
+            <div class="radio-btn" data-val="2K" onclick="selectRadio(this, 'upscaleRadioGroup')">2K High-Res</div>
+            <div class="radio-btn" data-val="4K" onclick="selectRadio(this, 'upscaleRadioGroup')">4K Ultra (Cần Ultra)</div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Right Column: Batch Prompts & Generation Dashboard -->
+      <div class="glass-card">
+        <h2 class="card-title">
+          <span>✨</span> 3. Nhập Prompt Hàng Loạt
+        </h2>
+
+        <!-- Prompt Mode Tabs -->
+        <div class="prompt-tabs">
+          <button class="tab-btn active" id="tabList" onclick="switchPromptTab('list')">📝 Danh sách Prompt (Mỗi dòng 1 prompt)</button>
+          <button class="tab-btn" id="tabTemplate" onclick="switchPromptTab('template')">🧩 Template Builder (Ghép biến thể)</button>
+        </div>
+
+        <!-- Tab 1: Direct Prompt List -->
+        <div id="promptListArea" class="form-group">
+          <textarea id="promptInput" class="input-field" placeholder="Ví dụ:
+a @character walking in a cyberpunk city at night, neon lights, 8k photo
+a cinematic headshot of @character in a medieval castle, golden hour
+a close up portrait of @character wearing space suit on Mars"></textarea>
+          <div style="font-size: 0.78rem; color: var(--text-dim); display:flex; justify-content:space-between; margin-top:0.25rem;">
+            <span>Dùng <code style="color:#a7f3d0;">@character</code> để chèn Nhân vật gốc vào prompt.</span>
+            <span id="promptCountText">Số prompt: 3</span>
+          </div>
+        </div>
+
+        <!-- Tab 2: Template Builder -->
+        <div id="promptTemplateArea" class="form-group" style="display: none;">
+          <label class="form-label">Prompt Template mẫu:</label>
+          <input type="text" id="templateBase" class="input-field" value="a professional photo of @character in {setting}, {lighting}, 8k ultra detailed" />
+          
+          <label class="form-label" style="margin-top: 0.5rem;">Danh sách {setting} (Mỗi dòng 1 địa điểm):</label>
+          <textarea id="templateVars" class="input-field" style="min-height: 90px;" placeholder="a futuristic neon city
+a peaceful pine forest at morning
+a cozy coffee shop in Paris
+a mystical fantasy library"></textarea>
+
+          <button class="btn btn-secondary" onclick="generateFromTemplate()" style="margin-top: 0.5rem; font-size:0.85rem; padding:0.4rem;">Generate Prompts from Template</button>
+        </div>
+
+        <!-- Action Control Bar -->
+        <div class="flex-row">
+          <button class="btn btn-primary w-full" id="btnGenerate" onclick="startBatchGeneration()">
+            <span>🚀</span> Bắt đầu Tạo Ảnh Hàng Loạt (Generate Batch)
+          </button>
+          <button class="btn btn-secondary" onclick="downloadAllZip()" id="btnZip" disabled>
+            <span>📦</span> Tải tất cả ZIP
+          </button>
+        </div>
+
+        <!-- Progress & Gallery Stats -->
+        <div class="stats-bar">
+          <div class="stat-item">
+            <span>Tổng số Task:</span>
+            <span class="stat-value" id="statTotal">0</span>
+          </div>
+          <div class="stat-item">
+            <span>Đang chạy:</span>
+            <span class="stat-value" style="color:#a5b4fc;" id="statRunning">0</span>
+          </div>
+          <div class="stat-item">
+            <span>Hoàn tất:</span>
+            <span class="stat-value" style="color:#6ee7b7;" id="statCompleted">0</span>
+          </div>
+          <div class="stat-item">
+            <span>Thất bại:</span>
+            <span class="stat-value" style="color:#fca5a5;" id="statFailed">0</span>
+          </div>
+        </div>
+
+        <!-- Gallery / Queue Grid -->
+        <div class="gallery-grid" id="galleryGrid">
+          <!-- Dynamically inserted Task Cards -->
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- Lightbox Modal -->
+  <div class="lightbox-overlay" id="lightbox" onclick="closeLightbox()">
+    <img id="lightboxImg" class="lightbox-content" src="" alt="Full Preview" />
+  </div>
+
+  <script>
+    // State management
+    let characters = []; // Array of { data: base64, name: 'character.png', tag: '@character' }
+    let tasks = []; // Array of task objects
+    let isProcessing = false;
+
+    // Initialize drag and drop
+    const dropZone = document.getElementById('dropZone');
+    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+      dropZone.addEventListener(eventName, preventDefaults, false);
+    });
+
+    function preventDefaults(e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+
+    ['dragenter', 'dragover'].forEach(eventName => {
+      dropZone.addEventListener(eventName, () => dropZone.classList.add('dragover'), false);
+    });
+
+    ['dragleave', 'drop'].forEach(eventName => {
+      dropZone.addEventListener(eventName, () => dropZone.classList.remove('dragover'), false);
+    });
+
+    dropZone.addEventListener('drop', handleDrop, false);
+
+    function handleDrop(e) {
+      const dt = e.dataTransfer;
+      const files = dt.files;
+      processFiles(files);
+    }
+
+    function handleFileSelect(e) {
+      processFiles(e.target.files);
+    }
+
+    function processFiles(files) {
+      Array.from(files).forEach(file => {
+        if (!file.type.startsWith('image/')) return;
+
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const base64 = e.target.result;
+          const cleanName = file.name.replace(/\s+/g, '_');
+          const defaultTag = `@${cleanName.substring(0, cleanName.lastIndexOf('.')) || cleanName}`;
+          
+          characters.push({
+            data: base64,
+            name: cleanName,
+            tag: characters.length === 0 ? '@character' : defaultTag
+          });
+
+          renderCharacters();
+        };
+        reader.readAsDataURL(file);
+      });
+    }
+
+    function renderCharacters() {
+      const container = document.getElementById('charList');
+      container.innerHTML = '';
+
+      characters.forEach((char, index) => {
+        const card = document.createElement('div');
+        card.className = 'char-card';
+        card.innerHTML = `
+          <img src="${char.data}" alt="Character Reference" />
+          <button class="char-remove-btn" onclick="removeCharacter(${index})">✕</button>
+          <div class="char-info">
+            <input type="text" class="char-tag-input" value="${char.tag}" onchange="updateTag(${index}, this.value)" title="Tag sử dụng trong Prompt" />
+          </div>
+        `;
+        container.appendChild(card);
+      });
+    }
+
+    function removeCharacter(index) {
+      characters.splice(index, 1);
+      renderCharacters();
+    }
+
+    function updateTag(index, newTag) {
+      if (!newTag.startsWith('@')) newTag = '@' + newTag;
+      characters[index].tag = newTag;
+    }
+
+    // Radio button selector helper
+    function selectRadio(element, groupName) {
+      const group = document.getElementById(groupName);
+      group.querySelectorAll('.radio-btn').forEach(btn => btn.classList.remove('active'));
+      element.classList.add('active');
+    }
+
+    function getSelectedRadioValue(groupName) {
+      const active = document.getElementById(groupName).querySelector('.radio-btn.active');
+      return active ? active.getAttribute('data-val') : '';
+    }
+
+    // Tab switching
+    function switchPromptTab(tab) {
+      document.getElementById('tabList').classList.toggle('active', tab === 'list');
+      document.getElementById('tabTemplate').classList.toggle('active', tab === 'template');
+      document.getElementById('promptListArea').style.display = tab === 'list' ? 'flex' : 'none';
+      document.getElementById('promptTemplateArea').style.display = tab === 'template' ? 'flex' : 'none';
+    }
+
+    // Live Prompt Count
+    document.getElementById('promptInput').addEventListener('input', (e) => {
+      const lines = e.target.value.split('\n').filter(l => l.trim().length > 0);
+      document.getElementById('promptCountText').innerText = `Số prompt: ${lines.length}`;
+    });
+
+    function generateFromTemplate() {
+      const base = document.getElementById('templateBase').value.trim();
+      const vars = document.getElementById('templateVars').value.split('\n').filter(v => v.trim().length > 0);
+      if (!base || vars.length === 0) return;
+
+      const generated = vars.map(v => base.replace('{setting}', v.trim()));
+      document.getElementById('promptInput').value = generated.join('\n');
+      switchPromptTab('list');
+      document.getElementById('promptCountText').innerText = `Số prompt: ${generated.length}`;
+    }
+
+    // Engine Selection Change
+    function updateEngineOptions() {
+      const engine = document.getElementById('engineSelect').value;
+      const modelGroup = document.getElementById('modelGroup');
+      const upscaleGroup = document.getElementById('upscaleGroup');
+
+      if (engine === 'flow') {
+        modelGroup.style.display = 'flex';
+        upscaleGroup.style.display = 'flex';
+      } else {
+        modelGroup.style.display = 'none';
+        upscaleGroup.style.display = 'none';
+      }
+    }
+
+    // Health Check
+    async function checkHealth() {
+      const baseUrl = document.getElementById('serverUrl').value.trim().replace(/\/$/, '');
+      const healthPill = document.getElementById('healthStatus');
+      const healthText = document.getElementById('healthText');
+
+      try {
+        const resp = await fetch(`${baseUrl}/api/health`, { method: 'GET' });
+        if (resp.ok) {
+          const data = await resp.json();
+          healthPill.classList.add('connected');
+          healthText.innerText = `Online (${data.tasks_pending || 0} queue)`;
+        } else {
+          throw new Error();
+        }
+      } catch (err) {
+        healthPill.classList.remove('connected');
+        healthText.innerText = 'Offline / Lỗi';
+      }
+    }
+
+    // Start Batch Generation Flow
+    async function startBatchGeneration() {
+      const baseUrl = document.getElementById('serverUrl').value.trim().replace(/\/$/, '');
+      const apiKey = document.getElementById('apiKey').value.trim();
+      const prompts = document.getElementById('promptInput').value.split('\n').map(p => p.trim()).filter(p => p.length > 0);
+
+      if (prompts.length === 0) {
+        alert('Vui lòng nhập ít nhất 1 Prompt!');
+        return;
+      }
+
+      const engine = document.getElementById('engineSelect').value;
+      const model = document.getElementById('modelSelect').value;
+      const aspectRatio = getSelectedRadioValue('aspectRatioGroup');
+      const upscaleVal = getSelectedRadioValue('upscaleRadioGroup');
+
+      // Prepare payload reference images
+      const referenceImages = characters.map(c => ({
+        data: c.data,
+        name: c.tag.replace(/^@/, '') + '.png'
+      }));
+
+      // Initialize UI State
+      tasks = prompts.map((prompt, i) => ({
+        id: null,
+        index: i + 1,
+        prompt: prompt,
+        status: 'pending', // pending, running, completed, failed
+        imageUrl: null,
+        error: null
+      }));
+
+      renderGallery();
+      updateStats();
+
+      document.getElementById('btnGenerate').disabled = true;
+      isProcessing = true;
+
+      // Submit each prompt as an async task to Webhook API
+      for (let task of tasks) {
+        if (!isProcessing) break;
+        task.status = 'running';
+        renderGallery();
+        updateStats();
+
+        try {
+          let endpoint = '/api/image/generate';
+          let body = {
+            prompt: task.prompt,
+            aspect_ratio: aspectRatio
+          };
+
+          if (engine === 'flow') {
+            body.model = model;
+            if (referenceImages.length > 0) body.reference_images = referenceImages;
+            if (upscaleVal !== 'none') body.upscale = [upscaleVal];
+          } else if (engine === 'meta') {
+            endpoint = '/api/meta/generate';
+            body.mode = referenceImages.length > 0 ? 'i2i' : 't2i';
+            if (referenceImages.length > 0) {
+              body.character_image = referenceImages[0].data;
+            }
+          } else if (engine === 'grok') {
+            endpoint = '/api/grok/generate';
+            body.mode = referenceImages.length > 0 ? 'i2i' : 't2i';
+            if (referenceImages.length > 0) {
+              body.reference_images = referenceImages.map(r => r.data);
+            }
+          }
+
+          const headers = { 'Content-Type': 'application/json' };
+          if (apiKey) headers['X-API-Key'] = apiKey;
+
+          const submitResp = await fetch(`${baseUrl}${endpoint}`, {
+            method: 'POST',
+            headers: headers,
+            body: JSON.stringify(body)
+          });
+
+          if (!submitResp.ok) {
+            const errData = await submitResp.json().catch(() => ({}));
+            throw new Error(errData.error || `HTTP ${submitResp.status}`);
+          }
+
+          const submitData = await submitResp.json();
+          task.id = submitData.task_id;
+
+          // Poll for completion
+          await pollTaskStatus(baseUrl, apiKey, task);
+
+        } catch (err) {
+          task.status = 'failed';
+          task.error = err.message || 'Submit request failed';
+          renderGallery();
+          updateStats();
+        }
+      }
+
+      document.getElementById('btnGenerate').disabled = false;
+      isProcessing = false;
+      document.getElementById('btnZip').disabled = !tasks.some(t => t.status === 'completed');
+    }
+
+    // Polling function for single task
+    async function pollTaskStatus(baseUrl, apiKey, task, maxRetries = 180) {
+      const headers = {};
+      if (apiKey) headers['X-API-Key'] = apiKey;
+
+      for (let attempt = 0; attempt < maxRetries; attempt++) {
+        await new Promise(r => setTimeout(r, 3000)); // poll every 3 seconds
+
+        try {
+          const resp = await fetch(`${baseUrl}/api/status/${task.id}`, { headers });
+          if (!resp.ok) continue;
+
+          const data = await resp.json();
+          if (data.status === 'completed') {
+            task.status = 'completed';
+            task.imageUrl = data.results && data.results.length > 0 ? data.results[0] : null;
+            renderGallery();
+            updateStats();
+            return;
+          } else if (data.status === 'failed') {
+            task.status = 'failed';
+            task.error = data.error || data.error_detail || 'Task failed on server';
+            renderGallery();
+            updateStats();
+            return;
+          }
+        } catch (e) {
+          // ignore transient poll network errors
+        }
+      }
+
+      task.status = 'failed';
+      task.error = 'Timeout waiting for image output';
+      renderGallery();
+      updateStats();
+    }
+
+    // Gallery Render
+    function renderGallery() {
+      const grid = document.getElementById('galleryGrid');
+      grid.innerHTML = '';
+
+      tasks.forEach(task => {
+        const card = document.createElement('div');
+        card.className = 'task-card';
+
+        let previewContent = '';
+        if (task.status === 'completed' && task.imageUrl) {
+          previewContent = `<img src="${task.imageUrl}" alt="Generated Image" onclick="openLightbox('${task.imageUrl}')" />`;
+        } else if (task.status === 'failed') {
+          previewContent = `<div style="color:var(--danger-color); padding:1rem; text-align:center; font-size:0.8rem;">⚠️ ${task.error}</div>`;
+        } else {
+          previewContent = `<div class="spinner"></div>`;
+        }
+
+        card.innerHTML = `
+          <div class="task-preview">${previewContent}</div>
+          <div class="task-body">
+            <div class="task-prompt" title="${task.prompt}">#${task.index}: ${task.prompt}</div>
+            <div class="task-meta">
+              <span class="badge badge-${task.status}">${task.status}</span>
+              ${task.imageUrl ? `<a href="${task.imageUrl}" download="batch_${task.index}.png" style="color:var(--accent-primary); font-weight:600; text-decoration:none;">Tải về ⬇</a>` : ''}
+            </div>
+          </div>
+        `;
+
+        grid.appendChild(card);
+      });
+    }
+
+    function updateStats() {
+      document.getElementById('statTotal').innerText = tasks.length;
+      document.getElementById('statRunning').innerText = tasks.filter(t => t.status === 'running').length;
+      document.getElementById('statCompleted').innerText = tasks.filter(t => t.status === 'completed').length;
+      document.getElementById('statFailed').innerText = tasks.filter(t => t.status === 'failed').length;
+    }
+
+    // Download All as ZIP
+    async function downloadAllZip() {
+      const completedTasks = tasks.filter(t => t.status === 'completed' && t.imageUrl);
+      if (completedTasks.length === 0) return;
+
+      const zip = new JSZip();
+      const folder = zip.folder("generated_images");
+
+      document.getElementById('btnZip').innerText = '⏳ Đang nén ZIP...';
+      
+      for (let i = 0; i < completedTasks.length; i++) {
+        const t = completedTasks[i];
+        try {
+          const resp = await fetch(t.imageUrl);
+          const blob = await resp.blob();
+          folder.file(`image_${t.index}.png`, blob);
+        } catch (e) {}
+      }
+
+      const content = await zip.generateAsync({ type: "blob" });
+      saveAs(content, `G-Labs_Batch_Images_${Date.now()}.zip`);
+      document.getElementById('btnZip').innerText = '📦 Tải tất cả ZIP';
+    }
+
+    // Lightbox modal handlers
+    function openLightbox(url) {
+      document.getElementById('lightboxImg').src = url;
+      document.getElementById('lightbox').classList.add('active');
+    }
+
+    function closeLightbox() {
+      document.getElementById('lightbox').classList.remove('active');
+    }
+
+    // Check health on load
+    checkHealth();
+  </script>
+</body>
+</html>

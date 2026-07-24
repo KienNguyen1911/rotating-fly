@@ -128,6 +128,11 @@ namespace AssetAutomator
             {
                 settings.LicenseServerUrl = "https://script.google.com/macros/s/AKfycbyE4Qhv2gxpPcMIYwL_yZAlRzglaHPSaxfHZarjDOeZ-WOSgqERaZWGBX_Gxrh58H2-/exec";
             }
+
+            if (string.IsNullOrWhiteSpace(settings.ProjectsStorageDir))
+            {
+                settings.ProjectsStorageDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Output", "Projects");
+            }
         }
 
         public static void SaveSettings(AppSettings settings)

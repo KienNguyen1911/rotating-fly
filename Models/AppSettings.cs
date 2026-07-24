@@ -20,5 +20,6 @@ namespace AssetAutomator
         public string ManualProxiesFilePath { get; set; } = string.Empty;
         public string LicenseServerUrl { get; set; } = "https://script.google.com/macros/s/AKfycbyE4Qhv2gxpPcMIYwL_yZAlRzglaHPSaxfHZarjDOeZ-WOSgqERaZWGBX_Gxrh58H2-/exec";
         public string LicenseKey { get; set; } = string.Empty;
+        public string ProjectsStorageDir { get; set; } = string.Empty;
     }
 }

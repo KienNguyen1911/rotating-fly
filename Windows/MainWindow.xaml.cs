@@ -182,6 +182,7 @@ namespace AssetAutomator
             LoadProfiles();
             LoadApplicationSettings();
             LoadHistoryDates();
+            InitializeBatchImageGenTab();
 
             Loaded += MainWindow_Loaded;
             Closing += MainWindow_Closing;
