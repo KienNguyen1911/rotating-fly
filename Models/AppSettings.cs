@@ -21,5 +21,9 @@ namespace AssetAutomator
         public string LicenseServerUrl { get; set; } = "https://script.google.com/macros/s/AKfycbyE4Qhv2gxpPcMIYwL_yZAlRzglaHPSaxfHZarjDOeZ-WOSgqERaZWGBX_Gxrh58H2-/exec";
         public string LicenseKey { get; set; } = string.Empty;
         public string ProjectsStorageDir { get; set; } = string.Empty;
+        public string GeminiApiBaseUrl { get; set; } = "http://localhost:8000";
+        public string ScriptwriterGemId { get; set; } = string.Empty;
+        public string SceneCreatorGemId { get; set; } = string.Empty;
+        public string DefaultImageGenProvider { get; set; } = "flow_local";
     }
 }

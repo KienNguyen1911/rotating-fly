@@ -33,6 +33,7 @@ namespace AssetAutomator
         private readonly ChatGptRewriteStep _step3;
         private readonly VoiceoverGenerationStep _step4;
         private readonly ImageGenerationStep _step5;
+        private readonly LegacyVideoPipelineService _legacyVideoPipelineService;
 
         private bool _isDarkMode = false;
 
@@ -175,6 +176,7 @@ namespace AssetAutomator
             _step3 = new ChatGptRewriteStep(_chatGptService);
             _step4 = new VoiceoverGenerationStep();
             _step5 = new ImageGenerationStep(_imagePoolService);
+            _legacyVideoPipelineService = new Services.LegacyVideoPipelineService(_step1, _step2, _step3, _step4, _step5);
 
             DgridTasks.ItemsSource = Tasks;
             DataContext = this;
@@ -192,6 +194,7 @@ namespace AssetAutomator
         {
             SaveApplicationSettings();
             _licenseService.Dispose();
+            Helpers.PythonServerManager.StopServer();
         }
 
         private void UpdatePoolUi()
@@ -799,6 +802,7 @@ namespace AssetAutomator
         {
             await RunSystemCheckAsync(showIfAllOk: false);
             await CheckLicenseOnStartupAsync();
+            InitializeGeminiCreatorServices();
         }
 
         private async Task CheckLicenseOnStartupAsync()

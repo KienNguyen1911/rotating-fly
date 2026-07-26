@@ -1488,6 +1488,96 @@
                     </Grid>
                 </Grid>
             </TabItem>
+
+            <!-- Tab 7: Gemini AI Creator (todo.md Workflow) -->
+            <TabItem Header="Gemini AI Creator" Padding="20,8" FontSize="12" FontWeight="SemiBold">
+                <Grid Margin="0,15,0,0">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <!-- Top Control Card -->
+                    <Border Grid.Row="0" Style="{StaticResource Card}" Background="{DynamicResource SurfaceSoftBrush}" Padding="15" Margin="0,0,0,15">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+
+                            <Grid Grid.Row="0" Margin="0,0,0,10">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                                    <TextBlock Text="✨ GEMINI DEEP RESEARCH VIDEO CREATOR (todo.md Workflow)" Foreground="{DynamicResource InkBrush}" FontSize="14" FontWeight="Bold" VerticalAlignment="Center"/>
+                                </StackPanel>
+                                <Button x:Name="BtnRunGeminiWorkflow" Content="🚀 Bắt đầu Chạy 5 Bước" Height="34" Width="180" Style="{StaticResource GreenButton}" FontSize="12" FontWeight="Bold" Click="BtnRunGeminiWorkflow_Click" Grid.Column="1"/>
+                            </Grid>
+
+                            <!-- Row 1 Controls: Topic / Channel input -->
+                            <Grid Grid.Row="1" Margin="0,5,0,10">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Chủ đề / Channel YouTube:" Foreground="{DynamicResource InkBrush}" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                                <TextBox x:Name="TxtGeminiTopic" Grid.Column="1" Height="30" VerticalContentAlignment="Center" Padding="8,0" Text="Tâm Lý Học Đêm Muộn: Tại Sao Bạn Lại Trì Hoãn Giấc Ngủ"/>
+                            </Grid>
+
+                            <!-- Row 2 Controls: Gems, Voice, Deep Research -->
+                            <WrapPanel Grid.Row="2" VerticalAlignment="Center">
+                                <TextBlock Text="Scriptwriter Gem:" VerticalAlignment="Center" Foreground="{DynamicResource BodyBrush}" Margin="0,0,6,0" FontSize="12"/>
+                                <ComboBox x:Name="CboScriptwriterGem" Width="180" Height="28" Margin="0,0,15,0" VerticalContentAlignment="Center"/>
+
+                                <TextBlock Text="Scene Creator Gem:" VerticalAlignment="Center" Foreground="{DynamicResource BodyBrush}" Margin="0,0,6,0" FontSize="12"/>
+                                <ComboBox x:Name="CboSceneCreatorGem" Width="180" Height="28" Margin="0,0,15,0" VerticalContentAlignment="Center"/>
+
+                                <TextBlock Text="Voice ID:" VerticalAlignment="Center" Foreground="{DynamicResource BodyBrush}" Margin="0,0,6,0" FontSize="12"/>
+                                <TextBox x:Name="TxtGeminiVoiceId" Width="110" Height="28" Text="TxGEwhxGl3yH6PtxVf7N" Margin="0,0,15,0" VerticalContentAlignment="Center"/>
+
+                                <TextBlock Text="Provider Ảnh:" VerticalAlignment="Center" Foreground="{DynamicResource BodyBrush}" Margin="0,0,6,0" FontSize="12"/>
+                                <ComboBox x:Name="CboGeminiImageProvider" Width="120" Height="28" Margin="0,0,15,0" SelectedIndex="0" VerticalContentAlignment="Center">
+                                    <ComboBoxItem Content="flow_local"/>
+                                    <ComboBoxItem Content="glabs"/>
+                                </ComboBox>
+
+                                <CheckBox x:Name="ChkGeminiDeepResearch" Content="Deep Research + Extended" IsChecked="True" VerticalAlignment="Center" Margin="0,0,15,0" FontWeight="SemiBold"/>
+                                <Button x:Name="BtnRefreshGems" Content="🔄 Tải Gems" Width="85" Height="28" Click="BtnRefreshGems_Click" FontSize="11"/>
+                            </WrapPanel>
+                        </Grid>
+                    </Border>
+
+                    <!-- Status & Log Display -->
+                    <Border Grid.Row="1" Style="{StaticResource Card}" Background="{DynamicResource CanvasBrush}" Padding="15">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                            </Grid.RowDefinitions>
+                            <Grid Grid.Row="0" Margin="0,0,0,10">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Tiến Trình Chạy Gemini Workflow" Style="{StaticResource SectionTitle}"/>
+                                <Button x:Name="BtnViewScenesJson" Content="👁️ Xem scenes.json" Height="28" Width="140" Click="BtnViewScenesJson_Click" Grid.Column="1"/>
+                            </Grid>
+                            <RichTextBox Grid.Row="1" x:Name="TxtGeminiLog" Background="{DynamicResource SurfaceSoftBrush}" Foreground="{DynamicResource InkBrush}" BorderBrush="{DynamicResource HairlineBrush}" BorderThickness="1" 
+                                         Padding="10" VerticalScrollBarVisibility="Auto" IsReadOnly="True" IsDocumentEnabled="True"
+                                         FontSize="12" FontFamily="Consolas">
+                                <RichTextBox.Resources>
+                                    <Style TargetType="Paragraph">
+                                        <Setter Property="Margin" Value="0,2,0,2"/>
+                                    </Style>
+                                </RichTextBox.Resources>
+                            </RichTextBox>
+                        </Grid>
+                    </Border>
+                </Grid>
+            </TabItem>
         </TabControl>
  
         <!-- Sidebar Drawer Overlay (slides from right, resizable via drag handle) -->

@@ -1,0 +1,33 @@
+--- App Started ---
+[16:27:01] Application started. Ready to run tasks.
+[16:27:01] Loaded 3 Chrome profiles from Desktop/ChromeProfiles.
+[16:27:02] Running system requirements check...
+[16:27:02] === KẾT QUẢ KIỂM TRA HỆ THỐNG ===
+1. Google Chrome: Đã cài đặt
+   -> Đường dẫn: C:\Program Files\Google\Chrome\Application\chrome.exe
+2. Thư viện Playwright: Hoạt động tốt
+3. Python: Đã cài đặt (Python 3.12.10)
+
+[16:27:05] [License] Verification successful. Remaining days: 27
+[GeminiServer] Traceback (most recent call last):
+[GeminiServer]   File "D:\Dev\AssetAutomator\Modules\Gemini-API-2.0.0\server.py", line 13, in <module>
+[GeminiServer]     from fastapi import FastAPI, HTTPException, Query, Request
+[GeminiServer] ModuleNotFoundError: No module named 'fastapi'
+--- App Started ---
+[16:29:35] Application started. Ready to run tasks.
+[16:29:35] Loaded 3 Chrome profiles from Desktop/ChromeProfiles.
+[16:29:35] Running system requirements check...
+[16:29:36] === KẾT QUẢ KIỂM TRA HỆ THỐNG ===
+1. Google Chrome: Đã cài đặt
+   -> Đường dẫn: C:\Program Files\Google\Chrome\Application\chrome.exe
+2. Thư viện Playwright: Hoạt động tốt
+3. Python: Đã cài đặt (Python 3.12.10)
+
+[16:29:39] [License] Verification successful. Remaining days: 27
+[GeminiServer] INFO:     Will watch for changes in these directories: ['D:\\Dev\\AssetAutomator\\Modules\\Gemini-API-2.0.0']
+[GeminiServer] INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+[GeminiServer] INFO:     Started reloader process [8508] using StatReload
+[GeminiServer] ERROR:    Error loading ASGI app. Could not import module "server".
+[GeminiServer] WARNING:  StatReload detected changes in 'server.py'. Reloading...
+[GeminiServer] ERROR:    Error loading ASGI app. Could not import module "server".
+[PythonServerManager] Server successfully launched and responding on /api/health.

@@ -31,6 +31,9 @@ namespace AssetAutomator.Windows
                         {
                             SceneNumber = entry.scene,
                             Id = entry.id,
+                            StartTime = entry.time?.start ?? string.Empty,
+                            EndTime = entry.time?.end ?? string.Empty,
+                            Duration = entry.time?.duration ?? 0,
                             Transcript = entry.transcript,
                             ImagePrompt = entry.image_prompt
                         });
