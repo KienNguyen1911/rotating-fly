@@ -4,6 +4,7 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:AssetAutomator"
+        xmlns:converters="clr-namespace:AssetAutomator.Converters"
         mc:Ignorable="d"
         Title="AssetAutomator" Height="700" Width="1240" MinWidth="1240" MinHeight="700" WindowStartupLocation="CenterScreen"
         Background="{DynamicResource CanvasBrush}" FontFamily="Segoe UI"
@@ -12,6 +13,9 @@
         <!-- Value Converters -->
         <local:YoutubeUrlConverter x:Key="YoutubeUrlConverter"/>
         <local:AspectRatioHeightConverter x:Key="AspectRatioHeightConverter"/>
+        <converters:HexToBrushConverter x:Key="HexToBrushConverter"/>
+        <converters:NodeStatusToBrushConverter x:Key="NodeStatusToBrushConverter"/>
+        <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
     </Window.Resources>
     <Grid Margin="20">
         <Grid.RowDefinitions>
@@ -1489,91 +1493,340 @@
                 </Grid>
             </TabItem>
 
-            <!-- Tab 7: Gemini AI Creator (todo.md Workflow) -->
+            <!-- Tab 7: Gemini AI Creator (Multi-Task DataGrid Queue) -->
             <TabItem Header="Gemini AI Creator" Padding="20,8" FontSize="12" FontWeight="SemiBold">
-                <Grid Margin="0,15,0,0">
+                <Grid Margin="15">
                     <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/> <!-- Action Toolbar -->
+                        <RowDefinition Height="*"/>    <!-- DataGrid -->
+                        <RowDefinition Height="Auto"/> <!-- Status Bar -->
                     </Grid.RowDefinitions>
 
-                    <!-- Top Control Card -->
-                    <Border Grid.Row="0" Style="{StaticResource Card}" Background="{DynamicResource SurfaceSoftBrush}" Padding="15" Margin="0,0,0,15">
+                    <!-- Top Action Toolbar -->
+                    <Border Grid.Row="0" Style="{StaticResource Card}" Background="{DynamicResource SurfaceCardBrush}" Padding="15,12" Margin="0,0,0,15">
                         <Grid>
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="Auto"/>
-                            </Grid.RowDefinitions>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
 
-                            <Grid Grid.Row="0" Margin="0,0,0,10">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="Auto"/>
-                                </Grid.ColumnDefinitions>
-                                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
-                                    <TextBlock Text="✨ GEMINI DEEP RESEARCH VIDEO CREATOR (todo.md Workflow)" Foreground="{DynamicResource InkBrush}" FontSize="14" FontWeight="Bold" VerticalAlignment="Center"/>
-                                </StackPanel>
-                                <Button x:Name="BtnRunGeminiWorkflow" Content="🚀 Bắt đầu Chạy 5 Bước" Height="34" Width="180" Style="{StaticResource GreenButton}" FontSize="12" FontWeight="Bold" Click="BtnRunGeminiWorkflow_Click" Grid.Column="1"/>
-                            </Grid>
+                            <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                                <Button Content="➕ Thêm Task Mới" Click="BtnAddGeminiTask_Click" Height="34" Padding="14,0" Style="{StaticResource SecondaryButton}" Margin="0,0,10,0" FontSize="12" FontWeight="SemiBold"/>
+                                <Button Content="🗑️ Xóa Task Đã Chọn" Click="BtnDeleteGeminiTasks_Click" Height="34" Padding="14,0" Style="{StaticResource DeleteButton}" Margin="0,0,10,0" FontSize="12" FontWeight="SemiBold"/>
+                                <Button x:Name="BtnRefreshGems" Content="🔄 Tải Danh Sách Gems" Click="BtnRefreshGems_Click" Height="34" Padding="14,0" Style="{StaticResource SecondaryButton}" Margin="0,0,10,0" FontSize="12" FontWeight="SemiBold"/>
+                                <Button x:Name="BtnImportCookies" Content="🔑 Nạp Cookies Gemini" Click="BtnImportCookies_Click" Height="34" Padding="14,0" Style="{StaticResource SecondaryButton}" Margin="0,0,10,0" FontSize="12" FontWeight="SemiBold"/>
+                            </StackPanel>
 
-                            <!-- Row 1 Controls: Topic / Channel input -->
-                            <Grid Grid.Row="1" Margin="0,5,0,10">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto"/>
-                                    <ColumnDefinition Width="*"/>
-                                </Grid.ColumnDefinitions>
-                                <TextBlock Text="Chủ đề / Channel YouTube:" Foreground="{DynamicResource InkBrush}" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,10,0"/>
-                                <TextBox x:Name="TxtGeminiTopic" Grid.Column="1" Height="30" VerticalContentAlignment="Center" Padding="8,0" Text="Tâm Lý Học Đêm Muộn: Tại Sao Bạn Lại Trì Hoãn Giấc Ngủ"/>
-                            </Grid>
-
-                            <!-- Row 2 Controls: Gems, Voice, Deep Research -->
-                            <WrapPanel Grid.Row="2" VerticalAlignment="Center">
-                                <TextBlock Text="Scriptwriter Gem:" VerticalAlignment="Center" Foreground="{DynamicResource BodyBrush}" Margin="0,0,6,0" FontSize="12"/>
-                                <ComboBox x:Name="CboScriptwriterGem" Width="180" Height="28" Margin="0,0,15,0" VerticalContentAlignment="Center"/>
-
-                                <TextBlock Text="Scene Creator Gem:" VerticalAlignment="Center" Foreground="{DynamicResource BodyBrush}" Margin="0,0,6,0" FontSize="12"/>
-                                <ComboBox x:Name="CboSceneCreatorGem" Width="180" Height="28" Margin="0,0,15,0" VerticalContentAlignment="Center"/>
-
-                                <TextBlock Text="Voice ID:" VerticalAlignment="Center" Foreground="{DynamicResource BodyBrush}" Margin="0,0,6,0" FontSize="12"/>
-                                <TextBox x:Name="TxtGeminiVoiceId" Width="110" Height="28" Text="TxGEwhxGl3yH6PtxVf7N" Margin="0,0,15,0" VerticalContentAlignment="Center"/>
-
-                                <TextBlock Text="Provider Ảnh:" VerticalAlignment="Center" Foreground="{DynamicResource BodyBrush}" Margin="0,0,6,0" FontSize="12"/>
-                                <ComboBox x:Name="CboGeminiImageProvider" Width="120" Height="28" Margin="0,0,15,0" SelectedIndex="0" VerticalContentAlignment="Center">
-                                    <ComboBoxItem Content="flow_local"/>
-                                    <ComboBoxItem Content="glabs"/>
-                                </ComboBox>
-
-                                <CheckBox x:Name="ChkGeminiDeepResearch" Content="Deep Research + Extended" IsChecked="True" VerticalAlignment="Center" Margin="0,0,15,0" FontWeight="SemiBold"/>
-                                <Button x:Name="BtnRefreshGems" Content="🔄 Tải Gems" Width="85" Height="28" Click="BtnRefreshGems_Click" FontSize="11"/>
-                            </WrapPanel>
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                <Button Content="🚀 CHẠY TASK ĐÃ CHỌN" Click="BtnRunSelectedGeminiTasks_Click" Height="36" Padding="18,0" Style="{StaticResource GreenButton}" FontSize="12" FontWeight="Bold"/>
+                            </StackPanel>
                         </Grid>
                     </Border>
 
-                    <!-- Status & Log Display -->
+                    <!-- DataGrid of Gemini Tasks -->
                     <Border Grid.Row="1" Style="{StaticResource Card}" Background="{DynamicResource CanvasBrush}" Padding="15">
                         <Grid>
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="*"/>
                             </Grid.RowDefinitions>
-                            <Grid Grid.Row="0" Margin="0,0,0,10">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="Auto"/>
-                                </Grid.ColumnDefinitions>
-                                <TextBlock Text="Tiến Trình Chạy Gemini Workflow" Style="{StaticResource SectionTitle}"/>
-                                <Button x:Name="BtnViewScenesJson" Content="👁️ Xem scenes.json" Height="28" Width="140" Click="BtnViewScenesJson_Click" Grid.Column="1"/>
-                            </Grid>
-                            <RichTextBox Grid.Row="1" x:Name="TxtGeminiLog" Background="{DynamicResource SurfaceSoftBrush}" Foreground="{DynamicResource InkBrush}" BorderBrush="{DynamicResource HairlineBrush}" BorderThickness="1" 
-                                         Padding="10" VerticalScrollBarVisibility="Auto" IsReadOnly="True" IsDocumentEnabled="True"
-                                         FontSize="12" FontFamily="Consolas">
-                                <RichTextBox.Resources>
-                                    <Style TargetType="Paragraph">
-                                        <Setter Property="Margin" Value="0,2,0,2"/>
-                                    </Style>
-                                </RichTextBox.Resources>
-                            </RichTextBox>
+
+                            <TextBlock Grid.Row="0" Text="📋 Danh Sách Gemini Automation Tasks" Style="{StaticResource SectionTitle}" Margin="0,0,0,12"/>
+
+                            <DataGrid Grid.Row="1" ItemsSource="{Binding GeminiTasks}" AutoGenerateColumns="False" CanUserAddRows="False" 
+                                      Background="Transparent" BorderThickness="0" HeadersVisibility="Column" GridLinesVisibility="Horizontal"
+                                      RowHeaderWidth="0" IsReadOnly="False" RowHeight="42" FontSize="12">
+                                <DataGrid.Columns>
+                                    <!-- CheckBox Select -->
+                                    <DataGridTemplateColumn Width="45">
+                                        <DataGridTemplateColumn.Header>
+                                            <CheckBox x:Name="ChkSelectAllGeminiTasks" Click="ChkSelectAllGeminiTasks_Click" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                        </DataGridTemplateColumn.Header>
+                                        <DataGridTemplateColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <CheckBox IsChecked="{Binding IsSelected, UpdateSourceTrigger=PropertyChanged}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                            </DataTemplate>
+                                        </DataGridTemplateColumn.CellTemplate>
+                                    </DataGridTemplateColumn>
+
+                                    <!-- Topic / Link -->
+                                    <DataGridTemplateColumn Header="Chủ Đề / Link YouTube" Width="2.2*">
+                                        <DataGridTemplateColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <TextBox Text="{Binding Topic, UpdateSourceTrigger=PropertyChanged}" VerticalContentAlignment="Center" Padding="6,2" Height="30" Margin="4,0"/>
+                                            </DataTemplate>
+                                        </DataGridTemplateColumn.CellTemplate>
+                                    </DataGridTemplateColumn>
+
+                                    <!-- Scriptwriter Gem -->
+                                    <DataGridTemplateColumn Header="Scriptwriter Gem" Width="1.5*">
+                                        <DataGridTemplateColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <ComboBox ItemsSource="{Binding DataContext.AvailableScriptwriterGems, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                          SelectedItem="{Binding SelectedScriptwriterGem, Mode=TwoWay}" VerticalContentAlignment="Center" Height="30" Margin="4,0"/>
+                                            </DataTemplate>
+                                        </DataGridTemplateColumn.CellTemplate>
+                                    </DataGridTemplateColumn>
+
+                                    <!-- Model AI -->
+                                    <DataGridTemplateColumn Header="Model AI" Width="1.4*">
+                                        <DataGridTemplateColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <ComboBox ItemsSource="{Binding DataContext.AvailableAiModels, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                          SelectedItem="{Binding SelectedModel, Mode=TwoWay}" VerticalContentAlignment="Center" Height="30" Margin="4,0"/>
+                                            </DataTemplate>
+                                        </DataGridTemplateColumn.CellTemplate>
+                                    </DataGridTemplateColumn>
+
+                                    <!-- Tư duy mở rộng (Extended Thinking) -->
+                                    <DataGridTemplateColumn Header="Tư duy mở rộng" Width="1.5*">
+                                        <DataGridTemplateColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <ComboBox ItemsSource="{Binding DataContext.AvailableExtensions, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                          SelectedItem="{Binding SelectedExtension, Mode=TwoWay}" VerticalContentAlignment="Center" Height="30" Margin="4,0"/>
+                                            </DataTemplate>
+                                        </DataGridTemplateColumn.CellTemplate>
+                                    </DataGridTemplateColumn>
+
+                                    <!-- Deep Research -->
+                                    <DataGridTemplateColumn Header="Deep Research" Width="1.1*">
+                                        <DataGridTemplateColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <CheckBox IsChecked="{Binding EnableDeepResearch, Mode=TwoWay}" Content="Research" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                            </DataTemplate>
+                                        </DataGridTemplateColumn.CellTemplate>
+                                    </DataGridTemplateColumn>
+
+                                    <!-- Voice ID -->
+                                    <DataGridTemplateColumn Header="Voice ID" Width="1.5*">
+                                        <DataGridTemplateColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <Grid Margin="2,0">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBox Grid.Column="0" Text="{Binding VoiceId, UpdateSourceTrigger=PropertyChanged}" Height="28" VerticalAlignment="Center" VerticalContentAlignment="Center"/>
+                                                    <Button Grid.Column="1" Content="🔍" Style="{StaticResource IconButton}" Background="{DynamicResource PrimaryBrush}" Foreground="{DynamicResource OnPrimaryBrush}" BorderThickness="0" Margin="4,0,0,0" VerticalAlignment="Center" Click="BtnBrowseVoice_Click" ToolTip="Chọn Voice ID từ danh sách">
+                                                    </Button>
+                                                </Grid>
+                                            </DataTemplate>
+                                        </DataGridTemplateColumn.CellTemplate>
+                                    </DataGridTemplateColumn>
+
+                                    <!-- Scene Creator Gem -->
+                                    <DataGridTemplateColumn Header="Scene Gem" Width="1.5*">
+                                        <DataGridTemplateColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <ComboBox ItemsSource="{Binding DataContext.AvailableSceneCreatorGems, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                          SelectedItem="{Binding SelectedSceneCreatorGem, Mode=TwoWay}" VerticalContentAlignment="Center" Height="30" Margin="4,0"/>
+                                            </DataTemplate>
+                                        </DataGridTemplateColumn.CellTemplate>
+                                    </DataGridTemplateColumn>
+
+                                    <!-- Provider -->
+                                    <DataGridTemplateColumn Header="Provider Sinh Ảnh" Width="1.2*">
+                                        <DataGridTemplateColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <ComboBox ItemsSource="{Binding DataContext.AvailableImageProviders, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                          SelectedItem="{Binding SelectedImageProvider, Mode=TwoWay}" VerticalContentAlignment="Center" Height="30" Margin="4,0"/>
+                                            </DataTemplate>
+                                        </DataGridTemplateColumn.CellTemplate>
+                                    </DataGridTemplateColumn>
+
+                                    <!-- Character Ref -->
+                                    <DataGridTemplateColumn Header="Character Ref" Width="1.8*">
+                                        <DataGridTemplateColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <Grid Margin="4,0">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBox Text="{Binding CharacterRef, UpdateSourceTrigger=PropertyChanged}" VerticalContentAlignment="Center" Padding="6,2" Height="30" ToolTip="{Binding CharacterRef}"/>
+                                                    <Button Grid.Column="1" Content="📁" Style="{StaticResource IconButton}" Background="{DynamicResource PrimaryBrush}" Foreground="{DynamicResource OnPrimaryBrush}" BorderThickness="0" Margin="4,0,0,0" VerticalAlignment="Center" Click="BtnBrowseCharacterRef_Click" ToolTip="Chọn file ảnh nhân vật gốc (Character Reference)">
+                                                    </Button>
+                                                </Grid>
+                                            </DataTemplate>
+                                        </DataGridTemplateColumn.CellTemplate>
+                                    </DataGridTemplateColumn>
+
+                                    <!-- Các Bước Tiến Trình -->
+                                    <DataGridTemplateColumn Header="Các Bước Tiến Trình" Width="2.2*">
+                                        <DataGridTemplateColumn.HeaderStyle>
+                                            <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}">
+                                                <Setter Property="HorizontalContentAlignment" Value="Center"/>
+                                            </Style>
+                                        </DataGridTemplateColumn.HeaderStyle>
+                                        <DataGridTemplateColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                    <!-- Step 1 -->
+                                                    <Border Width="22" Height="22" CornerRadius="11" Margin="2,0" ToolTip="Step 1: Deep Research &amp; Transcript">
+                                                        <Border.Style>
+                                                            <Style TargetType="Border">
+                                                                <Setter Property="Background" Value="#475569"/>
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding Step1Status}" Value="Running">
+                                                                        <Setter Property="Background" Value="#F59E0B"/>
+                                                                    </DataTrigger>
+                                                                    <DataTrigger Binding="{Binding Step1Status}" Value="Success">
+                                                                        <Setter Property="Background" Value="#10B981"/>
+                                                                    </DataTrigger>
+                                                                    <DataTrigger Binding="{Binding Step1Status}" Value="Failed">
+                                                                        <Setter Property="Background" Value="#EF4444"/>
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </Border.Style>
+                                                        <TextBlock Text="1" Foreground="White" FontSize="10" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                    </Border>
+
+                                                    <!-- Step 2 -->
+                                                    <Border Width="22" Height="22" CornerRadius="11" Margin="2,0" ToolTip="Step 2: Voiceover &amp; SRT Subtitles">
+                                                        <Border.Style>
+                                                            <Style TargetType="Border">
+                                                                <Setter Property="Background" Value="#475569"/>
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding Step2Status}" Value="Running">
+                                                                        <Setter Property="Background" Value="#F59E0B"/>
+                                                                    </DataTrigger>
+                                                                    <DataTrigger Binding="{Binding Step2Status}" Value="Success">
+                                                                        <Setter Property="Background" Value="#10B981"/>
+                                                                    </DataTrigger>
+                                                                    <DataTrigger Binding="{Binding Step2Status}" Value="Failed">
+                                                                        <Setter Property="Background" Value="#EF4444"/>
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </Border.Style>
+                                                        <TextBlock Text="2" Foreground="White" FontSize="10" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                    </Border>
+
+                                                    <!-- Step 3 -->
+                                                    <Border Width="22" Height="22" CornerRadius="11" Margin="2,0" ToolTip="Step 3: Scene Breakdown &amp; Prompts">
+                                                        <Border.Style>
+                                                            <Style TargetType="Border">
+                                                                <Setter Property="Background" Value="#475569"/>
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding Step3Status}" Value="Running">
+                                                                        <Setter Property="Background" Value="#F59E0B"/>
+                                                                    </DataTrigger>
+                                                                    <DataTrigger Binding="{Binding Step3Status}" Value="Success">
+                                                                        <Setter Property="Background" Value="#10B981"/>
+                                                                    </DataTrigger>
+                                                                    <DataTrigger Binding="{Binding Step3Status}" Value="Failed">
+                                                                        <Setter Property="Background" Value="#EF4444"/>
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </Border.Style>
+                                                        <TextBlock Text="3" Foreground="White" FontSize="10" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                    </Border>
+
+                                                    <!-- Step 4 -->
+                                                    <Border Width="22" Height="22" CornerRadius="11" Margin="2,0" ToolTip="Step 4: Batch Image Generation">
+                                                        <Border.Style>
+                                                            <Style TargetType="Border">
+                                                                <Setter Property="Background" Value="#475569"/>
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding Step4Status}" Value="Running">
+                                                                        <Setter Property="Background" Value="#F59E0B"/>
+                                                                    </DataTrigger>
+                                                                    <DataTrigger Binding="{Binding Step4Status}" Value="Success">
+                                                                        <Setter Property="Background" Value="#10B981"/>
+                                                                    </DataTrigger>
+                                                                    <DataTrigger Binding="{Binding Step4Status}" Value="Failed">
+                                                                        <Setter Property="Background" Value="#EF4444"/>
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </Border.Style>
+                                                        <TextBlock Text="4" Foreground="White" FontSize="10" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                    </Border>
+
+                                                    <!-- Step 5 -->
+                                                    <Border Width="22" Height="22" CornerRadius="11" Margin="2,0" ToolTip="Step 5: Export &amp; Packaging">
+                                                        <Border.Style>
+                                                            <Style TargetType="Border">
+                                                                <Setter Property="Background" Value="#475569"/>
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding Step5Status}" Value="Running">
+                                                                        <Setter Property="Background" Value="#F59E0B"/>
+                                                                    </DataTrigger>
+                                                                    <DataTrigger Binding="{Binding Step5Status}" Value="Success">
+                                                                        <Setter Property="Background" Value="#10B981"/>
+                                                                    </DataTrigger>
+                                                                    <DataTrigger Binding="{Binding Step5Status}" Value="Failed">
+                                                                        <Setter Property="Background" Value="#EF4444"/>
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </Border.Style>
+                                                        <TextBlock Text="5" Foreground="White" FontSize="10" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                    </Border>
+                                                </StackPanel>
+                                            </DataTemplate>
+                                        </DataGridTemplateColumn.CellTemplate>
+                                    </DataGridTemplateColumn>
+
+                                    <!-- Status Badge -->
+                                    <DataGridTemplateColumn Header="Trạng Thái" Width="1.1*">
+                                        <DataGridTemplateColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <Border CornerRadius="6" Padding="6,3" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                        Background="{Binding Status, Converter={StaticResource NodeStatusToBrushConverter}}">
+                                                    <TextBlock Text="{Binding StatusBadge}" Foreground="#FFFFFF" FontSize="11" FontWeight="Bold"/>
+                                                </Border>
+                                            </DataTemplate>
+                                        </DataGridTemplateColumn.CellTemplate>
+                                    </DataGridTemplateColumn>
+
+                                    <!-- Step Info -->
+                                    <DataGridTextColumn Header="Tiến Trình" Binding="{Binding CurrentStepInfo}" Width="1.3*" IsReadOnly="True">
+                                        <DataGridTextColumn.ElementStyle>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="VerticalAlignment" Value="Center"/>
+                                                <Setter Property="Padding" Value="5,0"/>
+                                                <Setter Property="Foreground" Value="{DynamicResource InkBrush}"/>
+                                            </Style>
+                                        </DataGridTextColumn.ElementStyle>
+                                    </DataGridTextColumn>
+
+                                    <!-- Row Actions -->
+                                    <DataGridTemplateColumn Header="Thao Tác" Width="2.4*" IsReadOnly="True">
+                                        <DataGridTemplateColumn.HeaderStyle>
+                                            <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}">
+                                                <Setter Property="HorizontalContentAlignment" Value="Center"/>
+                                            </Style>
+                                        </DataGridTemplateColumn.HeaderStyle>
+                                        <DataGridTemplateColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                    <Button Content="Run" Style="{StaticResource GreenButton}" Padding="8,3" Height="26" Width="45" FontSize="11" FontWeight="SemiBold" Margin="2,0" Click="BtnRunSingleGeminiTask_Click" ToolTip="Chạy riêng task này"/>
+                                                    <Button Content="Logs" Style="{StaticResource SecondaryButton}" Padding="8,3" Height="26" Width="45" FontSize="11" Margin="2,0" Click="BtnViewSingleGeminiTaskLog_Click" ToolTip="Xem log của task này"/>
+                                                    <Button Content="Assets" Style="{StaticResource SecondaryButton}" Padding="8,3" Height="26" Width="55" FontSize="11" Margin="2,0" Click="BtnViewTaskScenesJson_Click" ToolTip="Xem scenes.json"/>
+                                                    <Button Content="Delete" Style="{StaticResource DeleteButton}" Padding="8,3" Height="26" Width="55" FontSize="11" FontWeight="SemiBold" Margin="2,0" Click="BtnDeleteSingleGeminiTask_Click" ToolTip="Xóa task này"/>
+                                                </StackPanel>
+                                            </DataTemplate>
+                                        </DataGridTemplateColumn.CellTemplate>
+                                    </DataGridTemplateColumn>
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </Grid>
+                    </Border>
+
+                    <!-- Status Bar for Gemini AI Creator -->
+                    <Border Grid.Row="2" Background="{DynamicResource SurfaceCardBrush}" CornerRadius="6" Padding="10,8" Margin="0,8,0,0"
+                            BorderBrush="{DynamicResource HairlineBrush}" BorderThickness="1">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock x:Name="TxtGeminiStatusIcon" Grid.Column="0" Text="💡" FontSize="14" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                            <TextBlock x:Name="TxtGeminiStatus" Grid.Column="1" Text="Sẵn sàng — Nhấn 'Tải Danh Sách Gems' để làm mới hoặc 'Nạp Cookies' để đăng nhập Gemini."
+                                       Foreground="{DynamicResource SubtleBrush}" FontSize="12" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
                         </Grid>
                     </Border>
                 </Grid>
@@ -1648,16 +1901,116 @@
                         </Button>
                     </Grid>
 
-                    <!-- Log content (stretches to fill sidebar width) -->
+                    <!-- Standard Log content for Tab 1 Automation Tasks -->
                     <RichTextBox Grid.Row="1" x:Name="TxtSidebarLog" Background="{DynamicResource CanvasBrush}" Foreground="{DynamicResource InkBrush}" BorderBrush="{DynamicResource HairlineBrush}" BorderThickness="1" 
                                  Margin="15,0,15,15" Padding="10" VerticalScrollBarVisibility="Auto" IsReadOnly="True" IsDocumentEnabled="True"
-                                 FontSize="12" FontFamily="Consolas">
+                                 FontSize="12" FontFamily="Consolas" Visibility="Visible">
                         <RichTextBox.Resources>
                             <Style TargetType="Paragraph">
                                 <Setter Property="Margin" Value="0,1,0,1"/>
                             </Style>
                         </RichTextBox.Resources>
                     </RichTextBox>
+
+                    <!-- Accordion Steps Log View for Gemini AI Creator -->
+                    <ScrollViewer Grid.Row="1" x:Name="GridGeminiStepAccordion" Margin="15,0,15,15" VerticalScrollBarVisibility="Auto" Visibility="Collapsed">
+                        <StackPanel>
+                            <!-- Step 1 Accordion -->
+                            <Border CornerRadius="8" Background="{DynamicResource SurfaceCardBrush}" BorderBrush="{DynamicResource HairlineBrush}" BorderThickness="1" Margin="0,0,0,10">
+                                <Expander x:Name="ExpanderStep1" IsExpanded="True" Padding="6">
+                                    <Expander.Header>
+                                        <Grid Width="380">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="Step 1: Gemini Deep Research &amp; Script" Foreground="{DynamicResource InkBrush}" FontSize="12" FontWeight="Bold" VerticalAlignment="Center"/>
+                                            <Border x:Name="BadgeStep1" Grid.Column="1" CornerRadius="10" Padding="8,2" Background="#475569" Margin="5,0">
+                                                <TextBlock x:Name="TxtBadgeStep1" Text="⚪ Chờ" Foreground="White" FontSize="10" FontWeight="Bold"/>
+                                            </Border>
+                                        </Grid>
+                                    </Expander.Header>
+                                    <RichTextBox x:Name="TxtLogStep1" Background="{DynamicResource CanvasBrush}" Foreground="{DynamicResource InkBrush}" BorderThickness="0" Padding="8" FontFamily="Consolas" FontSize="11" IsReadOnly="True" MinHeight="60" MaxHeight="220" VerticalScrollBarVisibility="Auto"/>
+                                </Expander>
+                            </Border>
+
+                            <!-- Step 2 Accordion -->
+                            <Border CornerRadius="8" Background="{DynamicResource SurfaceCardBrush}" BorderBrush="{DynamicResource HairlineBrush}" BorderThickness="1" Margin="0,0,0,10">
+                                <Expander x:Name="ExpanderStep2" IsExpanded="False" Padding="6">
+                                    <Expander.Header>
+                                        <Grid Width="380">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="Step 2: Voiceover &amp; SRT Subtitles" Foreground="{DynamicResource InkBrush}" FontSize="12" FontWeight="Bold" VerticalAlignment="Center"/>
+                                            <Border x:Name="BadgeStep2" Grid.Column="1" CornerRadius="10" Padding="8,2" Background="#475569" Margin="5,0">
+                                                <TextBlock x:Name="TxtBadgeStep2" Text="⚪ Chờ" Foreground="White" FontSize="10" FontWeight="Bold"/>
+                                            </Border>
+                                        </Grid>
+                                    </Expander.Header>
+                                    <RichTextBox x:Name="TxtLogStep2" Background="{DynamicResource CanvasBrush}" Foreground="{DynamicResource InkBrush}" BorderThickness="0" Padding="8" FontFamily="Consolas" FontSize="11" IsReadOnly="True" MinHeight="60" MaxHeight="220" VerticalScrollBarVisibility="Auto"/>
+                                </Expander>
+                            </Border>
+
+                            <!-- Step 3 Accordion -->
+                            <Border CornerRadius="8" Background="{DynamicResource SurfaceCardBrush}" BorderBrush="{DynamicResource HairlineBrush}" BorderThickness="1" Margin="0,0,0,10">
+                                <Expander x:Name="ExpanderStep3" IsExpanded="False" Padding="6">
+                                    <Expander.Header>
+                                        <Grid Width="380">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="Step 3: Scene Breakdown &amp; Prompts" Foreground="{DynamicResource InkBrush}" FontSize="12" FontWeight="Bold" VerticalAlignment="Center"/>
+                                            <Border x:Name="BadgeStep3" Grid.Column="1" CornerRadius="10" Padding="8,2" Background="#475569" Margin="5,0">
+                                                <TextBlock x:Name="TxtBadgeStep3" Text="⚪ Chờ" Foreground="White" FontSize="10" FontWeight="Bold"/>
+                                            </Border>
+                                        </Grid>
+                                    </Expander.Header>
+                                    <RichTextBox x:Name="TxtLogStep3" Background="{DynamicResource CanvasBrush}" Foreground="{DynamicResource InkBrush}" BorderThickness="0" Padding="8" FontFamily="Consolas" FontSize="11" IsReadOnly="True" MinHeight="60" MaxHeight="220" VerticalScrollBarVisibility="Auto"/>
+                                </Expander>
+                            </Border>
+
+                            <!-- Step 4 Accordion -->
+                            <Border CornerRadius="8" Background="{DynamicResource SurfaceCardBrush}" BorderBrush="{DynamicResource HairlineBrush}" BorderThickness="1" Margin="0,0,0,10">
+                                <Expander x:Name="ExpanderStep4" IsExpanded="False" Padding="6">
+                                    <Expander.Header>
+                                        <Grid Width="380">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="Step 4: Batch Image Generation" Foreground="{DynamicResource InkBrush}" FontSize="12" FontWeight="Bold" VerticalAlignment="Center"/>
+                                            <Border x:Name="BadgeStep4" Grid.Column="1" CornerRadius="10" Padding="8,2" Background="#475569" Margin="5,0">
+                                                <TextBlock x:Name="TxtBadgeStep4" Text="⚪ Chờ" Foreground="White" FontSize="10" FontWeight="Bold"/>
+                                            </Border>
+                                        </Grid>
+                                    </Expander.Header>
+                                    <RichTextBox x:Name="TxtLogStep4" Background="{DynamicResource CanvasBrush}" Foreground="{DynamicResource InkBrush}" BorderThickness="0" Padding="8" FontFamily="Consolas" FontSize="11" IsReadOnly="True" MinHeight="60" MaxHeight="220" VerticalScrollBarVisibility="Auto"/>
+                                </Expander>
+                            </Border>
+
+                            <!-- Step 5 Accordion -->
+                            <Border CornerRadius="8" Background="{DynamicResource SurfaceCardBrush}" BorderBrush="{DynamicResource HairlineBrush}" BorderThickness="1" Margin="0,0,0,10">
+                                <Expander x:Name="ExpanderStep5" IsExpanded="False" Padding="6">
+                                    <Expander.Header>
+                                        <Grid Width="380">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="Step 5: Export &amp; Packaging" Foreground="{DynamicResource InkBrush}" FontSize="12" FontWeight="Bold" VerticalAlignment="Center"/>
+                                            <Border x:Name="BadgeStep5" Grid.Column="1" CornerRadius="10" Padding="8,2" Background="#475569" Margin="5,0">
+                                                <TextBlock x:Name="TxtBadgeStep5" Text="⚪ Chờ" Foreground="White" FontSize="10" FontWeight="Bold"/>
+                                            </Border>
+                                        </Grid>
+                                    </Expander.Header>
+                                    <RichTextBox x:Name="TxtLogStep5" Background="{DynamicResource CanvasBrush}" Foreground="{DynamicResource InkBrush}" BorderThickness="0" Padding="8" FontFamily="Consolas" FontSize="11" IsReadOnly="True" MinHeight="60" MaxHeight="220" VerticalScrollBarVisibility="Auto"/>
+                                </Expander>
+                            </Border>
+                        </StackPanel>
+                    </ScrollViewer>
                 </Grid>
             </Border>
         </Grid>

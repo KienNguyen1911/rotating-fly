@@ -190,9 +190,23 @@ namespace AssetAutomator
             set { if (value) SrtMethod = 2; }
         }
 
+        private string _characterRef = string.Empty;
+
+        public string CharacterRef
+        {
+            get => _characterRef;
+            set { _characterRef = value ?? string.Empty; OnPropertyChanged(); }
+        }
+
         public string VideoId => YoutubeHelper.ExtractVideoId(VideoUrl);
 
-        public string OutputDir => YoutubeHelper.GetOutputDir(VideoId);
+        /// <summary>
+        /// When set, overrides the default VideoId-based folder naming.
+        /// Used by Gemini Pipeline to create timestamped output dirs (dd-MM-yyyy_HH-mm).
+        /// </summary>
+        public string? OutputFolderOverride { get; set; }
+
+        public string OutputDir => YoutubeHelper.GetOutputDir(OutputFolderOverride ?? VideoId);
 
         public event PropertyChangedEventHandler? PropertyChanged;
 

@@ -51,5 +51,32 @@ namespace AssetAutomator
             }
             return Path.Combine(baseDir, videoId);
         }
+
+        /// <summary>
+        /// Converts a raw topic string to a clean, lowercase hyphen-separated folder slug.
+        /// Example: "Nighttime Loneliness & FOMO" -> "nighttime-loneliness-fomo"
+        /// </summary>
+        public static string ToSafeTopicSlug(string? topic)
+        {
+            if (string.IsNullOrWhiteSpace(topic)) return "untitled-topic";
+
+            string text = topic.Trim().ToLowerInvariant();
+
+            var sb = new System.Text.StringBuilder();
+            foreach (char c in text)
+            {
+                if (char.IsLetterOrDigit(c) || c == '-')
+                {
+                    sb.Append(c);
+                }
+                else
+                {
+                    sb.Append(' ');
+                }
+            }
+
+            string slug = Regex.Replace(sb.ToString(), @"[\s\-]+", "-").Trim('-');
+            return string.IsNullOrWhiteSpace(slug) ? "untitled-topic" : slug;
+        }
     }
 }

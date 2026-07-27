@@ -165,8 +165,16 @@ class Model(Enum):
 
     @classmethod
     def from_name(cls, name: str) -> "Model":
+        name_lower = name.lower()
+        if "thinking" in name_lower or "tư duy" in name_lower:
+            return cls.BASIC_THINKING
+        if "pro" in name_lower or "3.1 pro" in name_lower:
+            return cls.BASIC_PRO
+        if "flash" in name_lower or "3.6 flash" in name_lower or "3.5 flash" in name_lower:
+            return cls.BASIC_FLASH
+
         for model in cls:
-            if model.model_name == name:
+            if model.model_name == name or model.name.lower() == name_lower:
                 return model
 
         raise ValueError(

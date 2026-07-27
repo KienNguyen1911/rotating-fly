@@ -431,6 +431,10 @@ namespace AssetAutomator.Services.Providers
             if (string.IsNullOrWhiteSpace(rawModel)) rawModel = "gemini-3.1-flash-image";
             rawModel = rawModel.Trim();
 
+            // Normalize: convert underscores to hyphens for Flow Local API compatibility
+            // (e.g., "nano_banana_2" → "nano-banana-2")
+            rawModel = rawModel.Replace('_', '-');
+
             if (rawModel.EndsWith("-landscape", StringComparison.OrdinalIgnoreCase) ||
                 rawModel.EndsWith("-portrait", StringComparison.OrdinalIgnoreCase) ||
                 rawModel.EndsWith("-square", StringComparison.OrdinalIgnoreCase) ||

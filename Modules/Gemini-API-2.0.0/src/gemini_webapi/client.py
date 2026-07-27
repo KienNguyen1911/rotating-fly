@@ -1718,7 +1718,10 @@ class ChatSession:
         model: Model | AvailableModel | str | dict = Model.UNSPECIFIED,
         gem: Gem | str | None = None,
     ):
-        self.__metadata: list[Any] = DEFAULT_METADATA
+        # .copy() is critical: DEFAULT_METADATA is a module-level shared list.
+        # Without copy, the metadata setter mutates DEFAULT_METADATA in-place,
+        # causing all subsequent ChatSessions to inherit the previous session's cid/rid.
+        self.__metadata: list[Any] = DEFAULT_METADATA.copy()
         self.geminiclient: GeminiClient = geminiclient
         self.last_output: ModelOutput | None = None
         self.model: Model | AvailableModel | str | dict = model

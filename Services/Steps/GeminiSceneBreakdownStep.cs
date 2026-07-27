@@ -24,7 +24,10 @@ namespace AssetAutomator
             string outputDir,
             string? gemId,
             AutomationTask task,
-            Action<AutomationTask, string> logTask)
+            Action<AutomationTask, string> logTask,
+            string? selectedModel = null,
+            string? selectedExtension = null,
+            string? sessionId = null)
         {
             logTask(task, "[STEP 4] Starting Scene Breakdown & Prompt Generation via Gemini Scene Creator Gem...");
             task.Step4Status = "In Progress";
@@ -37,46 +40,67 @@ namespace AssetAutomator
                 throw new FileNotFoundException($"voiceover.srt not found at {srtPath}. Please complete Step 3 (Voiceover/SRT) first.");
             }
 
+            // Validate SRT file has actual content
             string srtContent = await File.ReadAllTextAsync(srtPath);
-            string transcriptContent = File.Exists(transcriptPath) ? await File.ReadAllTextAsync(transcriptPath) : string.Empty;
+            if (string.IsNullOrWhiteSpace(srtContent) || srtContent.Length < 20)
+            {
+                throw new InvalidOperationException($"voiceover.srt exists but appears empty or invalid ({srtContent.Length} chars). Cannot create scene breakdown.");
+            }
 
-            string prompt = $@"Dựa trên kịch bản (transcript) và file phụ đề SRT dưới đây, hãy đóng vai là một Video Director chuyên nghiệp để phân chia video thành từng Scene chi tiết.
+            // Build a detailed prompt with exact JSON format specification
+            string prompt = @"Bạn là một Scene Creator chuyên nghiệp. Hãy đọc nội dung từ file transcript.txt và voiceover.srt đính kèm, sau đó chuyển đổi chúng thành 1 đối tượng JSON phân cảnh duy nhất.
 
-### YÊU CẦU ĐẦU RA:
-Bắt buộc CHỈ TRẢ VỀ DUY NHẤT một chuỗi JSON hợp lệ (không kèm lời mở đầu hay giải thích) theo cấu trúc mẫu sau:
+Cấu trúc JSON bắt buộc tuân thủ 100% (chỉ trả về JSON thuần trong khối ```json ```, không kèm câu dẫn, không kèm code python, không kèm giải thích):
 
 ```json
-{{
-    ""video_title"": ""Tên video"",
-    ""scene_count"": 2,
+{
+    ""video_title"": ""Tên video tự động sinh từ nội dung"",
+    ""scene_count"": 5,
     ""scenes"": [
-        {{
+        {
             ""scene"": 1,
             ""id"": ""scene_001"",
-            ""time"": {{
-                ""start"": ""00:00:00,099"",
-                ""end"": ""00:00:11,679"",
-                ""duration"": 11.58
-            }},
-            ""transcript"": ""Lời thoại của phân cảnh này..."",
-            ""image_prompt"": ""Close-up of character... minimalist 2D style...""
-        }}
+            ""time"": {
+                ""start"": ""00:00:00,000"",
+                ""end"": ""00:00:05,500"",
+                ""duration"": 5.5
+            },
+            ""transcript"": ""Nội dung câu nói ở cảnh này (lấy từ transcript.txt)"",
+            ""image_prompt"": ""Mô tả chi tiết bằng tiếng Anh những gì diễn ra trong cảnh, bao gồm góc quay, ánh sáng, đối tượng, chất liệu, tâm trạng. Phong cách: Minimalist golden neon line art stickman doodle style, dark 2D lo-fi aesthetic, pitch black background.""
+        }
     ]
-}}
+}
 ```
 
-### NỘI DUNG SRT:
-{srtContent}
+Yêu cầu QUAN TRỌNG:
+1. Mỗi scene có duration 3-6 giây, dựa trên timing từ file voiceover.srt
+2. image_prompt viết bằng TIẾNG ANH, mô tả trực quan phù hợp với cảm xúc đoạn transcript
+3. Phong cách image_prompt: Minimalist golden neon line art stickman doodle style, dark 2D lo-fi aesthetic, pitch black background
+4. KHÔNG kèm câu dẫn, không kèm giải thích, không kèm code python - CHỈ trả về JSON thuần
+5. Số lượng scene phải khớp với nội dung transcript và timing từ SRT";
 
-{(string.IsNullOrWhiteSpace(transcriptContent) ? "" : $"### NỘI DUNG TRANSCRIPT THÔ:\n{transcriptContent}")}";
+            var attachedFiles = new List<string>();
+            if (File.Exists(transcriptPath)) attachedFiles.Add(transcriptPath);
+            if (File.Exists(srtPath)) attachedFiles.Add(srtPath);
 
-            logTask(task, $"[STEP 4] Sending prompt to Gemini Gem (Gem ID: {gemId ?? "Scene Creator"})...");
-            var response = await _geminiApiService.SendChatAsync(prompt, gemId: gemId);
+            logTask(task, $"[STEP 4] Attaching {attachedFiles.Count} files ({string.Join(", ", attachedFiles.Select(Path.GetFileName))}) with detailed JSON format prompt to Gemini Gem (Gem ID: {gemId ?? "Scene Creator"}, Model: {selectedModel ?? "Default"})...");
+
+            var response = await _geminiApiService.SendChatAsync(
+                message: prompt,
+                gemId: gemId,
+                model: selectedModel,
+                extension: selectedExtension,
+                sessionId: sessionId,
+                filePaths: attachedFiles
+            );
 
             if (string.IsNullOrWhiteSpace(response.text))
             {
                 throw new InvalidOperationException("[STEP 4] Gemini API returned empty response for scene breakdown.");
             }
+
+            // Log raw response length for debugging
+            logTask(task, $"[STEP 4] Received Gemini response ({response.text.Length} chars). Extracting JSON...");
 
             // Clean and extract JSON string
             string jsonText = ExtractJsonContent(response.text);
@@ -97,13 +121,19 @@ Bắt buộc CHỈ TRẢ VỀ DUY NHẤT một chuỗi JSON hợp lệ (không k
             {
                 logTask(task, $"[ERROR] [STEP 4] Failed to parse JSON from Gemini response: {ex.Message}");
                 // Fallback: save raw output for debugging
-                await File.WriteAllTextAsync(Path.Combine(outputDir, "scenes_raw_response.txt"), response.text);
+                string rawPath = Path.Combine(outputDir, "scenes_raw_response.txt");
+                await File.WriteAllTextAsync(rawPath, response.text);
+                logTask(task, $"[ERROR] [STEP 4] Saved raw response ({response.text.Length} chars) to: {rawPath}");
                 throw;
             }
 
-            string scenesPath = Path.Combine(outputDir, "scenes.json");
             string formattedJson = JsonSerializer.Serialize(rootData, new JsonSerializerOptions { WriteIndented = true });
+            
+            string scenesPath = Path.Combine(outputDir, "scenes.json");
             await File.WriteAllTextAsync(scenesPath, formattedJson, System.Text.Encoding.UTF8);
+
+            string outputScenesPath = Path.Combine(outputDir, "output_scenes.json");
+            await File.WriteAllTextAsync(outputScenesPath, formattedJson, System.Text.Encoding.UTF8);
 
             task.Step4Status = "Completed";
             logTask(task, $"[STEP 4] Success! Successfully created scenes.json ({rootData.scenes.Count} scenes) at: {scenesPath}");

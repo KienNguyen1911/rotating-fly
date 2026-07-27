@@ -148,7 +148,18 @@ namespace AssetAutomator.Helpers
         }
 
         /// <summary>
-        /// Stops the background server process safely upon application shutdown.
+        /// Restarts the background Python Gemini WebAPI server process to ensure fresh cookie loading.
+        /// </summary>
+        public static async Task<bool> RestartServerAsync(string baseUrl = "http://localhost:8000")
+        {
+            Trace.WriteLine("[PythonServerManager] Restarting Gemini Python Server...");
+            StopServer();
+            await Task.Delay(1500);
+            return await EnsureServerRunningAsync(baseUrl);
+        }
+
+        /// <summary>
+        /// Stops the background server process safely upon application shutdown or server restart.
         /// </summary>
         public static void StopServer()
         {
@@ -165,6 +176,21 @@ namespace AssetAutomator.Helpers
             {
                 Trace.WriteLine($"[PythonServerManager] Error stopping server process: {ex.Message}");
             }
+
+            // Ensure any orphaned python processes running server.py are terminated
+            try
+            {
+                var psi = new ProcessStartInfo
+                {
+                    FileName = "cmd.exe",
+                    Arguments = "/c wmic process where \"commandline like '%server.py%'\" call terminate",
+                    CreateNoWindow = true,
+                    UseShellExecute = false
+                };
+                using var proc = Process.Start(psi);
+                proc?.WaitForExit(2000);
+            }
+            catch { }
         }
     }
 }

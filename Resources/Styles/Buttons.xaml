@@ -50,6 +50,11 @@
         <Setter Property="Foreground" Value="{DynamicResource Content.OnAction}"/>
         <Setter Property="BorderThickness" Value="0"/>
     </Style>
+    <Style x:Key="SecondaryButton" TargetType="Button" BasedOn="{StaticResource Button.Base}">
+        <Setter Property="Background" Value="{DynamicResource SurfaceSoftBrush}"/>
+        <Setter Property="Foreground" Value="{DynamicResource Content.Primary}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource Border.Subtle}"/>
+    </Style>
     <Style x:Key="GreenButton" TargetType="Button" BasedOn="{StaticResource Button.Base}">
         <Setter Property="Background" Value="{DynamicResource SemanticUpBrush}"/>
         <Setter Property="Foreground" Value="{DynamicResource Content.OnAction}"/>

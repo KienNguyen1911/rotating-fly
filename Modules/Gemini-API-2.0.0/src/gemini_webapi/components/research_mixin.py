@@ -232,6 +232,18 @@ class ResearchMixin:
         output = await self._collect_research_output(chat, prompt)
         plan = output.deep_research_plan
         if not plan:
+            if output.text and len(output.text.strip()) > 100:
+                logger.info("Gemini returned research report directly without a multi-step plan. Creating direct plan.")
+                plan = DeepResearchPlan(
+                    title="Direct Research Report",
+                    steps=["Comprehensive Report Generated"],
+                    response_text=output.text,
+                    confirm_prompt="Proceed",
+                    metadata=list(chat.metadata),
+                    cid=chat.cid or ""
+                )
+                return plan
+
             preview = shorten(output.text or "", width=1200)
             raise GeminiError(
                 "Gemini did not return a deep research plan. " f"Preview: {preview!r}"

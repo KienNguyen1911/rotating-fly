@@ -8,6 +8,7 @@ using System.Windows.Documents;
 using System.Windows.Media;
 using System.Windows.Input;
 using System.ComponentModel;
+using AssetAutomator.Models;
 
 namespace AssetAutomator
 {
@@ -412,6 +413,8 @@ namespace AssetAutomator
             {
                 _currentLogTask = task;
                 TxtSidebarLog.DataContext = task;
+                GridGeminiStepAccordion.Visibility = Visibility.Collapsed;
+                TxtSidebarLog.Visibility = Visibility.Visible;
                 SetLogsToRichTextBox(task.Logs ?? string.Empty);
                 SidebarLogs.Width = _sidebarWidth;
                 SidebarLogs.Visibility = Visibility.Visible;
@@ -499,29 +502,77 @@ namespace AssetAutomator
 
         private void BtnBrowseVoice_Click(object sender, RoutedEventArgs e)
         {
-            if (sender is Button btn && btn.DataContext is AutomationTask task)
+            if (sender is Button btn)
             {
-                string apiKey = ConfigService.CurrentSettings.Ai84ApiKey;
-                if (string.IsNullOrEmpty(apiKey))
+                string currentVoiceId = "";
+                if (btn.DataContext is AutomationTask autoTask)
                 {
-                    MessageBox.Show("Please enter your AI84 API Key first.", "API Key Required", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    currentVoiceId = autoTask.VoiceId;
+                }
+                else if (btn.DataContext is GeminiTaskModel geminiTask)
+                {
+                    currentVoiceId = geminiTask.VoiceId;
+                }
+                else
+                {
                     return;
                 }
 
-                var selector = new VoiceSelectorWindow(apiKey, task.VoiceId)
+                string apiKey = ConfigService.CurrentSettings.Ai84ApiKey;
+                if (string.IsNullOrEmpty(apiKey))
+                {
+                    MessageBox.Show("Vui lòng nhập AI84 API Key trong Cài đặt (Settings) trước.", "Cần API Key", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+
+                var selector = new VoiceSelectorWindow(apiKey, currentVoiceId)
                 {
                     Owner = this
                 };
 
                 if (selector.ShowDialog() == true)
                 {
-                    task.VoiceId = selector.SelectedVoiceId;
-                    if (selector.SelectedVoice != null)
+                    if (btn.DataContext is AutomationTask t1)
                     {
-                        task.TargetLanguage = LanguageHelper.FormatLanguage(selector.SelectedVoice.language);
+                        t1.VoiceId = selector.SelectedVoiceId;
+                        if (selector.SelectedVoice != null)
+                        {
+                            t1.TargetLanguage = LanguageHelper.FormatLanguage(selector.SelectedVoice.language);
+                        }
+                    }
+                    else if (btn.DataContext is GeminiTaskModel t2)
+                    {
+                        t2.VoiceId = selector.SelectedVoiceId;
+                        if (selector.SelectedVoice != null)
+                        {
+                            t2.TargetLanguage = LanguageHelper.FormatLanguage(selector.SelectedVoice.language);
+                        }
                     }
                 }
             }
+        }
+
+        public static async Task ResolveGeminiTaskLanguageAsync(GeminiTaskModel task, string apiKey)
+        {
+            if (string.IsNullOrEmpty(task.VoiceId) || !string.IsNullOrEmpty(task.TargetLanguage)) return;
+            try
+            {
+                using var client = new System.Net.Http.HttpClient();
+                var request = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Get, $"https://api.ai84.pro/v1/shared-voices?page_size=10&search={Uri.EscapeDataString(task.VoiceId)}");
+                request.Headers.Add("xi-api-key", apiKey);
+                var response = await client.SendAsync(request);
+                if (response.IsSuccessStatusCode)
+                {
+                    string json = await response.Content.ReadAsStringAsync();
+                    var result = System.Text.Json.JsonSerializer.Deserialize<SharedVoicesResponse>(json, new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                    var voice = result?.voices?.FirstOrDefault(v => v.voice_id == task.VoiceId);
+                    if (voice != null)
+                    {
+                        task.TargetLanguage = LanguageHelper.FormatLanguage(voice.language);
+                    }
+                }
+            }
+            catch { /* Ignore background errors */ }
         }
 
         private void SidebarDragHandle_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)

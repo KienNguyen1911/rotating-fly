@@ -20,7 +20,7 @@ namespace AssetAutomator
             string apiKey,
             Action<AutomationTask, string> logTask)
         {
-            logTask(task, "[STEP 4] Starting Asynchronous Voiceover creation via AI84 API...");
+            logTask(task, "[VOICEOVER] Starting Asynchronous Voiceover creation via AI84 API...");
             if (string.IsNullOrWhiteSpace(apiKey))
             {
                 throw new InvalidOperationException("AI84 API Key is empty. Please enter your API Key in the top toolbar.");
@@ -59,7 +59,7 @@ namespace AssetAutomator
             try
             {
                 string submitUrl = $"https://api.ai84.pro/v2/text-to-speech/async?voice_id={Uri.EscapeDataString(voiceId)}";
-                logTask(task, $"[STEP 4] Creating TTS Job: POST {submitUrl}");
+                logTask(task, $"[VOICEOVER] Creating TTS Job: POST {submitUrl}");
                 var response = await httpClient.PostAsync(submitUrl, content);
 
                 string responseContent = await response.Content.ReadAsStringAsync();
@@ -75,7 +75,7 @@ namespace AssetAutomator
                     throw new Exception("Did not receive a valid job_id from API.");
                 }
 
-                logTask(task, $"[STEP 4] Job created successfully. Job ID: {jobId}");
+                logTask(task, $"[VOICEOVER] Job created successfully. Job ID: {jobId}");
                 return jobId;
             }
             catch (Exception ex)
@@ -102,7 +102,7 @@ namespace AssetAutomator
                 try
                 {
                     string statusUrl = $"https://api.ai84.pro/v2/text-to-speech/async/{jobId}";
-                    logTask(task, $"[STEP 4] Polling job status (Attempt {attempt}): GET {statusUrl}");
+                    logTask(task, $"[VOICEOVER] Polling job status (Attempt {attempt}): GET {statusUrl}");
 
                     using var statusRequest = new HttpRequestMessage(HttpMethod.Get, statusUrl);
                     statusRequest.Headers.Add("xi-api-key", apiKey);
@@ -111,7 +111,7 @@ namespace AssetAutomator
                     string statusResponseContent = await statusResponse.Content.ReadAsStringAsync();
                     if (!statusResponse.IsSuccessStatusCode)
                     {
-                        logTask(task, $"[STEP 4] [WARNING] Polling failed: {statusResponseContent}. Retrying...");
+                        logTask(task, $"[VOICEOVER] [WARNING] Polling failed: {statusResponseContent}. Retrying...");
                         continue;
                     }
 
@@ -119,7 +119,7 @@ namespace AssetAutomator
                     var jobElement = doc.RootElement.GetProperty("job");
                     string status = jobElement.GetProperty("status").GetString() ?? "queued";
 
-                    logTask(task, $"[STEP 4] Job status: {status}");
+                    logTask(task, $"[VOICEOVER] Job status: {status}");
 
                     if (status.Equals("done", StringComparison.OrdinalIgnoreCase))
                     {
@@ -162,7 +162,7 @@ namespace AssetAutomator
 
             if (withTranscript && string.IsNullOrEmpty(transcriptUrl))
             {
-                logTask(task, "[STEP 4] Audio is ready, but transcriptUrl is not yet available. Determining polling budget...");
+                logTask(task, "[VOICEOVER] Audio is ready, but transcriptUrl is not yet available. Determining polling budget...");
                 if (duration <= 0)
                 {
                     duration = scriptText.Length / 15.0;
@@ -172,7 +172,7 @@ namespace AssetAutomator
                 double maxPollingSeconds = duration / 2.0;
                 if (maxPollingSeconds < 5) maxPollingSeconds = 5;
 
-                logTask(task, $"[STEP 4] Max polling budget for transcriptUrl: {maxPollingSeconds:F1} seconds.");
+                logTask(task, $"[VOICEOVER] Max polling budget for transcriptUrl: {maxPollingSeconds:F1} seconds.");
 
                 var startTime = DateTime.UtcNow;
                 int transcriptAttempt = 0;
@@ -184,7 +184,7 @@ namespace AssetAutomator
                     try
                     {
                         string statusUrl = $"https://api.ai84.pro/v2/text-to-speech/async/{jobId}";
-                        logTask(task, $"[STEP 4] Polling for transcriptUrl (Attempt {transcriptAttempt}): GET {statusUrl}");
+                        logTask(task, $"[VOICEOVER] Polling for transcriptUrl (Attempt {transcriptAttempt}): GET {statusUrl}");
 
                         using var statusRequest = new HttpRequestMessage(HttpMethod.Get, statusUrl);
                         statusRequest.Headers.Add("xi-api-key", apiKey);

@@ -163,6 +163,14 @@ async def init_client(force: bool = False, cookies_override: dict | None = None)
             client = new_client
             _last_init_time = time.time()
 
+            # Clear all old chat sessions when client is re-initialized —
+            # they belong to the old client and would contaminate new conversations.
+            global chat_sessions
+            old_count = len(chat_sessions)
+            chat_sessions.clear()
+            if old_count > 0:
+                log.info(f"🧹 Cleared {old_count} stale chat sessions from previous client.")
+
             # Update known mtime
             cookie_file = get_cookies_path()
             if cookie_file.exists():
@@ -337,7 +345,9 @@ class GemResponse(BaseModel):
 class ChatRequest(BaseModel):
     message: str = Field(..., description="The message or prompt to send to Gemini.")
     gem_id: Optional[str] = Field(None, description="Optional Gem ID (e.g. 'coding-partner' or custom Gem ID) to apply system prompt.")
+    model: Optional[str] = Field(None, description="Optional AI Model name (e.g. 'gemini-3-flash', 'gemini-3-pro', 'gemini-3-flash-thinking').")
     session_id: Optional[str] = Field(None, description="Optional session ID to maintain continuous conversation history.")
+    files: Optional[List[str]] = Field(None, description="Optional list of local file paths to upload and attach to the chat prompt.")
     deep_research: bool = Field(False, description="Set to True to trigger automated Deep Research mode.")
     temporary: bool = Field(False, description="Set to True to prevent saving conversation in Gemini history.")
 
@@ -352,6 +362,31 @@ class ChatResponse(BaseModel):
     thoughts: Optional[str] = None
     images: List[ImageOutput] = []
     deep_research_completed: bool = False
+
+class DeepResearchStartRequest(BaseModel):
+    message: str = Field(..., description="The research prompt or topic")
+    gem_id: Optional[str] = Field(None, description="Optional Gem ID")
+    model: Optional[str] = Field(None, description="Optional model name (e.g. gemini-3-flash-thinking)")
+    session_id: Optional[str] = Field(None, description="Optional existing session ID")
+
+class DeepResearchStartResponse(BaseModel):
+    research_id: str
+    session_id: str
+    plan_title: Optional[str] = None
+    steps: List[str] = []
+
+class DeepResearchStatusResponse(BaseModel):
+    research_id: str
+    session_id: str
+    status: str  # "RUNNING", "COMPLETED", "FAILED"
+    elapsed_seconds: float
+    plan_title: Optional[str] = None
+    steps: List[str] = []
+    text: Optional[str] = None
+    error: Optional[str] = None
+
+# Global map to store async Deep Research jobs
+deep_research_jobs: Dict[str, dict] = {}
 
 # ---------------------------------------------------------------------------
 # Endpoints
@@ -426,6 +461,25 @@ async def refresh_from_browser():
         raise HTTPException(status_code=500, detail=f"Failed to re-init from browser: {str(e)}")
 
 
+@app.post("/api/refresh-cookies", summary="Reload cookies.json & Re-init Client")
+async def refresh_cookies():
+    """
+    Đọc lại file cookies.json và re-initialize client.
+    """
+    try:
+        success = await init_client(force=True)
+        if success and client:
+            status = client.account_status
+            return {
+                "status": "ok",
+                "account_status": status.name,
+                "message": f"Client re-initialized successfully. Status: {status.name}",
+            }
+        return {"status": "error", "message": "Re-init failed or client is None"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to re-init client: {str(e)}")
+
+
 @app.get("/api/gems", response_model=List[GemResponse], summary="List Gems")
 async def list_gems(include_hidden: bool = Query(False, description="Include hidden predefined system gems.")):
     """
@@ -464,29 +518,76 @@ async def chat_with_gem(req: ChatRequest):
         session_id = req.session_id or str(uuid.uuid4())
         
         if session_id not in chat_sessions:
-            # Create new chat session with specified gem if provided
+            # Create new chat session with specified gem/model if provided
             chat_kwargs = {}
             if req.gem_id:
                 chat_kwargs["gem"] = req.gem_id
+            if req.model:
+                chat_kwargs["model"] = req.model
             chat_sessions[session_id] = client.start_chat(**chat_kwargs)
+        elif req.gem_id:
+            # Safeguard: if session exists but requested gem_id differs, re-initialize chat session for new Gem
+            existing_chat = chat_sessions[session_id]
+            current_gem = existing_chat.gem.id if hasattr(existing_chat.gem, "id") else (existing_chat.gem or "")
+            if req.gem_id != current_gem:
+                chat_kwargs = {"gem": req.gem_id}
+                if req.model:
+                    chat_kwargs["model"] = req.model
+                chat_sessions[session_id] = client.start_chat(**chat_kwargs)
             
         chat = chat_sessions[session_id]
 
         # Case 1: Automated Deep Research
         if req.deep_research:
-            plan = await client.create_deep_research_plan(req.message, chat=chat)
-            await client.start_deep_research(plan, chat=chat)
-            research_result = await client.wait_for_deep_research(plan, poll_interval=10.0, timeout=600.0)
-            
-            result_text = research_result.text or (research_result.final_output.text if research_result.final_output else "")
-            return ChatResponse(
-                session_id=session_id,
-                text=result_text,
-                deep_research_completed=True,
-            )
+            try:
+                plan = await client.create_deep_research_plan(req.message, chat=chat)
+                await client.start_deep_research(plan, chat=chat)
+                research_result = await client.wait_for_deep_research(plan, poll_interval=10.0, timeout=600.0)
+                
+                result_text = research_result.text or (research_result.final_output.text if research_result.final_output else "")
+                return ChatResponse(
+                    session_id=session_id,
+                    text=result_text,
+                    deep_research_completed=True,
+                )
+            except Exception as e:
+                err_str = str(e)
+                log.warning(f"Deep Research primary path failed: {err_str[:300]}")
 
-        # Case 2: Normal / Extended Chat (supports @YouTube, @Gmail extensions in req.message)
-        output = await chat.send_message(req.message, temporary=req.temporary)
+                # Fallback 1: chat.last_output already contains the report text
+                last_output = getattr(chat, "last_output", None)
+                if last_output and getattr(last_output, "text", None) and last_output.text.strip():
+                    log.info("Fallback 1: Using chat.last_output.text as deep research result.")
+                    return ChatResponse(
+                        session_id=session_id,
+                        text=last_output.text.strip(),
+                        deep_research_completed=True,
+                    )
+
+                # Fallback 2: When using a Gem, Gemini sometimes returns the full research report
+                # directly as a normal chat response (skipping the plan flow entirely).
+                # Retry via send_message (no deep_research flag) to get the report.
+                try:
+                    log.info("Fallback 2: Retrying as normal chat message to capture direct report...")
+                    fallback_output = await chat.send_message(req.message, temporary=req.temporary)
+                    fallback_text = getattr(fallback_output, "text", None) or ""
+                    if fallback_text.strip():
+                        log.info("Fallback 2 succeeded — returning normal chat response as deep research result.")
+                        return ChatResponse(
+                            session_id=session_id,
+                            text=fallback_text.strip(),
+                            deep_research_completed=True,
+                        )
+                except Exception as e2:
+                    log.warning(f"Fallback 2 also failed: {e2}")
+
+                # All fallbacks exhausted — raise original error
+                raise HTTPException(status_code=400, detail=f"Gemini API Error: {err_str}")
+
+
+
+        # Case 2: Normal / Extended Chat (supports @YouTube, @Gmail extensions in req.message and file attachments)
+        output = await chat.send_message(req.message, files=req.files, temporary=req.temporary)
         
         images_data = []
         if output.images:
@@ -557,6 +658,152 @@ async def delete_active_session(session_id: str):
         del chat_sessions[session_id]
         return {"status": "ok", "message": f"Session {session_id} deleted."}
     raise HTTPException(status_code=404, detail=f"Session {session_id} not found.")
+
+
+# ---------------------------------------------------------------------------
+# Async Deep Research Endpoints (Continuous Polling)
+# ---------------------------------------------------------------------------
+
+async def _run_deep_research_job(research_id: str, plan, chat):
+    """Background task executing deep research and updating status map."""
+    import time
+    try:
+        log.info(f"🚀 [Async Research {research_id[:8]}] Background research started...")
+        result = await client.wait_for_deep_research(plan, poll_interval=5.0, timeout=600.0)
+        report_text = result.text or (result.final_output.text if result.final_output else "")
+
+        if not report_text or len(report_text.strip()) < 300:
+            log.info(f"[Async Research {research_id[:8]}] Short output, checking chat.last_output...")
+            last_out = getattr(chat, "last_output", None)
+            if last_out and getattr(last_out, "text", None) and len(last_out.text.strip()) > 300:
+                report_text = last_out.text.strip()
+
+        if not report_text or len(report_text.strip()) < 100:
+            log.info(f"[Async Research {research_id[:8]}] Fallback: Prompting chat for summary report...")
+            fallback_msg = await chat.send_message("Hãy tổng hợp báo cáo nghiên cứu chi tiết theo kế hoạch trên.")
+            report_text = getattr(fallback_msg, "text", "") or ""
+
+        deep_research_jobs[research_id]["text"] = report_text
+        deep_research_jobs[research_id]["status"] = "COMPLETED"
+        log.info(f"✅ [Async Research {research_id[:8]}] Completed successfully ({len(report_text)} chars)")
+    except Exception as e:
+        log.warning(f"⚠️ [Async Research {research_id[:8]}] Main path failed: {e}")
+        # Try fallback from chat session
+        last_out = getattr(chat, "last_output", None)
+        if last_out and getattr(last_out, "text", None) and len(last_out.text.strip()) > 100:
+            deep_research_jobs[research_id]["text"] = last_out.text.strip()
+            deep_research_jobs[research_id]["status"] = "COMPLETED"
+            log.info(f"✅ [Async Research {research_id[:8]}] Recovered from chat.last_output")
+        else:
+            deep_research_jobs[research_id]["status"] = "FAILED"
+            deep_research_jobs[research_id]["error"] = str(e)
+
+
+@app.post("/api/deep-research/start", response_model=DeepResearchStartResponse, summary="Start Async Deep Research")
+async def start_deep_research(req: DeepResearchStartRequest):
+    """
+    Bắt đầu quy trình Deep Research bất đồng bộ.
+    Trả về research_id ngay lập tức để C# client có thể poll trạng thái liên tục.
+    """
+    import time
+    if client is None:
+        raise HTTPException(status_code=503, detail="Gemini client is not initialized.")
+
+    try:
+        session_id = req.session_id or str(uuid.uuid4())
+        if session_id not in chat_sessions:
+            chat_kwargs = {}
+            if req.gem_id:
+                chat_kwargs["gem"] = req.gem_id
+            if req.model:
+                chat_kwargs["model"] = req.model
+            chat_sessions[session_id] = client.start_chat(**chat_kwargs)
+
+        chat = chat_sessions[session_id]
+
+        research_id = str(uuid.uuid4())
+
+        try:
+            plan = await client.create_deep_research_plan(req.message, chat=chat)
+            await client.start_deep_research(plan, chat=chat)
+
+            plan_title = getattr(plan, "title", None) or "Deep Research Plan"
+            plan_steps = [str(s) for s in (getattr(plan, "steps", []) or [])]
+
+            deep_research_jobs[research_id] = {
+                "research_id": research_id,
+                "session_id": session_id,
+                "status": "RUNNING",
+                "start_time": time.time(),
+                "plan_title": plan_title,
+                "steps": plan_steps,
+                "text": None,
+                "error": None,
+            }
+
+            # Launch background polling task
+            asyncio.create_task(_run_deep_research_job(research_id, plan, chat))
+
+            return DeepResearchStartResponse(
+                research_id=research_id,
+                session_id=session_id,
+                plan_title=plan_title,
+                steps=plan_steps,
+            )
+        except Exception as e:
+            err_str = str(e)
+            log.warning(f"Failed to start async deep research primary path: {err_str[:300]}")
+
+            last_output = getattr(chat, "last_output", None)
+            report_text = ""
+            if last_output and hasattr(last_output, "text") and last_output.text:
+                report_text = last_output.text.strip()
+
+            if report_text and len(report_text) > 100:
+                log.info(f"Deep Research returned report directly ({len(report_text)} chars). Returning COMPLETED job.")
+                deep_research_jobs[research_id] = {
+                    "research_id": research_id,
+                    "session_id": session_id,
+                    "status": "COMPLETED",
+                    "start_time": time.time(),
+                    "plan_title": "Direct Deep Research Report",
+                    "steps": ["Direct Report Generated"],
+                    "text": report_text,
+                    "error": None,
+                }
+                return DeepResearchStartResponse(
+                    research_id=research_id,
+                    session_id=session_id,
+                    plan_title="Direct Deep Research Report",
+                    steps=["Direct Report Generated"],
+                )
+
+            log.error(f"Failed to start async deep research: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to start deep research: {str(e)}")
+
+
+@app.get("/api/deep-research/status/{research_id}", response_model=DeepResearchStatusResponse, summary="Poll Deep Research Status")
+async def get_deep_research_status(research_id: str):
+    """
+    Poll trạng thái tiến độ Deep Research đang chạy nền trên server.
+    """
+    import time
+    if research_id not in deep_research_jobs:
+        raise HTTPException(status_code=404, detail=f"Research job '{research_id}' not found.")
+
+    job = deep_research_jobs[research_id]
+    elapsed = time.time() - job["start_time"]
+
+    return DeepResearchStatusResponse(
+        research_id=job["research_id"],
+        session_id=job["session_id"],
+        status=job["status"],
+        elapsed_seconds=round(elapsed, 1),
+        plan_title=job["plan_title"],
+        steps=job["steps"],
+        text=job["text"],
+        error=job["error"],
+    )
 
 
 if __name__ == "__main__":

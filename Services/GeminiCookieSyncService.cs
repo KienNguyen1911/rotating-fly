@@ -160,5 +160,213 @@ namespace AssetAutomator
                 return false;
             }
         }
+
+        /// <summary>
+        /// Import and format custom raw JSON or cookie key-value string directly into cookies.json
+        /// </summary>
+        public async Task<bool> SaveCustomCookiesJsonAsync(string rawInput, string? customSavePath = null)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(rawInput)) return false;
+
+                string savePath = customSavePath ?? GetDefaultCookiesJsonPath();
+                Directory.CreateDirectory(Path.GetDirectoryName(savePath)!);
+
+                var cookieDict = new Dictionary<string, string>();
+
+                rawInput = rawInput.Trim();
+                if (rawInput.StartsWith("{"))
+                {
+                    using var doc = JsonDocument.Parse(rawInput);
+                    var root = doc.RootElement;
+                    if (root.ValueKind == JsonValueKind.Object)
+                    {
+                        if (root.TryGetProperty("cookies", out var cookiesElem) && cookiesElem.ValueKind == JsonValueKind.Object)
+                        {
+                            foreach (var prop in cookiesElem.EnumerateObject())
+                            {
+                                cookieDict[prop.Name] = prop.Value.GetString() ?? "";
+                            }
+                        }
+                        else
+                        {
+                            foreach (var prop in root.EnumerateObject())
+                            {
+                                if (prop.Value.ValueKind == JsonValueKind.String)
+                                {
+                                    cookieDict[prop.Name] = prop.Value.GetString() ?? "";
+                                }
+                            }
+                        }
+                    }
+                }
+                else if (rawInput.StartsWith("["))
+                {
+                    using var doc = JsonDocument.Parse(rawInput);
+                    if (doc.RootElement.ValueKind == JsonValueKind.Array)
+                    {
+                        foreach (var item in doc.RootElement.EnumerateArray())
+                        {
+                            if (item.TryGetProperty("name", out var nElem) && item.TryGetProperty("value", out var vElem))
+                            {
+                                string key = nElem.GetString() ?? "";
+                                string val = vElem.GetString() ?? "";
+                                if (!string.IsNullOrEmpty(key))
+                                {
+                                    cookieDict[key] = val;
+                                }
+                            }
+                        }
+                    }
+                }
+                else
+                {
+                    // Key=Value format or cookie header line
+                    var pairs = rawInput.Split(new[] { ';', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries);
+                    foreach (var pair in pairs)
+                    {
+                        var parts = pair.Split(new[] { '=' }, 2);
+                        if (parts.Length == 2)
+                        {
+                            string key = parts[0].Trim();
+                            string val = parts[1].Trim();
+                            if (!string.IsNullOrEmpty(key))
+                            {
+                                cookieDict[key] = val;
+                            }
+                        }
+                    }
+                }
+
+                if (cookieDict.Count == 0)
+                {
+                    _log("[COOKIE-SYNC] ⚠️ Dữ liệu cookie nhập vào không hợp lệ hoặc rỗng.");
+                    return false;
+                }
+
+                var rootObj = new
+                {
+                    updated_at = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.ffffffZ"),
+                    user_agent = DefaultUserAgent,
+                    cookies = cookieDict
+                };
+
+                string jsonContent = JsonSerializer.Serialize(rootObj, new JsonSerializerOptions { WriteIndented = true });
+                await File.WriteAllTextAsync(savePath, jsonContent);
+
+                ClearTempCookieCache();
+
+                _log($"[COOKIE-SYNC] ✅ Đã nạp thành công {cookieDict.Count} Cookie Gemini vào file: {savePath}");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _log($"[COOKIE-SYNC] ❌ Lỗi khi nhập Cookie: {ex.Message}");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Automatically scans system Chrome and app Chrome profile directories, creates a minimal profile clone,
+        /// and uses Playwright to extract Gemini session cookies.
+        /// Optimized: only copies essential cookie files (not entire profile), skips unnecessary page navigation.
+        /// </summary>
+        public async Task<bool> AutoSyncFromSystemChromeAsync()
+        {
+            _log("[COOKIE-SYNC] 🔍 Đang đọc Cookies từ trình duyệt Chrome hệ thống...");
+            
+            var candidateDirs = new List<string>();
+
+            // App's ChromeProfiles directory
+            string appProfilesDir = ConfigService.CurrentSettings.ChromeProfilesDir;
+            if (Directory.Exists(appProfilesDir))
+            {
+                foreach (var sub in Directory.GetDirectories(appProfilesDir))
+                {
+                    candidateDirs.Add(sub);
+                }
+            }
+
+            // System Chrome User Data directory
+            string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            string systemChromeUserData = Path.Combine(localAppData, "Google", "Chrome", "User Data");
+            if (Directory.Exists(systemChromeUserData))
+            {
+                string defaultProf = Path.Combine(systemChromeUserData, "Default");
+                if (Directory.Exists(defaultProf)) candidateDirs.Add(defaultProf);
+
+                try
+                {
+                    foreach (var sub in Directory.GetDirectories(systemChromeUserData, "Profile *"))
+                    {
+                        candidateDirs.Add(sub);
+                    }
+                }
+                catch { }
+            }
+
+            if (candidateDirs.Count == 0)
+            {
+                _log("[COOKIE-SYNC] ⚠️ Không tìm thấy thư mục Profile Chrome nào trên hệ thống.");
+                return false;
+            }
+
+            using var playwright = await Playwright.CreateAsync();
+            var browserService = new BrowserService(_log);
+
+            foreach (var sourceProfilePath in candidateDirs)
+            {
+                _log($"[COOKIE-SYNC] 🚀 Đang đọc Cookies từ Profile: {Path.GetFileName(sourceProfilePath)}...");
+
+                string tempProfilePath = Path.Combine(Path.GetTempPath(), "GeminiCookieSync_" + Guid.NewGuid().ToString("N"));
+                try
+                {
+                    // OPTIMIZED: Only copy essential cookie-related files (~1-5MB), not entire profile (~200-500MB+)
+                    browserService.CopyMinimalProfileForCookies(sourceProfilePath, tempProfilePath);
+
+                    var launchArgs = new[]
+                    {
+                        "--disable-blink-features=AutomationControlled",
+                        "--no-sandbox",
+                        "--disable-extensions",
+                        "--disable-gpu",
+                        "--disable-background-networking",
+                        "--disable-sync"
+                    };
+
+                    await using var context = await playwright.Chromium.LaunchPersistentContextAsync(
+                        tempProfilePath,
+                        new BrowserTypeLaunchPersistentContextOptions
+                        {
+                            Headless = true,
+                            Channel = "chrome",
+                            Args = launchArgs
+                        });
+
+                    // OPTIMIZED: Extract cookies directly from the context without navigating to any URL.
+                    // Chrome loads cookies from the profile DB on launch — no page load needed.
+                    bool success = await SyncCookiesFromBrowserContextAsync(context);
+                    await context.CloseAsync();
+
+                    if (success)
+                    {
+                        _log($"[COOKIE-SYNC] 🎉 Trích xuất Cookie Gemini thành công từ Chrome profile ({Path.GetFileName(sourceProfilePath)})!");
+                        return true;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _log($"[COOKIE-SYNC] ⚠️ Bỏ qua profile {Path.GetFileName(sourceProfilePath)}: {ex.Message}");
+                }
+                finally
+                {
+                    browserService.CleanupTempProfile(tempProfilePath);
+                }
+            }
+
+            _log("[COOKIE-SYNC] ⚠️ Chưa tìm thấy phiên đăng nhập Gemini sẵn có trong các profile Chrome.");
+            return false;
+        }
     }
 }
