@@ -54,6 +54,7 @@ namespace AssetAutomator.Services
     {
         private readonly HttpClient _httpClient;
         private readonly string _baseUrl;
+        private readonly PythonServerManager _pythonServerManager;
 
         /// <summary>
         /// Converts a GemOptionItem (UI model) to a GemModel (API model).
@@ -69,10 +70,11 @@ namespace AssetAutomator.Services
             };
         }
 
-        public GeminiApiService(string? baseUrl = null)
+        public GeminiApiService(string? baseUrl = null, PythonServerManager? pythonServerManager = null)
         {
             _baseUrl = (baseUrl ?? ConfigService.CurrentSettings.GeminiApiBaseUrl ?? "http://localhost:8000").TrimEnd('/');
             _httpClient = new HttpClient { Timeout = TimeSpan.FromMinutes(10) };
+            _pythonServerManager = pythonServerManager ?? PythonServerManager.Default;
         }
 
         /// <summary>
@@ -80,7 +82,8 @@ namespace AssetAutomator.Services
         /// </summary>
         public async Task<bool> EnsureConnectedAsync()
         {
-            return await PythonServerManager.EnsureServerRunningAsync(_baseUrl);
+            var (success, _) = await _pythonServerManager.EnsureServerRunningAsync(_baseUrl);
+            return success;
         }
 
         /// <summary>

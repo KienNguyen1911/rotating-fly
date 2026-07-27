@@ -142,7 +142,7 @@ Hãy thực hiện nghiên cứu chuyên sâu (Deep Research) về chủ đề s
         # STEP 2B: CHAT TẠO FULL TEXT TRANSCRIPT (ONLY SPOKEN WORDS)
         # ----------------------------------------------------------------------
         print("\n[STEP 2B] Đang gửi Prompt tạo Transcript thuần (spoken words only)...")
-        transcript_prompt = "Write a complete, high-quality script of approximately 1000 - 1200 words based on these guidelines. Remember: output ONLY the spoken words."
+        transcript_prompt = "Write a complete, high-quality script of approximately 1600 - 2000 words based on these guidelines. Remember: output ONLY the spoken words."
         
         transcript_msg = await chat_research.send_message(transcript_prompt)
         transcript_text = getattr(transcript_msg, "text", "") or ""

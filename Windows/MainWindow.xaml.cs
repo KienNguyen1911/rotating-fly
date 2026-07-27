@@ -194,7 +194,7 @@ namespace AssetAutomator
         {
             SaveApplicationSettings();
             _licenseService.Dispose();
-            Helpers.PythonServerManager.StopServer();
+            Helpers.PythonServerManager.Default.StopServer();
         }
 
         private void UpdatePoolUi()

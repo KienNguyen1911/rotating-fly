@@ -78,7 +78,7 @@ Research requirement:
 
                 logTask(task, $"[STEP 2] Phase 2: Converting Research Session context to final spoken script transcript in {targetLangName} (Session ID: {currentSessionId})...");
                 
-                string scriptPrompt = $"Write a complete, high-quality script of approximately 1000 - 1200 words in {targetLangName} based on these guidelines. Remember: output ONLY the spoken words. NOT INCLUDE: title, [Pause 2 seconds], description, special characters";
+                string scriptPrompt = $"Write a complete, high-quality script of approximately 1600 - 2000 words in {targetLangName} based on these guidelines. Remember: output ONLY the spoken words. NOT INCLUDE: title, [Pause 2 seconds], description, special characters";
 
                 var scriptResponse = await _geminiApiService.SendChatAsync(
                     message: scriptPrompt,
@@ -112,7 +112,7 @@ Research requirement:
                     targetLangName = targetLangName.Split(new[] { " - " }, StringSplitOptions.None)[0].Trim();
                 }
 
-                string prompt = $"Write a complete, high-quality video script transcript of approximately 1000 - 1200 words in {targetLangName} about the topic: '{topicOrUrl}'. Remember: output ONLY the spoken words.";
+                string prompt = $"Write a complete, high-quality video script transcript of approximately 1600 - 2000 words in {targetLangName} about the topic: '{topicOrUrl}'. Remember: output ONLY the spoken words.";
                 logTask(task, $"[STEP 2] Sending request to Gemini API (Gem ID: {gemId ?? "Default"}, Model: {selectedModel ?? "Default"}, Language: {targetLangName})...");
 
                 var response = await _geminiApiService.SendChatAsync(

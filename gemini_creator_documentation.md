@@ -50,7 +50,7 @@ Tài liệu này giải thích chi tiết kiến trúc tổng quan và quy trìn
 * **Cách hoạt động (Quy trình 2 Prompt khi bật Deep Research)**:
   1. **Prompt 1 (Nghiên cứu sâu)**: Gửi request tới Gemini Gem để tổng hợp một bản **Báo cáo nghiên cứu chuyên sâu (Research Report)** chi tiết nhiều số liệu và góc nhìn. Bản report này được lưu thành file `research_report.txt`.
   2. **Prompt 2 (Chuyển đổi kịch bản)**: Nhận bản report trên và gửi tiếp prompt tiêu chuẩn:
-     > *"Write a complete, high-quality script of approximately 1000 - 1200 words based on these guidelines. Remember: output ONLY the spoken words"*
+     > *"Write a complete, high-quality script of approximately 1600 - 2000 words based on these guidelines. Remember: output ONLY the spoken words"*
   3. Trích xuất đúng lời đọc kịch bản thuần túy và lưu về máy.
 * **Kết quả đầu ra**: File `research_report.txt` (bản nghiên cứu) và file `transcript.txt` (kịch bản lời đọc hoàn chỉnh).
 
@@ -115,3 +115,137 @@ Tài liệu này giải thích chi tiết kiến trúc tổng quan và quy trìn
       └── ...
   ```
 * **Cập nhật giao diện**: Đổi Badge trạng thái thành **`✔️ Hoàn thành`** và cho phép ấn nút `Assets` để mở xem `scenes.json` hoặc mở thư mục output ngay lập tức.
+
+---
+
+## 🚀 3. Pipeline Orchestrator — Chạy Nhiều Task Song Song (Batch)
+
+### 3.1 Tổng Quan
+
+**Pipeline Orchestrator** (`Services/PipelineOrchestrator.cs`) là cơ chế chạy **nhiều task cùng lúc** theo mô hình **Assembly Line (Dây Chuyền Lắp Ráp)**. Mỗi task chạy độc lập qua 4 stage, mỗi stage có giới hạn slot riêng.
+
+Khi bấm nút **"🚀 CHẠY TASK ĐÃ CHỌN"**, thay vì chạy tuần tự từng task (task 1 xong hết mới đến task 2), Pipeline Orchestrator cho phép các task **đan xen** vào nhau, tận dụng tối đa tài nguyên.
+
+### 3.2 Mô Hình Ma Trận (Assembly Line)
+
+```
+                        6 Tasks chạy đồng thời
+                    ─────────────────────────────►
+          Task1   Task2   Task3   Task4   Task5   Task6
+          ─────────────────────────────────────────────
+Stage A:  [██]    [██]    [⏳]    [⏳]    [⏳]    [⏳]    ← max 2 slot
+Stage B:  [⏳]    [⏳]    [⏳]    [⏳]    [⏳]    [⏳]    ← max 3 slot
+Stage C:  [⏳]    [⏳]    [⏳]    [⏳]    [⏳]    [⏳]    ← max 4 slot
+Stage D:  [⏳]    [⏳]    [⏳]    [⏳]    [⏳]    [⏳]    ← max 1 slot (tuần tự)
+```
+
+Khi Task1 hoàn thành Stage A, nó **ngay lập tức** nhảy xuống Stage B, và Task3 được phép vào Stage A:
+
+```
+          Task1   Task2   Task3   Task4   Task5   Task6
+          ─────────────────────────────────────────────
+Stage A:  [✔️]    [██]    [██]    [⏳]    [⏳]    [⏳]    ← 2/2
+Stage B:  [██]    [⏳]    [⏳]    [⏳]    [⏳]    [⏳]    ← 1/3
+Stage C:  [⏳]    [⏳]    [⏳]    [⏳]    [⏳]    [⏳]    ← 0/4
+Stage D:  [⏳]    [⏳]    [⏳]    [⏳]    [⏳]    [⏳]    ← 0/1
+```
+
+### 3.3 Giới Hạn Slot Mỗi Stage
+
+| Stage | Bước | Slot | Cơ Chế | Giải Thích |
+|---|---|---|---|---|
+| **A** | Deep Research & Transcript | **2** | `SemaphoreSlim(2)` | Tối đa 2 task gọi Gemini API cùng lúc. Các task còn lại xếp hàng chờ. |
+| **B** | Voiceover AI84 (mp3 + srt) | **3** | `SemaphoreSlim(3)` | Tối đa 3 task gọi AI84 TTS API đồng thời. API AI84 có rate limit ~3-5 concurrent. |
+| **C** | Scene Creator (scenes.json) | **4** | `SemaphoreSlim(4)` | Tối đa 4 task gọi Gemini Scene Creator cùng lúc. Step này nhẹ, có thể chạy nhiều. |
+| **D** | Image Generation (Flow Local) | **1** | `SemaphoreSlim(1)` | **TUẦN TỰ TUYỆT ĐỐI**. Mỗi task tạo 50+ ảnh với 6 luồng song song nội bộ (`MaxConcurrentImages=6`). Sau khi xong, **nghỉ 15 giây** trước khi task tiếp theo vào. |
+
+### 3.4 Luồng Xử Lý Chi Tiết
+
+```mermaid
+flowchart TD
+    subgraph "Stage A: Deep Research (max 2)"
+        A1[Task 1] --> A1_Run[Gemini Deep Research]
+        A2[Task 2] --> A2_Run[Gemini Deep Research]
+        A3[Task 3...N] --> A_Wait[Đợi slot trống]
+        A_Wait --> A1_Run
+    end
+
+    subgraph "Stage B: Voiceover (max 3)"
+        B1[Task X] --> B1_Run[AI84 TTS + Polling]
+        B2[Task Y] --> B2_Run[AI84 TTS + Polling]
+        B3[Task Z] --> B3_Run[AI84 TTS + Polling]
+        B4[Task W] --> B_Wait[Đợi slot trống]
+    end
+
+    subgraph "Stage C: Scene Creator (max 4)"
+        C1[Task X] --> C1_Run[Gemini Scene Gem]
+        C2[Task Y] --> C2_Run[Gemini Scene Gem]
+    end
+
+    subgraph "Stage D: Image Gen (max 1)"
+        D1[Task 1] --> D1_Run["Tạo 50 ảnh (6 luồng)"]
+        D1_Run --> D1_Sleep["Sleep 15s ⏸️"]
+        D1_Sleep --> D2[Task 2]
+        D2 --> D2_Run["Tạo 50 ảnh (6 luồng)"]
+        D2_Run --> D2_Sleep["Sleep 15s ⏸️"]
+    end
+
+    A1_Run --> B1
+    A2_Run --> B2
+    B1_Run --> C1
+    B2_Run --> C2
+    C1_Run --> D1
+    C2_Run --> D2
+```
+
+### 3.5 So Sánh: Chạy 1 Task vs Chạy Batch
+
+| | Chạy 1 Task (`Run` button) | Chạy Batch (`CHẠY TASK ĐÃ CHỌN`) |
+|---|---|---|
+| **Engine** | `GeminiVideoPipelineService` (tuần tự 5 step) | `PipelineOrchestrator` (ma trận 4 stage song song) |
+| **Deep Research** | 1 task tại 1 thời điểm | Tối đa 2 task cùng lúc |
+| **Voiceover** | 1 task tại 1 thời điểm | Tối đa 3 task cùng lúc |
+| **Scene Creator** | 1 task tại 1 thời điểm | Tối đa 4 task cùng lúc |
+| **Image Gen** | 1 task, 6 ảnh song song | 1 task, 6 ảnh song song + sleep 15s giữa các task |
+| **Thời gian 6 tasks** | ~90-180 phút (6 × 15-30 phút) | ~35-60 phút (các stage đan xen) |
+
+### 3.6 Code Tham Khảo
+
+```csharp
+// Khởi tạo PipelineOrchestrator
+var orchestrator = new PipelineOrchestrator(
+    geminiApiService: _geminiApiService,
+    maxDeepResearch: 2,   // 2 task deep research cùng lúc
+    maxVoiceover: 3,      // 3 task voiceover cùng lúc
+    maxSceneCreator: 4,   // 4 task scene creator cùng lúc
+    maxImageGen: 1        // 1 task image gen (tuần tự, sleep 15s)
+);
+
+// Chạy batch
+var result = await orchestrator.ExecuteBatchAsync(
+    taskModels: selectedTasks,
+    logTask: (taskModel, msg) => Dispatcher.Invoke(() =>
+    {
+        AppendGeminiTaskLog(taskModel, msg);
+        UpdateTaskStepInfoFromLog(taskModel, msg);
+    })
+);
+
+// Kết quả: ✅ 5/6 thành công, ❌ 1 thất bại — 42.3 phút
+```
+
+---
+
+## 📊 4. Cấu Trúc File & Dependencies
+
+| File | Vai Trò |
+|---|---|
+| `Services/PipelineOrchestrator.cs` | **MỚI** — Orchestrator cho batch multi-task |
+| `Services/GeminiVideoPipelineService.cs` | Pipeline 5-step cho 1 task đơn lẻ |
+| `Services/Steps/GeminiTopicResearchStep.cs` | Step 1 & 2: Deep Research + Transcript |
+| `Services/Steps/VoiceoverGenerationStep.cs` | Step 3: Voiceover AI84 + SRT |
+| `Services/Steps/GeminiSceneBreakdownStep.cs` | Step 4: Scene Creator JSON |
+| `Services/Steps/SceneImageBatchStep.cs` | Step 5: Batch Image Generation (6 ảnh song song) |
+| `Services/GeminiApiService.cs` | HTTP client tới Gemini Python REST Server |
+| `Services/BatchImageGenService.cs` | Factory pattern cho Image Gen Provider |
+| `Windows/MainWindow.GeminiCreator.cs` | UI code-behind (tab Gemini AI Creator) |

@@ -21,11 +21,10 @@ namespace AssetAutomator.Services
     ///   Deep Research : 2
     ///   Voiceover     : 3
     ///   Scene Creator : 4
-    ///   Image Gen     : 1
+    ///   Image Gen     : 1 (tuần tự tuyệt đối, sleep 15s giữa các task)
     /// </summary>
     public class PipelineOrchestrator
     {
-        private readonly GeminiVideoPipelineService _pipelineService;
         private readonly GeminiApiService _geminiApiService;
 
         private readonly int _maxDeepResearch;
@@ -33,18 +32,13 @@ namespace AssetAutomator.Services
         private readonly int _maxSceneCreator;
         private readonly int _maxImageGen;
 
-        /// <summary>
-        /// Creates a PipelineOrchestrator with configurable concurrency per stage.
-        /// </summary>
         public PipelineOrchestrator(
-            GeminiVideoPipelineService pipelineService,
             GeminiApiService geminiApiService,
             int maxDeepResearch = 2,
             int maxVoiceover = 3,
             int maxSceneCreator = 4,
             int maxImageGen = 1)
         {
-            _pipelineService = pipelineService;
             _geminiApiService = geminiApiService;
             _maxDeepResearch = Math.Max(1, maxDeepResearch);
             _maxVoiceover = Math.Max(1, maxVoiceover);
@@ -55,10 +49,11 @@ namespace AssetAutomator.Services
         /// <summary>
         /// Thực thi batch Gemini tasks với ma trận pipeline.
         /// Tất cả task khởi động cùng lúc, mỗi task tự đi qua 4 stage với semaphore riêng.
+        /// Callback logTask được gọi từ thread pool — caller phải tự Dispatch nếu cần cập nhật UI.
         /// </summary>
         public async Task<PipelineBatchResult> ExecuteBatchAsync(
-            List<GeminiTaskItem> taskItems,
-            Action<GeminiTaskItem, string> logTask,
+            List<GeminiTaskModel> taskModels,
+            Action<GeminiTaskModel, string> logTask,
             CancellationToken cancellationToken = default)
         {
             var result = new PipelineBatchResult();
@@ -70,9 +65,9 @@ namespace AssetAutomator.Services
             using var imageGenSem = new SemaphoreSlim(_maxImageGen, _maxImageGen);
 
             // ── Ma trận: mỗi task là 1 hàng, chạy song song ──
-            var taskRunners = taskItems.Select(taskItem =>
+            var taskRunners = taskModels.Select(taskModel =>
                 ProcessOneTaskThroughPipelineAsync(
-                    taskItem,
+                    taskModel,
                     deepResearchSem,
                     voiceoverSem,
                     sceneCreatorSem,
@@ -83,47 +78,42 @@ namespace AssetAutomator.Services
 
             await Task.WhenAll(taskRunners);
 
-            result.TotalTasks = taskItems.Count;
-            result.SuccessCount = taskItems.Count(t => t.Status == NodeStatus.Success);
-            result.FailedCount = taskItems.Count(t => t.Status == NodeStatus.Failed);
+            result.TotalTasks = taskModels.Count;
+            result.SuccessCount = taskModels.Count(t => t.Status == NodeStatus.Success);
+            result.FailedCount = taskModels.Count(t => t.Status == NodeStatus.Failed);
             result.Elapsed = DateTime.Now - startedAt;
             return result;
         }
 
         /// <summary>
         /// Xử lý MỘT task qua toàn bộ pipeline 4 stage với slot giới hạn từng stage.
-        /// Đây là 1 hàng trong ma trận.
         /// </summary>
         private async Task ProcessOneTaskThroughPipelineAsync(
-            GeminiTaskItem taskItem,
+            GeminiTaskModel taskModel,
             SemaphoreSlim deepResearchSem,
             SemaphoreSlim voiceoverSem,
             SemaphoreSlim sceneCreatorSem,
             SemaphoreSlim imageGenSem,
-            Action<GeminiTaskItem, string> logTask,
+            Action<GeminiTaskModel, string> logTask,
             CancellationToken ct)
         {
-            string topic = taskItem.Topic.Trim();
+            string topic = taskModel.Topic.Trim();
             if (string.IsNullOrWhiteSpace(topic))
             {
-                taskItem.Status = NodeStatus.Failed;
-                taskItem.CurrentStepInfo = "Lỗi: Chưa nhập topic";
-                logTask(taskItem, $"[ERROR] Task bị bỏ qua vì chưa có topic.");
+                taskModel.Status = NodeStatus.Failed;
+                taskModel.CurrentStepInfo = "Lỗi: Chưa nhập topic";
+                logTask(taskModel, $"[PIPELINE-ERROR] Task bị bỏ qua vì chưa có topic.");
                 return;
             }
 
-            taskItem.Status = NodeStatus.Running;
-            logTask(taskItem, $"[PIPELINE] 🚀 Task '{topic}' vào hàng đợi pipeline...");
+            taskModel.Status = NodeStatus.Running;
+            logTask(taskModel, $"[PIPELINE] 🚀 Task '{topic}' vào hàng đợi pipeline...");
 
-            // ── Chuẩn bị AutomationTask nội bộ ──
-            var internalTask = BuildInternalAutomationTask(taskItem);
+            // ── Build internal AutomationTask ──
+            var internalTask = BuildInternalAutomationTask(taskModel);
 
-            // Wrap log để forward vào GeminiTaskItem
-            Action<AutomationTask, string> internalLog = (t, msg) =>
-            {
-                logTask(taskItem, msg);
-                UpdateTaskItemFromLog(taskItem, msg);
-            };
+            // Forward log từ internal AutomationTask sang GeminiTaskModel
+            Action<AutomationTask, string> internalLog = (t, msg) => logTask(taskModel, msg);
 
             try
             {
@@ -133,13 +123,14 @@ namespace AssetAutomator.Services
                 await deepResearchSem.WaitAsync(ct);
                 try
                 {
-                    logTask(taskItem, $"[STAGE-A] 🔍 Bắt đầu Deep Research... (đang dùng {_maxDeepResearch - deepResearchSem.CurrentCount}/{_maxDeepResearch} slot)");
-                    taskItem.Step1Status = NodeStatus.Running;
-                    taskItem.CurrentStepInfo = "Stage A: Deep Research";
+                    int used = _maxDeepResearch - deepResearchSem.CurrentCount;
+                    logTask(taskModel, $"[STAGE-A] 🔍 Bắt đầu Deep Research... (slot {used}/{_maxDeepResearch})");
+                    taskModel.Step1Status = NodeStatus.Running;
+                    taskModel.CurrentStepInfo = $"Stage A: Deep Research ({used}/{_maxDeepResearch})";
 
-                    await RunStageDeepResearchAsync(internalTask, taskItem, internalLog);
-                    taskItem.Step1Status = NodeStatus.Success;
-                    logTask(taskItem, $"[STAGE-A] ✅ Deep Research hoàn thành. (slot còn trống: {deepResearchSem.CurrentCount})");
+                    await RunStageDeepResearchAsync(internalTask, taskModel, internalLog);
+                    taskModel.Step1Status = NodeStatus.Success;
+                    logTask(taskModel, $"[STAGE-A] ✅ Deep Research hoàn thành.");
                 }
                 finally
                 {
@@ -154,13 +145,14 @@ namespace AssetAutomator.Services
                 await voiceoverSem.WaitAsync(ct);
                 try
                 {
-                    logTask(taskItem, $"[STAGE-B] 🎙️ Bắt đầu Voiceover AI84... (đang dùng {_maxVoiceover - voiceoverSem.CurrentCount}/{_maxVoiceover} slot)");
-                    taskItem.Step2Status = NodeStatus.Running;
-                    taskItem.CurrentStepInfo = "Stage B: Voiceover AI84";
+                    int used = _maxVoiceover - voiceoverSem.CurrentCount;
+                    logTask(taskModel, $"[STAGE-B] 🎙️ Bắt đầu Voiceover AI84... (slot {used}/{_maxVoiceover})");
+                    taskModel.Step2Status = NodeStatus.Running;
+                    taskModel.CurrentStepInfo = $"Stage B: Voiceover AI84 ({used}/{_maxVoiceover})";
 
-                    await RunStageVoiceoverAsync(internalTask, taskItem, internalLog);
-                    taskItem.Step2Status = NodeStatus.Success;
-                    logTask(taskItem, $"[STAGE-B] ✅ Voiceover hoàn thành. (slot còn trống: {voiceoverSem.CurrentCount})");
+                    await RunStageVoiceoverAsync(internalTask, taskModel, internalLog);
+                    taskModel.Step2Status = NodeStatus.Success;
+                    logTask(taskModel, $"[STAGE-B] ✅ Voiceover hoàn thành.");
                 }
                 finally
                 {
@@ -175,13 +167,14 @@ namespace AssetAutomator.Services
                 await sceneCreatorSem.WaitAsync(ct);
                 try
                 {
-                    logTask(taskItem, $"[STAGE-C] 🎬 Bắt đầu Scene Creator... (đang dùng {_maxSceneCreator - sceneCreatorSem.CurrentCount}/{_maxSceneCreator} slot)");
-                    taskItem.Step3Status = NodeStatus.Running;
-                    taskItem.CurrentStepInfo = "Stage C: Scene Creator";
+                    int used = _maxSceneCreator - sceneCreatorSem.CurrentCount;
+                    logTask(taskModel, $"[STAGE-C] 🎬 Bắt đầu Scene Creator... (slot {used}/{_maxSceneCreator})");
+                    taskModel.Step3Status = NodeStatus.Running;
+                    taskModel.CurrentStepInfo = $"Stage C: Scene Creator ({used}/{_maxSceneCreator})";
 
-                    await RunStageSceneCreatorAsync(internalTask, taskItem, internalLog);
-                    taskItem.Step3Status = NodeStatus.Success;
-                    logTask(taskItem, $"[STAGE-C] ✅ Scene Creator hoàn thành. (slot còn trống: {sceneCreatorSem.CurrentCount})");
+                    await RunStageSceneCreatorAsync(internalTask, taskModel, internalLog);
+                    taskModel.Step3Status = NodeStatus.Success;
+                    logTask(taskModel, $"[STAGE-C] ✅ Scene Creator hoàn thành.");
                 }
                 finally
                 {
@@ -196,13 +189,13 @@ namespace AssetAutomator.Services
                 await imageGenSem.WaitAsync(ct);
                 try
                 {
-                    logTask(taskItem, $"[STAGE-D] 🖼️ Bắt đầu Image Generation... (đang dùng {_maxImageGen - imageGenSem.CurrentCount}/{_maxImageGen} slot)");
-                    taskItem.Step4Status = NodeStatus.Running;
-                    taskItem.CurrentStepInfo = "Stage D: Image Gen";
+                    logTask(taskModel, $"[STAGE-D] 🖼️ Bắt đầu Image Generation... (1/1 slot)");
+                    taskModel.Step4Status = NodeStatus.Running;
+                    taskModel.CurrentStepInfo = "Stage D: Image Gen (1/1)";
 
-                    await RunStageImageGenAsync(internalTask, taskItem, internalLog);
-                    taskItem.Step4Status = NodeStatus.Success;
-                    logTask(taskItem, $"[STAGE-D] ✅ Image Generation hoàn thành. (slot còn trống: {imageGenSem.CurrentCount})");
+                    await RunStageImageGenAsync(internalTask, taskModel, internalLog);
+                    taskModel.Step4Status = NodeStatus.Success;
+                    logTask(taskModel, $"[STAGE-D] ✅ Image Generation hoàn thành.");
                 }
                 finally
                 {
@@ -210,60 +203,64 @@ namespace AssetAutomator.Services
                 }
 
                 // ── Hoàn thành ──
-                taskItem.Status = NodeStatus.Success;
-                taskItem.CurrentStepInfo = "✔️ Hoàn thành 100%";
-                logTask(taskItem, $"[PIPELINE] 🎉 Task '{topic}' hoàn thành toàn bộ pipeline!");
+                taskModel.Status = NodeStatus.Success;
+                taskModel.CurrentStepInfo = "✔️ Hoàn thành 100%";
+                logTask(taskModel, $"[PIPELINE] 🎉 Task '{topic}' hoàn thành toàn bộ pipeline!");
             }
             catch (OperationCanceledException)
             {
-                taskItem.Status = NodeStatus.Failed;
-                taskItem.CurrentStepInfo = "⏹️ Đã hủy";
-                logTask(taskItem, $"[PIPELINE] ⏹️ Task '{topic}' bị hủy.");
+                taskModel.Status = NodeStatus.Failed;
+                taskModel.CurrentStepInfo = "⏹️ Đã hủy";
+                logTask(taskModel, $"[PIPELINE] ⏹️ Task '{topic}' bị hủy.");
             }
             catch (Exception ex)
             {
-                taskItem.Status = NodeStatus.Failed;
-                taskItem.CurrentStepInfo = $"❌ Lỗi: {ex.Message}";
-                logTask(taskItem, $"[PIPELINE] ❌ Task '{topic}' thất bại: {ex.Message}");
+                taskModel.Status = NodeStatus.Failed;
+                taskModel.CurrentStepInfo = $"❌ Lỗi: {ex.Message}";
+                logTask(taskModel, $"[PIPELINE-ERROR] ❌ Task '{topic}' thất bại: {ex.Message}");
             }
         }
 
         // ─────────────────────────────────────────────────────
-        //  Stage runners — gọi từng step riêng biệt
+        //  Stage runners
         // ─────────────────────────────────────────────────────
 
         private async Task RunStageDeepResearchAsync(
-            AutomationTask task, GeminiTaskItem taskItem,
+            AutomationTask task, GeminiTaskModel taskModel,
             Action<AutomationTask, string> log)
         {
             string outputDir = task.OutputDir;
             Directory.CreateDirectory(outputDir);
             string transcriptPath = Path.Combine(outputDir, "transcript.txt");
 
-            // Skip nếu đã có transcript
             if (File.Exists(transcriptPath) && new FileInfo(transcriptPath).Length > 50)
             {
-                log(task, $"[STAGE-A] ⏭️ transcript.txt đã tồn tại, bỏ qua Deep Research.");
+                log(task, $"[STAGE-A] ⏭️ transcript.txt đã tồn tại ({new FileInfo(transcriptPath).Length} bytes), bỏ qua Deep Research.");
                 task.Step2Status = "Completed";
                 return;
             }
 
+            string gemId = taskModel.SelectedScriptwriterGem?.Id ?? string.Empty;
+            string model = taskModel.SelectedModel ?? "gemini-3-flash";
+            string ext = taskModel.SelectedExtension ?? "None";
+            bool deepResearch = taskModel.EnableDeepResearch;
+
             var topicResearchStep = new GeminiTopicResearchStep(_geminiApiService);
             await topicResearchStep.ExecuteAsync(
-                topicOrUrl: taskItem.Topic.Trim(),
+                topicOrUrl: taskModel.Topic.Trim(),
                 outputDir: outputDir,
-                gemId: taskItem.SelectedScriptwriterGem?.id,
-                enableDeepResearch: taskItem.EnableDeepResearch,
+                gemId: string.IsNullOrWhiteSpace(gemId) ? null : gemId,
+                enableDeepResearch: deepResearch,
                 task: task,
                 logTask: log,
-                selectedModel: taskItem.SelectedModel ?? "gemini-3-flash",
-                selectedExtension: taskItem.SelectedExtension ?? "None",
+                selectedModel: model,
+                selectedExtension: ext,
                 existingSessionId: null
             );
         }
 
         private async Task RunStageVoiceoverAsync(
-            AutomationTask task, GeminiTaskItem taskItem,
+            AutomationTask task, GeminiTaskModel taskModel,
             Action<AutomationTask, string> log)
         {
             string outputDir = task.OutputDir;
@@ -277,7 +274,7 @@ namespace AssetAutomator.Services
 
             if (hasAudio && hasSrt)
             {
-                log(task, $"[STAGE-B] ⏭️ voiceover.mp3 và voiceover.srt đã tồn tại, bỏ qua Voiceover.");
+                log(task, $"[STAGE-B] ⏭️ voiceover.mp3/srt đã tồn tại, bỏ qua Voiceover.");
                 task.Step4Status = "Completed";
                 task.StepSrtStatus = "Completed";
                 return;
@@ -290,7 +287,7 @@ namespace AssetAutomator.Services
 
             var voiceoverStep = new VoiceoverGenerationStep();
             await voiceoverStep.ExecuteAsync(
-                voiceId: taskItem.VoiceId.Trim(),
+                voiceId: taskModel.VoiceId.Trim(),
                 outputDir: outputDir,
                 scriptText: scriptText,
                 videoId: task.VideoId,
@@ -301,7 +298,7 @@ namespace AssetAutomator.Services
         }
 
         private async Task RunStageSceneCreatorAsync(
-            AutomationTask task, GeminiTaskItem taskItem,
+            AutomationTask task, GeminiTaskModel taskModel,
             Action<AutomationTask, string> log)
         {
             string outputDir = task.OutputDir;
@@ -314,20 +311,24 @@ namespace AssetAutomator.Services
                 return;
             }
 
+            string gemId = taskModel.SelectedSceneCreatorGem?.Id ?? string.Empty;
+            string model = taskModel.SelectedModel ?? "gemini-3-flash";
+            string ext = taskModel.SelectedExtension ?? "None";
+
             var sceneBreakdownStep = new GeminiSceneBreakdownStep(_geminiApiService);
             await sceneBreakdownStep.ExecuteAsync(
                 outputDir: outputDir,
-                gemId: taskItem.SelectedSceneCreatorGem?.id,
+                gemId: string.IsNullOrWhiteSpace(gemId) ? null : gemId,
                 task: task,
                 logTask: log,
-                selectedModel: taskItem.SelectedModel ?? "gemini-3-flash",
-                selectedExtension: taskItem.SelectedExtension ?? "None",
+                selectedModel: model,
+                selectedExtension: ext,
                 sessionId: null
             );
         }
 
         private async Task RunStageImageGenAsync(
-            AutomationTask task, GeminiTaskItem taskItem,
+            AutomationTask task, GeminiTaskModel taskModel,
             Action<AutomationTask, string> log)
         {
             string outputDir = task.OutputDir;
@@ -339,7 +340,6 @@ namespace AssetAutomator.Services
                 return;
             }
 
-            // Kiểm tra xem tất cả ảnh đã có chưa
             if (AreAllSceneImagesGenerated(scenesPath, outputDir))
             {
                 log(task, $"[STAGE-D] ⏭️ Tất cả scene images đã tồn tại, bỏ qua Image Gen.");
@@ -350,12 +350,12 @@ namespace AssetAutomator.Services
             var imageBatchStep = new SceneImageBatchStep(new BatchImageGenService());
             await imageBatchStep.ExecuteAsync(
                 outputDir: outputDir,
-                providerKey: taskItem.SelectedImageProvider ?? "flow_local",
+                providerKey: taskModel.SelectedImageProvider ?? "flow_local",
                 task: task,
                 logTask: log
             );
 
-            // Nghỉ 15 giây để GPU/API hạ nhiệt trước khi task tiếp theo vào Stage D
+            // Nghỉ 15 giây để GPU/API hạ nhiệt
             log(task, $"[STAGE-D] 😴 Hoàn thành tạo ảnh. Nghỉ 15 giây để GPU hạ nhiệt...");
             await Task.Delay(15_000);
         }
@@ -364,17 +364,18 @@ namespace AssetAutomator.Services
         //  Helpers
         // ─────────────────────────────────────────────────────
 
-        private AutomationTask BuildInternalAutomationTask(GeminiTaskItem taskItem)
+        private AutomationTask BuildInternalAutomationTask(GeminiTaskModel taskModel)
         {
-            string targetLang = !string.IsNullOrWhiteSpace(taskItem.TargetLanguage)
-                ? taskItem.TargetLanguage
+            string targetLang = !string.IsNullOrWhiteSpace(taskModel.TargetLanguage)
+                ? taskModel.TargetLanguage
                 : "English - en";
 
             var task = new AutomationTask
             {
-                VideoUrl = taskItem.Topic.Trim(),
-                VoiceId = taskItem.VoiceId.Trim(),
+                VideoUrl = taskModel.Topic.Trim(),
+                VoiceId = taskModel.VoiceId.Trim(),
                 TargetLanguage = targetLang,
+                CharacterRef = taskModel.CharacterRef,
                 Step1 = false,
                 Step2 = true,   // Deep Research Transcript
                 Step3 = true,   // Scene Breakdown
@@ -383,11 +384,11 @@ namespace AssetAutomator.Services
                 StepSrt = true
             };
 
-            if (string.IsNullOrEmpty(taskItem.OutputFolderName))
+            if (string.IsNullOrEmpty(taskModel.OutputFolderName))
             {
-                taskItem.OutputFolderName = YoutubeHelper.ToSafeTopicSlug(taskItem.Topic.Trim());
+                taskModel.OutputFolderName = YoutubeHelper.ToSafeTopicSlug(taskModel.Topic.Trim());
             }
-            task.OutputFolderOverride = taskItem.OutputFolderName;
+            task.OutputFolderOverride = taskModel.OutputFolderName;
 
             return task;
         }
@@ -431,41 +432,6 @@ namespace AssetAutomator.Services
                 return false;
             }
         }
-
-        private void UpdateTaskItemFromLog(GeminiTaskItem taskItem, string msg)
-        {
-            // Map log messages to step status updates
-            if (msg.Contains("DEEP-RESEARCH-POLL", StringComparison.OrdinalIgnoreCase))
-            {
-                taskItem.Step1Status = NodeStatus.Running;
-                taskItem.CurrentStepInfo = "Stage A: Deep Research (Đang nghiên cứu...)";
-            }
-            else if (msg.Contains("STAGE-A", StringComparison.OrdinalIgnoreCase) ||
-                     msg.Contains("STEP 1", StringComparison.OrdinalIgnoreCase) ||
-                     msg.Contains("STEP 2", StringComparison.OrdinalIgnoreCase))
-            {
-                taskItem.Step1Status = msg.Contains("✅") ? NodeStatus.Success : NodeStatus.Running;
-            }
-            else if (msg.Contains("STAGE-B", StringComparison.OrdinalIgnoreCase) ||
-                     msg.Contains("STEP 3", StringComparison.OrdinalIgnoreCase) ||
-                     msg.Contains("VOICEOVER", StringComparison.OrdinalIgnoreCase))
-            {
-                taskItem.Step2Status = msg.Contains("✅") ? NodeStatus.Success : NodeStatus.Running;
-            }
-            else if (msg.Contains("STAGE-C", StringComparison.OrdinalIgnoreCase) ||
-                     msg.Contains("STEP 4", StringComparison.OrdinalIgnoreCase) ||
-                     msg.Contains("Scene Creator", StringComparison.OrdinalIgnoreCase))
-            {
-                taskItem.Step3Status = msg.Contains("✅") ? NodeStatus.Success : NodeStatus.Running;
-            }
-            else if (msg.Contains("STAGE-D", StringComparison.OrdinalIgnoreCase) ||
-                     msg.Contains("STEP 5", StringComparison.OrdinalIgnoreCase) ||
-                     msg.Contains("Image Generation", StringComparison.OrdinalIgnoreCase) ||
-                     msg.Contains("Batch Image", StringComparison.OrdinalIgnoreCase))
-            {
-                taskItem.Step4Status = msg.Contains("✅") ? NodeStatus.Success : NodeStatus.Running;
-            }
-        }
     }
 
     /// <summary>
@@ -481,61 +447,6 @@ namespace AssetAutomator.Services
         public override string ToString()
         {
             return $"✅ {SuccessCount}/{TotalTasks} thành công, ❌ {FailedCount} thất bại — {Elapsed.TotalMinutes:F1} phút";
-        }
-    }
-
-    /// <summary>
-    /// Wrapper cho một Gemini task item đi qua pipeline.
-    /// Tách biệt với GeminiTaskModel để pipeline không phụ thuộc vào UI model.
-    /// </summary>
-    public class GeminiTaskItem
-    {
-        public string Id { get; set; } = Guid.NewGuid().ToString();
-        public string Topic { get; set; } = string.Empty;
-        public string VoiceId { get; set; } = string.Empty;
-        public string? TargetLanguage { get; set; }
-        public string? OutputFolderName { get; set; }
-        public string? SelectedModel { get; set; }
-        public string? SelectedExtension { get; set; }
-        public string? SelectedImageProvider { get; set; }
-        public bool EnableDeepResearch { get; set; }
-        public GemModel? SelectedScriptwriterGem { get; set; }
-        public GemModel? SelectedSceneCreatorGem { get; set; }
-
-        // Trạng thái
-        public NodeStatus Status { get; set; } = NodeStatus.Idle;
-        public string CurrentStepInfo { get; set; } = "Đang chờ...";
-
-        public NodeStatus Step1Status { get; set; } = NodeStatus.Idle;
-        public NodeStatus Step2Status { get; set; } = NodeStatus.Idle;
-        public NodeStatus Step3Status { get; set; } = NodeStatus.Idle;
-        public NodeStatus Step4Status { get; set; } = NodeStatus.Idle;
-
-        public string Step1Logs { get; set; } = string.Empty;
-        public string Step2Logs { get; set; } = string.Empty;
-        public string Step3Logs { get; set; } = string.Empty;
-        public string Step4Logs { get; set; } = string.Empty;
-
-        /// <summary>
-        /// Tạo GeminiTaskItem từ GeminiTaskModel (UI model).
-        /// </summary>
-        public static GeminiTaskItem FromGeminiTaskModel(GeminiTaskModel model)
-        {
-            return new GeminiTaskItem
-            {
-                Id = model.Id,
-                Topic = model.Topic,
-                VoiceId = model.VoiceId,
-                TargetLanguage = model.TargetLanguage,
-                OutputFolderName = model.OutputFolderName,
-                SelectedModel = model.SelectedModel,
-                SelectedExtension = model.SelectedExtension,
-                SelectedImageProvider = model.SelectedImageProvider,
-                EnableDeepResearch = model.EnableDeepResearch,
-                SelectedScriptwriterGem = GeminiApiService.ConvertFromGemOption(model.SelectedScriptwriterGem),
-                SelectedSceneCreatorGem = GeminiApiService.ConvertFromGemOption(model.SelectedSceneCreatorGem),
-                Status = model.Status
-            };
         }
     }
 }

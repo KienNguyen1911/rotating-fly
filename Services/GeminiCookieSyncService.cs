@@ -271,6 +271,7 @@ namespace AssetAutomator
         /// Automatically scans system Chrome and app Chrome profile directories, creates a minimal profile clone,
         /// and uses Playwright to extract Gemini session cookies.
         /// Optimized: only copies essential cookie files (not entire profile), skips unnecessary page navigation.
+        /// Tries headless first, then falls back to headed mode for app profiles if headless fails.
         /// </summary>
         public async Task<bool> AutoSyncFromSystemChromeAsync()
         {
@@ -312,12 +313,34 @@ namespace AssetAutomator
                 return false;
             }
 
+            // ── Phase 1: Thử headless mode (nhanh, không popup) ──
+            bool success = await TryExtractCookiesFromProfilesAsync(candidateDirs, headless: true);
+            if (success) return true;
+
+            // ── Phase 2: Fallback headed mode cho app profiles (có cửa sổ hiển thị) ──
+            _log("[COOKIE-SYNC] 🔄 Headless không tìm thấy cookie. Thử lại với chế độ hiển thị (headed)...");
+            var appProfileDirs = candidateDirs
+                .Where(d => d.StartsWith(appProfilesDir, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            if (appProfileDirs.Count > 0)
+            {
+                success = await TryExtractCookiesFromProfilesAsync(appProfileDirs, headless: false);
+                if (success) return true;
+            }
+
+            _log("[COOKIE-SYNC] ⚠️ Chưa tìm thấy phiên đăng nhập Gemini sẵn có trong các profile Chrome.");
+            return false;
+        }
+
+        private async Task<bool> TryExtractCookiesFromProfilesAsync(List<string> candidateDirs, bool headless)
+        {
             using var playwright = await Playwright.CreateAsync();
             var browserService = new BrowserService(_log);
 
             foreach (var sourceProfilePath in candidateDirs)
             {
-                _log($"[COOKIE-SYNC] 🚀 Đang đọc Cookies từ Profile: {Path.GetFileName(sourceProfilePath)}...");
+                _log($"[COOKIE-SYNC] 🚀 Đang đọc Cookies từ Profile: {Path.GetFileName(sourceProfilePath)} (headless={headless})...");
 
                 string tempProfilePath = Path.Combine(Path.GetTempPath(), "GeminiCookieSync_" + Guid.NewGuid().ToString("N"));
                 try
@@ -325,7 +348,7 @@ namespace AssetAutomator
                     // OPTIMIZED: Only copy essential cookie-related files (~1-5MB), not entire profile (~200-500MB+)
                     browserService.CopyMinimalProfileForCookies(sourceProfilePath, tempProfilePath);
 
-                    var launchArgs = new[]
+                    var launchArgs = new List<string>
                     {
                         "--disable-blink-features=AutomationControlled",
                         "--no-sandbox",
@@ -339,7 +362,7 @@ namespace AssetAutomator
                         tempProfilePath,
                         new BrowserTypeLaunchPersistentContextOptions
                         {
-                            Headless = true,
+                            Headless = headless,
                             Channel = "chrome",
                             Args = launchArgs
                         });

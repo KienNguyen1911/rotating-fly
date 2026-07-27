@@ -1499,6 +1499,7 @@
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/> <!-- Action Toolbar -->
                         <RowDefinition Height="*"/>    <!-- DataGrid -->
+                        <RowDefinition Height="Auto"/> <!-- Python Server Log Panel -->
                         <RowDefinition Height="Auto"/> <!-- Status Bar -->
                     </Grid.RowDefinitions>
 
@@ -1816,8 +1817,39 @@
                         </Grid>
                     </Border>
 
+                    <!-- Python Server Log Panel (Collapsible) -->
+                    <Border Grid.Row="2" Style="{StaticResource Card}" Margin="0,8,0,0"
+                            Background="{DynamicResource CanvasBrush}" Padding="15"
+                            BorderBrush="{DynamicResource HairlineBrush}" BorderThickness="1">
+                        <StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                <TextBlock Text="🐍 Python Server Logs" FontSize="12" FontWeight="SemiBold"
+                                           Foreground="{DynamicResource InkBrush}" VerticalAlignment="Center"/>
+                                <TextBlock x:Name="TxtPythonServerStatus" Text="⚪ Unknown" FontSize="11"
+                                           Foreground="{DynamicResource SubtleBrush}" Margin="12,0,0,0" VerticalAlignment="Center"/>
+                                <Button Content="🗑️ Clear" Click="BtnClearPythonServerLog_Click" Height="22" Padding="8,0"
+                                        Style="{StaticResource SecondaryButton}" FontSize="10" Margin="16,0,0,0"
+                                        VerticalAlignment="Center"/>
+                            </StackPanel>
+                            <TextBox x:Name="TxtPythonServerLog"
+                                     IsReadOnly="True"
+                                     TextWrapping="Wrap"
+                                     AcceptsReturn="True"
+                                     VerticalScrollBarVisibility="Auto"
+                                     HorizontalScrollBarVisibility="Auto"
+                                     FontFamily="Consolas"
+                                     FontSize="11"
+                                     Background="{DynamicResource CanvasBrush}"
+                                     Foreground="{DynamicResource InkBrush}"
+                                     BorderThickness="0"
+                                     MinHeight="120"
+                                     MaxHeight="280"
+                                     SpellCheck.IsEnabled="False"/>
+                        </StackPanel>
+                    </Border>
+
                     <!-- Status Bar for Gemini AI Creator -->
-                    <Border Grid.Row="2" Background="{DynamicResource SurfaceCardBrush}" CornerRadius="6" Padding="10,8" Margin="0,8,0,0"
+                    <Border Grid.Row="3" Background="{DynamicResource SurfaceCardBrush}" CornerRadius="6" Padding="10,8" Margin="0,8,0,0"
                             BorderBrush="{DynamicResource HairlineBrush}" BorderThickness="1">
                         <Grid>
                             <Grid.ColumnDefinitions>

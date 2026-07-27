@@ -14,13 +14,20 @@ using AssetAutomator.Helpers;
 using AssetAutomator.Models;
 using AssetAutomator.Models.Nodes;
 using AssetAutomator.Services;
+using AssetAutomator.Services.Logging;
 
 namespace AssetAutomator
 {
     public partial class MainWindow : Window
     {
+        // ── DI-injected services ──
+        private ILogService? _logService;
         private GeminiApiService? _geminiApiService;
         private GeminiVideoPipelineService? _geminiVideoPipelineService;
+        private PipelineOrchestrator? _pipelineOrchestrator;
+        private GeminiCreatorService? _geminiCreatorService;
+        private PythonServerManager? _pythonServerManager;
+
         private bool _isGeminiOperationBusy;
         private System.Windows.Threading.DispatcherTimer? _geminiStatusTimer;
 
@@ -31,11 +38,42 @@ namespace AssetAutomator
         public ObservableCollection<string> AvailableAiModels { get; } = new() { "3.6 Flash", "3.5 Flash-Lite", "3.1 Pro" };
         public ObservableCollection<string> AvailableExtensions { get; } = new() { "Tắt (Standard)", "Bật (Tư duy mở rộng)" };
 
+        // ─────────────────────────────────────────────────────
+        //  Service Initialization (DI)
+        // ─────────────────────────────────────────────────────
+
+        /// <summary>
+        /// Initializes all Gemini-related services with proper dependency injection.
+        /// Called lazily on first use. Thread-safe via _geminiApiService null check.
+        /// </summary>
         private void InitializeGeminiCreatorServices()
         {
-            _geminiApiService ??= new GeminiApiService();
+            if (_logService != null) return; // Already initialized
 
-            // Lazy initialize step services for Gemini Pipeline
+            // 1. Centralized logging (shared across all services)
+            _logService = new LogService();
+
+            // 2. Subscribe to log entries for UI updates
+            _logService.OnLogEntry += entry =>
+            {
+                Dispatcher.Invoke(() =>
+                {
+                    // Route to main log and Python server log panel
+                    AppendToMainLog(entry);
+                    AppendToPythonServerLog(entry);
+                });
+            };
+
+            // 3. Python server manager (uses log service internally)
+            _pythonServerManager = new PythonServerManager(_logService);
+
+            // 4. Gemini API service
+            _geminiApiService = new GeminiApiService();
+
+            // 5. Gemini Creator business logic service
+            _geminiCreatorService = new GeminiCreatorService(_logService, _geminiApiService, _pythonServerManager);
+
+            // 6. Lazy-initialize step services for Gemini Pipeline (single-task)
             if (_geminiVideoPipelineService == null)
             {
                 var batchImageGenService = new BatchImageGenService();
@@ -52,137 +90,124 @@ namespace AssetAutomator
                 );
             }
 
-            // Add default initial task if empty
+            // 7. Lazy-initialize PipelineOrchestrator (multi-task batch)
+            _pipelineOrchestrator ??= new PipelineOrchestrator(
+                geminiApiService: _geminiApiService,
+                maxDeepResearch: 2,
+                maxVoiceover: 3,
+                maxSceneCreator: 4,
+                maxImageGen: 1
+            );
+
+            // 8. Add default initial task if empty
             if (GeminiTasks.Count == 0)
             {
-                GeminiTasks.Add(CreateDefaultGeminiTask());
+                GeminiTasks.Add(_geminiCreatorService!.CreateDefaultTask(AvailableScriptwriterGems, AvailableSceneCreatorGems));
             }
 
-            // Load gems ONCE on initial setup if not yet loaded
+            // 9. Load gems ONCE on initial setup if not yet loaded
             if (AvailableScriptwriterGems.Count == 0)
             {
                 _ = LoadGeminiGemsToComboboxesAsync();
             }
+
+            _logService.Info(LogCategory.GeminiCreator, "Gemini Creator services initialized successfully.");
         }
 
-        private GeminiTaskModel CreateDefaultGeminiTask(string? topic = null)
+        // ─────────────────────────────────────────────────────
+        //  Log Routing (ILogService → UI)
+        // ─────────────────────────────────────────────────────
+
+        /// <summary>
+        /// Routes a structured log entry to the main application log TextBox.
+        /// </summary>
+        private void AppendToMainLog(LogEntry entry)
         {
-            var defaultScriptwriter = AvailableScriptwriterGems.FirstOrDefault();
-            var defaultSceneCreator = AvailableSceneCreatorGems.FirstOrDefault();
-
-            return new GeminiTaskModel
+            // Route only relevant categories to main log to avoid noise
+            if (entry.Category is LogCategory.GeminiCreator or LogCategory.GeminiApi
+                or LogCategory.Pipeline or LogCategory.CookieSync
+                or LogCategory.ImageGen or LogCategory.Voiceover)
             {
-                Topic = topic ?? "",
-                SelectedScriptwriterGem = defaultScriptwriter,
-                SelectedSceneCreatorGem = defaultSceneCreator,
-                EnableDeepResearch = true,
-                VoiceId = "",
-                SelectedImageProvider = "flow_local",
-                Status = NodeStatus.Idle,
-                CurrentStepInfo = "Sẵn sàng"
-            };
+                Log($"[{entry.CategoryLabel.Trim('[', ']')}] {entry.LevelIcon} {entry.Message}");
+            }
         }
+
+        /// <summary>
+        /// Routes Python server log entries to the dedicated Python server log panel.
+        /// </summary>
+        private void AppendToPythonServerLog(LogEntry entry)
+        {
+            if (entry.Category != LogCategory.PythonServer) return;
+
+            Dispatcher.Invoke(() =>
+            {
+                if (TxtPythonServerLog == null) return;
+
+                string line = $"{entry.FormattedTimestamp} {entry.LevelIcon} {entry.Message}";
+                TxtPythonServerLog.AppendText(line + Environment.NewLine);
+                TxtPythonServerLog.ScrollToEnd();
+
+                // Update the server status indicator
+                UpdatePythonServerStatusIndicator(entry);
+            });
+        }
+
+        /// <summary>
+        /// Updates the Python server status indicator based on log entries.
+        /// </summary>
+        private void UpdatePythonServerStatusIndicator(LogEntry entry)
+        {
+            if (entry.Message.Contains("successfully launched", StringComparison.OrdinalIgnoreCase) ||
+                entry.Message.Contains("Health check OK", StringComparison.OrdinalIgnoreCase))
+            {
+                if (TxtPythonServerStatus != null)
+                {
+                    TxtPythonServerStatus.Text = "✅ Running";
+                    TxtPythonServerStatus.Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#10B981"));
+                }
+            }
+            else if (entry.Level == LogLevel.Error &&
+                     (entry.Message.Contains("exited prematurely", StringComparison.OrdinalIgnoreCase) ||
+                      entry.Message.Contains("not found", StringComparison.OrdinalIgnoreCase)))
+            {
+                if (TxtPythonServerStatus != null)
+                {
+                    TxtPythonServerStatus.Text = "❌ Crashed";
+                    TxtPythonServerStatus.Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#EF4444"));
+                }
+            }
+            else if (entry.Message.Contains("Server successfully launched", StringComparison.OrdinalIgnoreCase) ||
+                     entry.Message.Contains("responding", StringComparison.OrdinalIgnoreCase))
+            {
+                if (TxtPythonServerStatus != null)
+                {
+                    TxtPythonServerStatus.Text = "✅ Running";
+                    TxtPythonServerStatus.Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#10B981"));
+                }
+            }
+        }
+
+        // ─────────────────────────────────────────────────────
+        //  Gem Loading
+        // ─────────────────────────────────────────────────────
 
         private async Task LoadGeminiGemsToComboboxesAsync()
         {
             try
             {
                 _geminiApiService ??= new GeminiApiService();
-                var gems = await _geminiApiService.GetGemsAsync(includeHidden: true);
+
+                await _geminiCreatorService!.LoadGeminiGemsAsync(
+                    AvailableScriptwriterGems,
+                    AvailableSceneCreatorGems,
+                    GeminiTasks,
+                    onStatus: msg => Dispatcher.Invoke(() => SetGeminiStatus("🔄", msg, "#3B82F6"))
+                );
 
                 Dispatcher.Invoke(() =>
                 {
-                    // Snapshot existing selected Gem IDs for all tasks
-                    var existingSelections = GeminiTasks.Select(t => new
-                    {
-                        Task = t,
-                        ScriptwriterId = t.SelectedScriptwriterGem?.Id ?? string.Empty,
-                        SceneCreatorId = t.SelectedSceneCreatorGem?.Id ?? string.Empty
-                    }).ToList();
-
-                    // Ensure default options exist without clearing the collections
-                    var defaultScriptwriterGem = AvailableScriptwriterGems.FirstOrDefault(g => g.Id == string.Empty);
-                    if (defaultScriptwriterGem == null)
-                    {
-                        defaultScriptwriterGem = new GemOptionItem { Id = string.Empty, Name = "-- Gemini Mặc Định --" };
-                        AvailableScriptwriterGems.Insert(0, defaultScriptwriterGem);
-                    }
-
-                    var defaultSceneCreatorGem = AvailableSceneCreatorGems.FirstOrDefault(g => g.Id == string.Empty);
-                    if (defaultSceneCreatorGem == null)
-                    {
-                        defaultSceneCreatorGem = new GemOptionItem { Id = string.Empty, Name = "-- Gemini Mặc Định --" };
-                        AvailableSceneCreatorGems.Insert(0, defaultSceneCreatorGem);
-                    }
-
-                    GemOptionItem? configScriptwriter = defaultScriptwriterGem;
-                    GemOptionItem? configSceneCreator = defaultSceneCreatorGem;
-
-                    // Filter only Custom Gems (predefined == false)
-                    var customGems = gems.Where(g => !g.predefined).ToList();
-
-                    foreach (var gem in customGems)
-                    {
-                        var existingScriptwriter = AvailableScriptwriterGems.FirstOrDefault(g => g.Id.Equals(gem.id, StringComparison.OrdinalIgnoreCase));
-                        if (existingScriptwriter == null)
-                        {
-                            existingScriptwriter = new GemOptionItem { Id = gem.id, Name = gem.name };
-                            AvailableScriptwriterGems.Add(existingScriptwriter);
-                        }
-                        else
-                        {
-                            existingScriptwriter.Name = gem.name;
-                        }
-
-                        var existingSceneCreator = AvailableSceneCreatorGems.FirstOrDefault(g => g.Id.Equals(gem.id, StringComparison.OrdinalIgnoreCase));
-                        if (existingSceneCreator == null)
-                        {
-                            existingSceneCreator = new GemOptionItem { Id = gem.id, Name = gem.name };
-                            AvailableSceneCreatorGems.Add(existingSceneCreator);
-                        }
-                        else
-                        {
-                            existingSceneCreator.Name = gem.name;
-                        }
-
-                        if (gem.id.Equals(ConfigService.CurrentSettings.ScriptwriterGemId, StringComparison.OrdinalIgnoreCase) ||
-                            (configScriptwriter == defaultScriptwriterGem && (gem.name.Contains("psychology", StringComparison.OrdinalIgnoreCase) || gem.name.Contains("bedtime", StringComparison.OrdinalIgnoreCase))))
-                        {
-                            configScriptwriter = existingScriptwriter;
-                        }
-                        if (gem.id.Equals(ConfigService.CurrentSettings.SceneCreatorGemId, StringComparison.OrdinalIgnoreCase) ||
-                            (configSceneCreator == defaultSceneCreatorGem && (gem.name.Contains("scriptor", StringComparison.OrdinalIgnoreCase) || gem.name.Contains("rewrite", StringComparison.OrdinalIgnoreCase) || gem.name.Contains("scene", StringComparison.OrdinalIgnoreCase))))
-                        {
-                            configSceneCreator = existingSceneCreator;
-                        }
-                    }
-
-                    // Restore / preserve selection for existing tasks based on preserved IDs
-                    foreach (var sel in existingSelections)
-                    {
-                        var matchScriptwriter = AvailableScriptwriterGems.FirstOrDefault(g => g.Id.Equals(sel.ScriptwriterId, StringComparison.OrdinalIgnoreCase));
-                        var matchSceneCreator = AvailableSceneCreatorGems.FirstOrDefault(g => g.Id.Equals(sel.SceneCreatorId, StringComparison.OrdinalIgnoreCase));
-
-                        if (matchScriptwriter != null)
-                        {
-                            sel.Task.SelectedScriptwriterGem = matchScriptwriter;
-                        }
-                        else if (sel.Task.SelectedScriptwriterGem == null)
-                        {
-                            sel.Task.SelectedScriptwriterGem = configScriptwriter;
-                        }
-
-                        if (matchSceneCreator != null)
-                        {
-                            sel.Task.SelectedSceneCreatorGem = matchSceneCreator;
-                        }
-                        else if (sel.Task.SelectedSceneCreatorGem == null)
-                        {
-                            sel.Task.SelectedSceneCreatorGem = configSceneCreator;
-                        }
-                    }
-
-                    Log($"[SUCCESS] Đã làm mới danh sách Gems! Đã nạp {customGems.Count} Custom Gems.");
+                    Log($"[SUCCESS] Đã làm mới danh sách Gems!");
+                    SetGeminiStatus("✅", "Tải danh sách Gems thành công!", "#10B981");
                 });
             }
             catch (Exception ex)
@@ -190,6 +215,7 @@ namespace AssetAutomator
                 Dispatcher.Invoke(() =>
                 {
                     Log($"[ERROR] Không thể tải danh sách Gemini Gems: {ex.Message}");
+                    SetGeminiStatus("❌", $"Lỗi tải Gems: {ex.Message}", "#EF4444");
                 });
             }
         }
@@ -204,6 +230,7 @@ namespace AssetAutomator
 
             _isGeminiOperationBusy = true;
             SetButtonLoading(BtnRefreshGems, "⏳ Đang tải danh sách Gems...");
+            InitializeGeminiCreatorServices();
 
             try
             {
@@ -249,137 +276,35 @@ namespace AssetAutomator
 
             _isGeminiOperationBusy = true;
             SetButtonLoading(BtnImportCookies, "⏳ Đang nạp Cookies...");
-
-            var syncService = new GeminiCookieSyncService(msg => Log(msg));
-            _geminiApiService ??= new GeminiApiService();
-
-            bool cookieImportedSuccess = false;
+            InitializeGeminiCreatorServices();
 
             try
             {
                 if (choice == MessageBoxResult.Yes)
                 {
+                    // ── Auto-sync from system Chrome profiles ──
                     Log("[COOKIE-IMPORT] ⏳ Đang tự động quét & trích xuất Cookies Gemini từ các Chrome Profiles...");
                     SetGeminiStatus("🔍", "Đang quét Chrome Profiles để tìm Cookies Gemini...", "#3B82F6");
 
-                    bool ok = await syncService.AutoSyncFromSystemChromeAsync();
+                    var (success, msg) = await _geminiCreatorService!.ImportCookiesAsync(
+                        GeminiCreatorService.CookieImportMode.Auto,
+                        onStatus: status => Dispatcher.Invoke(() => SetGeminiStatus("🔍", status, "#3B82F6"))
+                    );
 
-                    if (ok)
+                    if (success)
                     {
-                        cookieImportedSuccess = true;
+                        await HandleCookieImportSuccessAsync(msg);
                     }
                     else
                     {
-                        // Fallback: Open interactive browser for user to login if no active cookies found
-                        var confirmLogin = MessageBox.Show(
-                            "Chưa tìm thấy phiên đăng nhập Gemini sẵn có trong các Profile Chrome.\n\n" +
-                            "Bạn có muốn mở Chrome để đăng nhập https://gemini.google.com ngay bây giờ không?",
-                            "Yêu cầu Đăng nhập Gemini",
-                            MessageBoxButton.YesNo,
-                            MessageBoxImage.Information
-                        );
-
-                        if (confirmLogin == MessageBoxResult.Yes)
-                        {
-                            Log("[COOKIE-IMPORT] 🌐 Đang mở Chrome để bạn hoàn tất đăng nhập Gemini...");
-                            SetGeminiStatus("🌐", "Đang mở Chrome — vui lòng đăng nhập Gemini trên trình duyệt...", "#3B82F6");
-
-                            using var playwright = await Microsoft.Playwright.Playwright.CreateAsync();
-                            string tempProfilePath = Path.Combine(Path.GetTempPath(), "GeminiManualLogin_" + Guid.NewGuid().ToString("N"));
-                            try
-                            {
-                                var context = await playwright.Chromium.LaunchPersistentContextAsync(
-                                    tempProfilePath,
-                                    new Microsoft.Playwright.BrowserTypeLaunchPersistentContextOptions
-                                    {
-                                        Headless = false,
-                                        Channel = "chrome",
-                                        Args = new[] { "--disable-blink-features=AutomationControlled", "--no-sandbox" }
-                                    });
-
-                                var page = await context.NewPageAsync();
-                                await page.GotoAsync("https://gemini.google.com");
-
-                                MessageBox.Show(
-                                    "Vui lòng hoàn tất đăng nhập Google trên cửa sổ Chrome vừa mở.\n\n" +
-                                    "Sau khi đăng nhập thành công và nhìn thấy trang chính Gemini, bấm OK tại bảng này để lưu Cookies.",
-                                    "Xác nhận đăng nhập",
-                                    MessageBoxButton.OK,
-                                    MessageBoxImage.Information
-                                );
-
-                                SetGeminiStatus("💾", "Đang lưu Cookies từ trình duyệt...", "#3B82F6");
-
-                                cookieImportedSuccess = await syncService.SyncCookiesFromBrowserContextAsync(context);
-                                await context.CloseAsync();
-                            }
-                            catch (Exception ex)
-                            {
-                                Log($"[COOKIE-IMPORT] ❌ Lỗi khi mở Chrome đăng nhập: {ex.Message}");
-                            }
-                            finally
-                            {
-                                if (Directory.Exists(tempProfilePath))
-                                {
-                                    try { Directory.Delete(tempProfilePath, true); } catch { }
-                                }
-                            }
-                        }
+                        // Fallback: Open interactive browser for user to login
+                        await HandleCookieImportFallbackAsync(msg);
                     }
                 }
                 else if (choice == MessageBoxResult.No)
                 {
-                    var openFileDialog = new Microsoft.Win32.OpenFileDialog
-                    {
-                        Filter = "JSON Files (*.json)|*.json|All Files (*.*)|*.*",
-                        Title = "Chọn file cookies.json Gemini"
-                    };
-
-                    if (openFileDialog.ShowDialog() == true)
-                    {
-                        SetGeminiStatus("📂", "Đang đọc file cookies.json...", "#3B82F6");
-
-                        try
-                        {
-                            string content = await File.ReadAllTextAsync(openFileDialog.FileName);
-                            cookieImportedSuccess = await syncService.SaveCustomCookiesJsonAsync(content);
-                        }
-                        catch (Exception ex)
-                        {
-                            Log($"[COOKIE-IMPORT] ❌ Lỗi khi đọc file cookies: {ex.Message}");
-                            MessageBox.Show($"Lỗi khi đọc file cookies: {ex.Message}", "Lỗi", MessageBoxButton.OK, MessageBoxImage.Error);
-                        }
-                    }
-                }
-
-                if (cookieImportedSuccess)
-                {
-                    Log("[COOKIE-IMPORT] 🔄 Đang tự động khởi động lại module Gemini Python Server (Modules/Gemini-API-2.0.0)...");
-                    SetGeminiStatus("🔄", "Đang khởi động lại Gemini Python Server...", "#3B82F6");
-
-                    bool restarted = await Helpers.PythonServerManager.RestartServerAsync();
-
-                    if (restarted)
-                    {
-                        Log("[COOKIE-IMPORT] 🎉 Module Gemini API Server đã được khởi động lại thành công với Cookie mới!");
-                        SetGeminiStatus("✅", "Cookies đã được nạp & Server đã khởi động lại!", "#10B981");
-                        ShowGeminiNotification("🔑 Nạp Cookies Gemini thành công! Server đã sẵn sàng.", "#10B981");
-
-                        // Reload available gems list
-                        SetGeminiStatus("🔄", "Đang làm mới danh sách Gems...", "#3B82F6");
-                        await LoadGeminiGemsToComboboxesAsync();
-                        SetGeminiStatus("✅", "Tất cả đã sẵn sàng! Cookies + Gems đã được cập nhật.", "#10B981");
-                    }
-                    else
-                    {
-                        Log("[COOKIE-IMPORT] ⚠️ Đã lưu cookies.json nhưng không thể tự động khởi động lại Python Server.");
-                        SetGeminiStatus("⚠️", "Đã lưu cookies nhưng không khởi động lại được Server.", "#F59E0B");
-                        ShowGeminiNotification("⚠️ Đã lưu cookies.json. Vui lòng kiểm tra lại Python Server.", "#F59E0B");
-                    }
-                }
-                else
-                {
-                    SetGeminiStatus("ℹ️", "Chưa có Cookies nào được nạp.", "#6B7280");
+                    // ── Manual file import ──
+                    await HandleManualCookieImportAsync();
                 }
             }
             catch (Exception ex)
@@ -391,6 +316,111 @@ namespace AssetAutomator
             {
                 ResetButtonNormal(BtnImportCookies, "🔑 Nạp Cookies Gemini");
                 _isGeminiOperationBusy = false;
+            }
+        }
+
+        /// <summary>
+        /// Handles successful cookie import — restarts server & reloads gems.
+        /// </summary>
+        private async Task HandleCookieImportSuccessAsync(string msg)
+        {
+            Log($"[COOKIE-IMPORT] 🎉 {msg}");
+            SetGeminiStatus("✅", "Cookies đã được nạp & Server đã khởi động lại!", "#10B981");
+            ShowGeminiNotification("🔑 Nạp Cookies Gemini thành công! Server đã sẵn sàng.", "#10B981");
+
+            // Reload gems list
+            SetGeminiStatus("🔄", "Đang làm mới danh sách Gems...", "#3B82F6");
+            await LoadGeminiGemsToComboboxesAsync();
+            SetGeminiStatus("✅", "Tất cả đã sẵn sàng! Cookies + Gems đã được cập nhật.", "#10B981");
+        }
+
+        /// <summary>
+        /// Fallback when auto cookie detection fails — offers Playwright interactive login.
+        /// </summary>
+        private async Task HandleCookieImportFallbackAsync(string msg)
+        {
+            Log($"[COOKIE-IMPORT] ⚠️ {msg}");
+
+            var confirmLogin = MessageBox.Show(
+                "Chưa tìm thấy phiên đăng nhập Gemini sẵn có trong các Profile Chrome.\n\n" +
+                "Bạn có muốn mở Chrome để đăng nhập https://gemini.google.com ngay bây giờ không?",
+                "Yêu cầu Đăng nhập Gemini",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Information
+            );
+
+            if (confirmLogin != MessageBoxResult.Yes) return;
+
+            Log("[COOKIE-IMPORT] 🌐 Đang mở Chrome để bạn hoàn tất đăng nhập Gemini...");
+            SetGeminiStatus("🌐", "Đang mở Chrome — vui lòng đăng nhập Gemini trên trình duyệt...", "#3B82F6");
+
+            var (loginOk, loginMsg, profilePath) = await _geminiCreatorService!.LoginViaPlaywrightAsync(
+                onStatus: status => Dispatcher.Invoke(() => SetGeminiStatus("🌐", status, "#3B82F6"))
+            );
+
+            if (loginOk)
+            {
+                if (profilePath != null)
+                    Log($"[COOKIE-IMPORT] 💾 Đã lưu Chrome profile Gemini vào: {profilePath}");
+
+                Dispatcher.Invoke(() => LoadProfiles());
+
+                var (restartOk, restartMsg) = await _pythonServerManager!.RestartServerAsync();
+                if (restartOk)
+                {
+                    await HandleCookieImportSuccessAsync(loginMsg);
+                }
+                else
+                {
+                    SetGeminiStatus("⚠️", $"Cookies saved but server restart failed: {restartMsg}", "#F59E0B");
+                    ShowGeminiNotification("⚠️ Đã lưu cookies. Vui lòng kiểm tra lại Python Server.", "#F59E0B");
+                }
+            }
+            else
+            {
+                Log($"[COOKIE-IMPORT] ❌ {loginMsg}");
+                SetGeminiStatus("❌", loginMsg, "#EF4444");
+            }
+        }
+
+        /// <summary>
+        /// Handles manual cookie file import via OpenFileDialog.
+        /// </summary>
+        private async Task HandleManualCookieImportAsync()
+        {
+            var openFileDialog = new Microsoft.Win32.OpenFileDialog
+            {
+                Filter = "JSON Files (*.json)|*.json|All Files (*.*)|*.*",
+                Title = "Chọn file cookies.json Gemini"
+            };
+
+            if (openFileDialog.ShowDialog() == true)
+            {
+                SetGeminiStatus("📂", "Đang đọc file cookies.json...", "#3B82F6");
+
+                try
+                {
+                    string content = await File.ReadAllTextAsync(openFileDialog.FileName);
+                    var (success, msg) = await _geminiCreatorService!.SaveCustomCookiesAsync(
+                        content,
+                        onStatus: status => Dispatcher.Invoke(() => SetGeminiStatus("📂", status, "#3B82F6"))
+                    );
+
+                    if (success)
+                    {
+                        await HandleCookieImportSuccessAsync(msg);
+                    }
+                    else
+                    {
+                        SetGeminiStatus("⚠️", msg, "#F59E0B");
+                        ShowGeminiNotification($"⚠️ {msg}", "#F59E0B");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Log($"[COOKIE-IMPORT] ❌ Lỗi khi đọc file cookies: {ex.Message}");
+                    MessageBox.Show($"Lỗi khi đọc file cookies: {ex.Message}", "Lỗi", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
             }
         }
 
@@ -471,9 +501,26 @@ namespace AssetAutomator
 
         private void BtnAddGeminiTask_Click(object sender, RoutedEventArgs e)
         {
-            var newTask = CreateDefaultGeminiTask($"Chủ đề video mới #{GeminiTasks.Count + 1}");
+            InitializeGeminiCreatorServices();
+            var newTask = _geminiCreatorService!.CreateDefaultTask(
+                AvailableScriptwriterGems,
+                AvailableSceneCreatorGems,
+                $"Chủ đề video mới #{GeminiTasks.Count + 1}"
+            );
             GeminiTasks.Add(newTask);
             Log($"[INFO] Đã thêm task mới vào hàng đợi (Tổng: {GeminiTasks.Count} tasks).");
+        }
+
+        /// <summary>
+        /// Clears the Python Server log panel.
+        /// </summary>
+        private void BtnClearPythonServerLog_Click(object sender, RoutedEventArgs e)
+        {
+            if (TxtPythonServerLog != null)
+            {
+                TxtPythonServerLog.Clear();
+                Log("[INFO] Đã xóa Python Server log panel.");
+            }
         }
 
         private void BtnDeleteGeminiTasks_Click(object sender, RoutedEventArgs e)
@@ -522,14 +569,60 @@ namespace AssetAutomator
                 OpenTaskLogSidebar(selectedTasks[0]);
             }
 
-            Log($"[GEMINI-BATCH] 🚀 Bắt đầu thực thi chuỗi {selectedTasks.Count} tasks...");
+            // Đánh dấu đang bận để chặn các thao tác khác
+            _isGeminiOperationBusy = true;
 
-            foreach (var taskItem in selectedTasks)
+            try
             {
-                await ExecuteSingleGeminiTaskAsync(taskItem);
-            }
+                Log($"[GEMINI-BATCH] 🚀 Bắt đầu thực thi chuỗi {selectedTasks.Count} tasks qua Pipeline Orchestrator...");
+                Log($"[GEMINI-BATCH] 📊 Slot: DeepRsrch=2 | Voiceover=3 | SceneCreator=4 | ImageGen=1");
 
-            MessageBox.Show($"Đã hoàn thành thực thi chuỗi {selectedTasks.Count} Gemini tasks!", "Thành Công", MessageBoxButton.OK, MessageBoxImage.Information);
+                // Resolve language cho từng task nếu cần
+                string apiKey = ConfigService.CurrentSettings.Ai84ApiKey;
+                foreach (var t in selectedTasks)
+                {
+                    if (string.IsNullOrEmpty(t.TargetLanguage) && !string.IsNullOrEmpty(t.VoiceId))
+                    {
+                        await _geminiCreatorService!.ResolveTaskLanguageAsync(t, apiKey);
+                    }
+                }
+
+                // ── Gọi Pipeline Orchestrator (chạy trên thread pool) ──
+                var result = await Task.Run(() =>
+                    _pipelineOrchestrator!.ExecuteBatchAsync(
+                        taskModels: selectedTasks,
+                        logTask: (taskModel, msg) =>
+                        {
+                            // Dispatch về UI thread để cập nhật giao diện
+                            Dispatcher.Invoke(() =>
+                            {
+                                AppendGeminiTaskLog(taskModel, msg);
+                                UpdateTaskStepInfoFromLog(taskModel, msg);
+                            });
+                        }
+                    )
+                );
+
+                Log($"[GEMINI-BATCH] 🎉 {result}");
+                MessageBox.Show(
+                    $"Đã hoàn thành thực thi {result.TotalTasks} Gemini tasks!\n\n" +
+                    $"✅ Thành công: {result.SuccessCount}\n" +
+                    $"❌ Thất bại: {result.FailedCount}\n" +
+                    $"⏱️ Thời gian: {result.Elapsed.TotalMinutes:F1} phút",
+                    "Pipeline Orchestrator — Kết Quả",
+                    MessageBoxButton.OK,
+                    result.FailedCount > 0 ? MessageBoxImage.Warning : MessageBoxImage.Information
+                );
+            }
+            catch (Exception ex)
+            {
+                Log($"[GEMINI-BATCH-ERROR] Lỗi pipeline orchestrator: {ex.Message}");
+                MessageBox.Show($"Lỗi khi chạy batch pipeline: {ex.Message}", "Lỗi", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+            finally
+            {
+                _isGeminiOperationBusy = false;
+            }
         }
 
         private async void BtnRunSingleGeminiTask_Click(object sender, RoutedEventArgs e)
@@ -566,7 +659,7 @@ namespace AssetAutomator
 
             if (string.IsNullOrEmpty(taskItem.TargetLanguage) && !string.IsNullOrEmpty(voiceId))
             {
-                await ResolveGeminiTaskLanguageAsync(taskItem, ConfigService.CurrentSettings.Ai84ApiKey);
+                await _geminiCreatorService!.ResolveTaskLanguageAsync(taskItem, ConfigService.CurrentSettings.Ai84ApiKey);
             }
 
             string targetLang = !string.IsNullOrWhiteSpace(taskItem.TargetLanguage)

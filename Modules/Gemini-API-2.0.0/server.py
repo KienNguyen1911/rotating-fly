@@ -780,6 +780,9 @@ async def start_deep_research(req: DeepResearchStartRequest):
 
             log.error(f"Failed to start async deep research: {e}")
             raise HTTPException(status_code=500, detail=f"Failed to start deep research: {str(e)}")
+    except Exception as e:
+        log.error(f"Deep Research endpoint error: {e}")
+        raise HTTPException(status_code=500, detail=f"Deep Research error: {str(e)}")
 
 
 @app.get("/api/deep-research/status/{research_id}", response_model=DeepResearchStatusResponse, summary="Poll Deep Research Status")
