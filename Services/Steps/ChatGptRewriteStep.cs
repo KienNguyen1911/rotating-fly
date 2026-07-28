@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Threading.Tasks;
 using Microsoft.Playwright;
+using AssetAutomator.Services;
 
 namespace AssetAutomator
 {
@@ -12,10 +13,12 @@ namespace AssetAutomator
     public class ChatGptRewriteStep
     {
         private readonly ChatGptService _chatGptService;
+        private readonly IConfigService _configService;
 
-        public ChatGptRewriteStep(ChatGptService chatGptService)
+        public ChatGptRewriteStep(ChatGptService chatGptService, IConfigService configService)
         {
             _chatGptService = chatGptService;
+            _configService = configService;
         }
 
         public async Task<string?> ExecuteAsync(
@@ -37,7 +40,7 @@ namespace AssetAutomator
                 string? customGptUrl = null;
                 if (!string.IsNullOrEmpty(task.SelectedProfile))
                 {
-                    string baseDir = ConfigService.CurrentSettings.ChromeProfilesDir;
+                    string baseDir = _configService.CurrentSettings.ChromeProfilesDir;
                     if (string.IsNullOrEmpty(baseDir))
                     {
                         baseDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ChromeProfiles");
@@ -52,7 +55,7 @@ namespace AssetAutomator
 
                 if (string.IsNullOrWhiteSpace(customGptUrl))
                 {
-                    customGptUrl = ConfigService.CurrentSettings.CustomGptUrl;
+                    customGptUrl = _configService.CurrentSettings.CustomGptUrl;
                     if (string.IsNullOrWhiteSpace(customGptUrl))
                     {
                         customGptUrl = "https://chatgpt.com/g/g-6a4083a0e37081919a248ef7721dae3d-dich-chay";

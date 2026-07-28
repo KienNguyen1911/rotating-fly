@@ -9,6 +9,7 @@ using System.Windows.Media;
 using System.Windows.Input;
 using System.ComponentModel;
 using AssetAutomator.Models;
+using AssetAutomator.Services;
 
 namespace AssetAutomator
 {

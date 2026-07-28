@@ -16,13 +16,13 @@ namespace AssetAutomator.Services
     {
         private readonly GeminiTopicResearchStep _topicResearchStep;
         private readonly VoiceoverGenerationStep _voiceoverStep;
-        private readonly GeminiSceneBreakdownStep _sceneBreakdownStep;
+        private readonly GeminiPlaywrightSceneBreakdownStep _sceneBreakdownStep;
         private readonly SceneImageBatchStep _imageBatchStep;
 
         public GeminiVideoPipelineService(
             GeminiTopicResearchStep topicResearchStep,
             VoiceoverGenerationStep voiceoverStep,
-            GeminiSceneBreakdownStep sceneBreakdownStep,
+            GeminiPlaywrightSceneBreakdownStep sceneBreakdownStep,
             SceneImageBatchStep imageBatchStep)
         {
             _topicResearchStep = topicResearchStep;
@@ -36,15 +36,20 @@ namespace AssetAutomator.Services
             string topicOrUrl,
             string? scriptwriterGemId,
             string? sceneCreatorGemId,
+            string? sceneCreatorGemName,
             bool enableDeepResearch,
             string voiceId,
             string? imageGenProvider,
             Action<AutomationTask, string> logTask,
-            string? model = null,
-            string? extension = null)
+            string? scriptwriterModel = null,
+            string? sceneCreatorModel = null)
         {
             task.Status = "Running";
-            logTask(task, $"[GEMINI-WORKFLOW] Starting Gemini 5-Step Video Creation Pipeline for: '{topicOrUrl}' (Model: {model ?? "Default"}, Ext: {extension ?? "None"})");
+            logTask(task, $"[GEMINI-WORKFLOW] Starting Gemini 5-Step Video Creation Pipeline for: '{topicOrUrl}' (Script: {scriptwriterModel ?? "Default"}, Scene: {sceneCreatorModel ?? "Default"})");
+
+            // Model names are already the full Gemini model names (e.g. "gemini-3-pro")
+            string resolvedScriptModel = GeminiApiService.ResolveModelName(scriptwriterModel);
+            string resolvedSceneModel = GeminiApiService.ResolveModelName(sceneCreatorModel);
 
             string outputDir = task.OutputDir;
             Directory.CreateDirectory(outputDir);
@@ -64,10 +69,11 @@ namespace AssetAutomator.Services
                 {
                     logTask(task, "[GEMINI-WORKFLOW] --- STEP 1 & 2: Gemini Deep Research Transcript ---");
 
+                    // Strict primary-folder check only.
                     if (File.Exists(transcriptPath) && new FileInfo(transcriptPath).Length > 50)
                     {
-                        logTask(task, $"[STEP 1 & 2] ⏭️ Found existing 'transcript.txt' ({new FileInfo(transcriptPath).Length} bytes) in asset folder. Skipping Step 1 & 2.");
-                        task.Step2Status = "Completed";
+                        logTask(task, $"[STEP 1 & 2] ⏭️ transcript.txt đã tồn tại trong folder hiện tại ({new FileInfo(transcriptPath).Length} bytes). Skipping Step 1 & 2.");
+                        task.Step2Status = "Done";
                     }
                     else
                     {
@@ -78,8 +84,7 @@ namespace AssetAutomator.Services
                             enableDeepResearch: enableDeepResearch,
                             task: task,
                             logTask: logTask,
-                            selectedModel: model,
-                            selectedExtension: extension,
+                            selectedModel: resolvedScriptModel,
                             existingSessionId: null
                         );
                     }
@@ -92,14 +97,16 @@ namespace AssetAutomator.Services
                 if (task.Step4)
                 {
                     logTask(task, "[GEMINI-WORKFLOW] --- STEP 3: AI84 Voiceover & Subtitles ---");
-                    bool hasAudio = (File.Exists(mp3Path) && new FileInfo(mp3Path).Length > 1000) || (File.Exists(wavPath) && new FileInfo(wavPath).Length > 1000);
+                    // Strict primary-folder check only.
+                    bool hasAudio = (File.Exists(mp3Path) && new FileInfo(mp3Path).Length > 1000)
+                                 || (File.Exists(wavPath) && new FileInfo(wavPath).Length > 1000);
                     bool hasSrt = File.Exists(srtPath) && new FileInfo(srtPath).Length > 10;
 
                     if (hasAudio && hasSrt)
                     {
-                        logTask(task, "[STEP 3] ⏭️ Found existing 'voiceover.srt' and audio file in asset folder. Skipping Step 3.");
-                        task.Step4Status = "Completed";
-                        task.StepSrtStatus = "Completed";
+                        logTask(task, "[STEP 3] ⏭️ Voiceover audio + SRT đã tồn tại trong folder hiện tại. Skipping Step 3.");
+                        task.Step4Status = "Done";
+                        task.StepSrtStatus = "Done";
                     }
                     else
                     {
@@ -119,8 +126,8 @@ namespace AssetAutomator.Services
                     logTask(task, "[GEMINI-WORKFLOW] --- STEP 3: Whisper SRT Only ---");
                     if (File.Exists(srtPath) && new FileInfo(srtPath).Length > 10)
                     {
-                        logTask(task, "[STEP 3] ⏭️ Found existing 'voiceover.srt' in asset folder. Skipping Whisper SRT step.");
-                        task.StepSrtStatus = "Completed";
+                        logTask(task, "[STEP 3] ⏭️ voiceover.srt đã tồn tại trong folder hiện tại. Skipping Whisper SRT step.");
+                        task.StepSrtStatus = "Done";
                     }
                     else
                     {
@@ -132,10 +139,11 @@ namespace AssetAutomator.Services
                 if (task.Step3) // mapped to scene breakdown
                 {
                     logTask(task, "[GEMINI-WORKFLOW] --- STEP 4: Gemini Scene Creator JSON Breakdown ---");
+                    // Strict primary-folder check only — do NOT skip when scenes.json only exists in a sibling folder.
                     if (File.Exists(scenesPath) && new FileInfo(scenesPath).Length > 50 && IsValidScenesJson(scenesPath))
                     {
-                        logTask(task, "[STEP 4] ⏭️ Found valid existing 'scenes.json' in asset folder. Skipping Step 4.");
-                        task.Step3Status = "Completed";
+                        logTask(task, "[STEP 4] ⏭️ scenes.json hợp lệ đã tồn tại trong folder hiện tại. Skipping Step 4.");
+                        task.Step3Status = "Done";
                     }
                     else
                     {
@@ -144,9 +152,9 @@ namespace AssetAutomator.Services
                             gemId: sceneCreatorGemId,
                             task: task,
                             logTask: logTask,
-                            selectedModel: model,
-                            selectedExtension: extension,
-                            sessionId: null
+                            selectedModel: resolvedSceneModel,
+                            sessionId: null,
+                            gemName: sceneCreatorGemName
                         );
                     }
                 }
@@ -158,7 +166,7 @@ namespace AssetAutomator.Services
                     if (AreAllSceneImagesGenerated(scenesPath, outputDir))
                     {
                         logTask(task, "[STEP 5] ⏭️ All scene images already exist in asset folder. Skipping Step 5.");
-                        task.Step5Status = "Completed";
+                        task.Step5Status = "Done";
                     }
                     else
                     {

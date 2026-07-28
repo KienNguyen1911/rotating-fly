@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Net.Http;
 using System.Threading.Tasks;
+using AssetAutomator.Services;
 
 namespace AssetAutomator
 {
@@ -11,6 +12,12 @@ namespace AssetAutomator
     /// </summary>
     public class VoiceoverGenerationStep
     {
+        private readonly IConfigService _configService;
+
+        public VoiceoverGenerationStep(IConfigService configService)
+        {
+            _configService = configService;
+        }
         public async Task ExecuteAsync(
             string voiceId,
             string outputDir,
@@ -267,7 +274,7 @@ namespace AssetAutomator
                         }
                     }
 
-                    string subtitleApiUrl = ConfigService.CurrentSettings.SubtitleApiUrl;
+                    string subtitleApiUrl = _configService.CurrentSettings.SubtitleApiUrl;
                     if (string.IsNullOrWhiteSpace(subtitleApiUrl))
                     {
                         throw new InvalidOperationException("Subtitle API URL is empty or not configured. Cannot generate SRT subtitles.");
@@ -320,7 +327,7 @@ namespace AssetAutomator
                     throw new FileNotFoundException("voiceover.mp3 not found. Please run the Voiceover step first or select Voiceover.");
                 }
 
-                string subtitleApiUrl = ConfigService.CurrentSettings.SubtitleApiUrl;
+                string subtitleApiUrl = _configService.CurrentSettings.SubtitleApiUrl;
                 if (string.IsNullOrWhiteSpace(subtitleApiUrl))
                 {
                     throw new InvalidOperationException("Subtitle API URL is empty or not configured. Cannot generate SRT subtitles.");

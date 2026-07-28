@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using Microsoft.Playwright;
 using YoutubeExplode;
 using YoutubeExplode.Videos.ClosedCaptions;
+using AssetAutomator.Services;
 
 namespace AssetAutomator
 {
@@ -17,6 +18,12 @@ namespace AssetAutomator
     /// </summary>
     public class TranscriptExtractionStep
     {
+        private readonly IConfigService _configService;
+
+        public TranscriptExtractionStep(IConfigService configService)
+        {
+            _configService = configService;
+        }
         public async Task<string?> ExecuteAsync(AutomationTask task, IBrowserContext context, Action<AutomationTask, string> logTask)
         {
             logTask(task, "[STEP 2] Starting transcript extraction via YoutubeExplode...");
@@ -25,14 +32,14 @@ namespace AssetAutomator
             {
                 // 1. Try manual proxies first
                 logTask(task, "[PROXY] Loading manual proxies...");
-                var manualProxies = ProxyHelper.LoadProxiesFromFile(ConfigService.CurrentSettings.ManualProxiesFilePath);
+                var manualProxies = ProxyHelper.LoadProxiesFromFile(_configService.CurrentSettings.ManualProxiesFilePath);
                 var activeProxies = await ProxyHelper.GetAliveProxiesAsync(manualProxies, msg => logTask(task, msg), timeoutSeconds: 10);
 
                 // 2. If no manual proxies are active, fallback to free proxies
                 if (activeProxies.Count == 0)
                 {
                     logTask(task, "[PROXY] No active manual proxies. Falling back to free proxies...");
-                    var freeProxies = ProxyHelper.LoadProxiesFromFile(ConfigService.CurrentSettings.ProxiesFilePath);
+                    var freeProxies = ProxyHelper.LoadProxiesFromFile(_configService.CurrentSettings.ProxiesFilePath);
                     activeProxies = await ProxyHelper.GetAliveProxiesAsync(freeProxies, msg => logTask(task, msg), timeoutSeconds: 10);
                 }
 

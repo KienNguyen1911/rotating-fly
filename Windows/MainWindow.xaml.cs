@@ -74,6 +74,7 @@ namespace AssetAutomator
                     SetThemeBrush("SurfaceCardBrush",  "#1E2644");
                     SetThemeBrush("SurfaceStrongBrush","#2B355A");
                     SetThemeBrush("HairlineBrush",     "#34406A");
+                    SetThemeBrush("SubtleBrush",      "#8B93B0");
 
                     if (BtnThemeToggle?.Template?.FindName("TxtThemeIcon", BtnThemeToggle) is TextBlock txtIcon) txtIcon.Text = "☀️";
                     if (BtnThemeToggle?.Template?.FindName("TxtThemeLabel", BtnThemeToggle) is TextBlock txtLabel) txtLabel.Text = "Light Mode";
@@ -93,6 +94,7 @@ namespace AssetAutomator
                     SetThemeBrush("SurfaceStrongBrush","#94A3B8");
                     SetThemeBrush("HairlineBrush",     "#CBD5E1");
                     SetThemeBrush("MutedSoftBrush",    "#475569");
+                    SetThemeBrush("SubtleBrush",      "#64748B");
 
                     if (BtnThemeToggle?.Template?.FindName("TxtThemeIcon", BtnThemeToggle) is TextBlock txtIcon) txtIcon.Text = "🌙";
                     if (BtnThemeToggle?.Template?.FindName("TxtThemeLabel", BtnThemeToggle) is TextBlock txtLabel) txtLabel.Text = "Dark Mode";
@@ -172,10 +174,11 @@ namespace AssetAutomator
 
             // Initialize step services
             _step1 = new ThumbnailDownloadStep();
-            _step2 = new TranscriptExtractionStep();
-            _step3 = new ChatGptRewriteStep(_chatGptService);
-            _step4 = new VoiceoverGenerationStep();
-            _step5 = new ImageGenerationStep(_imagePoolService);
+            var configService = Services.ConfigService.Instance!;
+            _step2 = new TranscriptExtractionStep(configService);
+            _step3 = new ChatGptRewriteStep(_chatGptService, configService);
+            _step4 = new VoiceoverGenerationStep(configService);
+            _step5 = new ImageGenerationStep(_imagePoolService, configService);
             _legacyVideoPipelineService = new Services.LegacyVideoPipelineService(_step1, _step2, _step3, _step4, _step5);
 
             DgridTasks.ItemsSource = Tasks;

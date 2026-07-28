@@ -35,8 +35,26 @@ namespace AssetAutomator
         public ObservableCollection<GemOptionItem> AvailableScriptwriterGems { get; } = new();
         public ObservableCollection<GemOptionItem> AvailableSceneCreatorGems { get; } = new();
         public ObservableCollection<string> AvailableImageProviders { get; } = new() { "flow_local", "glabs" };
-        public ObservableCollection<string> AvailableAiModels { get; } = new() { "3.6 Flash", "3.5 Flash-Lite", "3.1 Pro" };
-        public ObservableCollection<string> AvailableExtensions { get; } = new() { "Tắt (Standard)", "Bật (Tư duy mở rộng)" };
+
+        /// <summary>
+        /// All 9 Gemini models from constants.py Model enum.
+        /// Grouped: Flash (standard), Pro (thinking), Flash-Thinking, Plus/Advanced variants.
+        /// </summary>
+        public ObservableCollection<string> AvailableAiModels { get; } = new()
+        {
+            // ── Standard (Basic) ──
+            "gemini-3-flash",
+            "gemini-3-pro",               // 🧠 Pro = thinking
+            "gemini-3-flash-thinking",
+            // ── Plus (capacity=4) ──
+            "gemini-3-flash-plus",
+            "gemini-3-pro-plus",          // 🧠
+            "gemini-3-flash-thinking-plus",
+            // ── Advanced (capacity=2) ──
+            "gemini-3-flash-advanced",
+            "gemini-3-pro-advanced",      // 🧠
+            "gemini-3-flash-thinking-advanced",
+        };
 
         // ─────────────────────────────────────────────────────
         //  Service Initialization (DI)
@@ -78,8 +96,8 @@ namespace AssetAutomator
             {
                 var batchImageGenService = new BatchImageGenService();
                 var topicResearchStep = new GeminiTopicResearchStep(_geminiApiService);
-                var voiceoverStep = new VoiceoverGenerationStep();
-                var sceneBreakdownStep = new GeminiSceneBreakdownStep(_geminiApiService);
+                var voiceoverStep = new VoiceoverGenerationStep(Services.ConfigService.Instance!);
+                var sceneBreakdownStep = new GeminiPlaywrightSceneBreakdownStep();
                 var imageBatchStep = new SceneImageBatchStep(batchImageGenService);
 
                 _geminiVideoPipelineService = new GeminiVideoPipelineService(
@@ -424,6 +442,246 @@ namespace AssetAutomator
             }
         }
 
+        /// <summary>
+        /// Step 1: Suggests YouTube video topics based on a channel URL entered in the selected task's Topic field.
+        /// </summary>
+        private async void BtnSuggestTopics_Click(object sender, RoutedEventArgs e)
+        {
+            var selectedTasks = GeminiTasks.Where(t => t.IsSelected).ToList();
+            if (selectedTasks.Count == 0)
+            {
+                MessageBox.Show("Vui lòng tích chọn ít nhất 1 task và nhập link kênh YouTube vào ô 'Chủ Đề / Link YouTube'.", "Thông báo", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            var taskItem = selectedTasks[0];
+            string channelUrl = taskItem.Topic.Trim();
+
+            if (string.IsNullOrWhiteSpace(channelUrl))
+            {
+                MessageBox.Show("Vui lòng nhập link kênh YouTube vào ô 'Chủ Đề / Link YouTube' trước khi gợi ý chủ đề.", "Thông báo", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            if (_isGeminiOperationBusy)
+            {
+                SetGeminiStatus("⏳", "Đang thực hiện thao tác khác, vui lòng đợi...", "#F59E0B");
+                return;
+            }
+
+            _isGeminiOperationBusy = true;
+            SetButtonLoading(BtnSuggestTopics, "⏳ Đang phân tích kênh YouTube...");
+            InitializeGeminiCreatorServices();
+
+            try
+            {
+                Log($"[TOPIC-SUGGEST] 🔍 Đang phân tích kênh YouTube: '{channelUrl}'...");
+                SetGeminiStatus("🔍", $"Đang phân tích kênh YouTube và gợi ý chủ đề...", "#3B82F6");
+
+                var suggestionStep = new YoutubeTopicSuggestionStep(_geminiApiService ?? throw new InvalidOperationException("GeminiApiService not initialized"));
+                string? scriptwriterGemId = taskItem.SelectedScriptwriterGem?.Id;
+                string model = taskItem.ScriptwriterModel ?? "gemini-3-flash";
+
+                var suggestions = await Task.Run(() =>
+                    suggestionStep.SuggestTopicsAsync(
+                        channelUrl: channelUrl,
+                        scriptwriterGemId: scriptwriterGemId,
+                        model: model,
+                        logAction: msg => Dispatcher.Invoke(() => Log(msg))
+                    ));
+
+                if (suggestions == null || suggestions.SuggestedTopics.Count == 0)
+                {
+                    Log("[TOPIC-SUGGEST] ⚠️ Không tìm thấy chủ đề gợi ý nào.");
+                    SetGeminiStatus("⚠️", "Không thể gợi ý chủ đề từ kênh này. Hãy thử nhập chủ đề trực tiếp.", "#F59E0B");
+                    MessageBox.Show(
+                        "Không thể phân tích kênh YouTube hoặc không tìm thấy chủ đề gợi ý nào.\n\n" +
+                        "Vui lòng kiểm tra:\n" +
+                        "• Link kênh YouTube có đúng định dạng không? (VD: https://youtube.com/@ChannelName)\n" +
+                        "• Python Server Gemini đã sẵn sàng chưa? (Kiểm tra tab Python Server Logs)\n" +
+                        "• Kênh có tồn tại và có nội dung công khai không?",
+                        "Không có gợi ý", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+
+                // Store suggestions in task model
+                taskItem.SuggestedTopics = suggestions.SuggestedTopics;
+                taskItem.ChannelUrl = channelUrl;
+                Log($"[TOPIC-SUGGEST] ✅ Nhận được {suggestions.SuggestedTopics.Count} chủ đề từ kênh '{suggestions.ChannelName}' ({suggestions.ChannelNiche}).");
+
+                // Show selection dialog
+                var selectedTopic = await ShowTopicSelectionDialogAsync(suggestions);
+
+                if (selectedTopic != null)
+                {
+                    taskItem.Topic = selectedTopic.Title;
+                    Log($"[TOPIC-SUGGEST] ✅ Người dùng đã chọn chủ đề: '{selectedTopic.Title}'");
+                    SetGeminiStatus("✅", $"Đã chọn chủ đề: '{selectedTopic.Title}' — Sẵn sàng chạy pipeline!", "#10B981");
+                }
+                else
+                {
+                    SetGeminiStatus("💡", "Đã hủy chọn chủ đề. Bạn có thể nhập chủ đề thủ công hoặc thử lại.", "#6B7280");
+                }
+            }
+            catch (Exception ex)
+            {
+                Log($"[TOPIC-SUGGEST-ERROR] Lỗi: {ex.Message}");
+                SetGeminiStatus("❌", $"Lỗi gợi ý chủ đề: {ex.Message}", "#EF4444");
+                MessageBox.Show($"Lỗi khi gợi ý chủ đề: {ex.Message}", "Lỗi", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+            finally
+            {
+                ResetButtonNormal(BtnSuggestTopics, "🔍 Gợi Ý Chủ Đề");
+                _isGeminiOperationBusy = false;
+            }
+        }
+
+        /// <summary>
+        /// Shows a topic selection dialog with the suggested topics from Gemini.
+        /// Returns the selected topic or null if canceled.
+        /// </summary>
+        private Task<SuggestedTopic?> ShowTopicSelectionDialogAsync(YoutubeTopicSuggestionResponse suggestions)
+        {
+            var tcs = new TaskCompletionSource<SuggestedTopic?>();
+
+            Dispatcher.Invoke(() =>
+            {
+                var dialog = new Window
+                {
+                    Title = $"🎬 Chọn Chủ Đề — {suggestions.ChannelName} ({suggestions.ChannelNiche})",
+                    Width = 620,
+                    Height = 520,
+                    WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                    Owner = this,
+                    ResizeMode = ResizeMode.CanResizeWithGrip,
+                    Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FFFFFF")),
+                    FontFamily = new System.Windows.Media.FontFamily("Segoe UI")
+                };
+
+                var grid = new Grid();
+                grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+                grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+                // Topic list with checkboxes
+                var listBox = new ListBox
+                {
+                    Margin = new Thickness(16, 16, 16, 8),
+                    ItemsSource = suggestions.SuggestedTopics,
+                    SelectionMode = SelectionMode.Single
+                };
+
+                listBox.ItemTemplate = CreateTopicItemTemplate();
+                Grid.SetRow(listBox, 0);
+                grid.Children.Add(listBox);
+
+                // Bottom button bar
+                var buttonPanel = new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    HorizontalAlignment = HorizontalAlignment.Right,
+                    Margin = new Thickness(16, 0, 16, 16)
+                };
+
+                var cancelBtn = new Button
+                {
+                    Content = "Hủy",
+                    Width = 80,
+                    Height = 32,
+                    Margin = new Thickness(0, 0, 10, 0)
+                };
+                cancelBtn.Click += (s, e) =>
+                {
+                    dialog.Close();
+                    tcs.TrySetResult(null);
+                };
+
+                var selectBtn = new Button
+                {
+                    Content = "✅ Chọn Chủ Đề Này",
+                    Width = 140,
+                    Height = 32,
+                    Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#3B82F6")),
+                    Foreground = new SolidColorBrush(Colors.White),
+                    FontWeight = FontWeights.SemiBold
+                };
+                selectBtn.Click += (s, e) =>
+                {
+                    var selected = listBox.SelectedItem as SuggestedTopic;
+                    dialog.Close();
+                    tcs.TrySetResult(selected);
+                };
+
+                buttonPanel.Children.Add(cancelBtn);
+                buttonPanel.Children.Add(selectBtn);
+                Grid.SetRow(buttonPanel, 1);
+                grid.Children.Add(buttonPanel);
+
+                dialog.Content = grid;
+                dialog.Closed += (s, e) => tcs.TrySetResult(null);
+                dialog.ShowDialog();
+            });
+
+            return tcs.Task;
+        }
+
+        /// <summary>
+        /// Creates a DataTemplate for rendering topic items in the selection dialog.
+        /// </summary>
+        private static DataTemplate CreateTopicItemTemplate()
+        {
+            var template = new DataTemplate();
+
+            var factory = new FrameworkElementFactory(typeof(Border));
+            factory.SetValue(Border.CornerRadiusProperty, new CornerRadius(8));
+            factory.SetValue(Border.MarginProperty, new Thickness(0, 3, 0, 3));
+            factory.SetValue(Border.PaddingProperty, new Thickness(12, 10, 12, 10));
+            factory.SetValue(Border.BackgroundProperty, new SolidColorBrush((Color)ColorConverter.ConvertFromString("#F8FAFC")));
+            factory.SetValue(Border.BorderBrushProperty, new SolidColorBrush((Color)ColorConverter.ConvertFromString("#E2E8F0")));
+            factory.SetValue(Border.BorderThicknessProperty, new Thickness(1));
+
+            var stack = new FrameworkElementFactory(typeof(StackPanel));
+
+            var titleBlock = new FrameworkElementFactory(typeof(TextBlock));
+            titleBlock.SetBinding(TextBlock.TextProperty, new System.Windows.Data.Binding("Title"));
+            titleBlock.SetValue(TextBlock.FontSizeProperty, 14.0);
+            titleBlock.SetValue(TextBlock.FontWeightProperty, FontWeights.SemiBold);
+            titleBlock.SetValue(TextBlock.ForegroundProperty, new SolidColorBrush((Color)ColorConverter.ConvertFromString("#1E293B")));
+            titleBlock.SetValue(TextBlock.TextWrappingProperty, TextWrapping.Wrap);
+            stack.AppendChild(titleBlock);
+
+            var descBlock = new FrameworkElementFactory(typeof(TextBlock));
+            descBlock.SetBinding(TextBlock.TextProperty, new System.Windows.Data.Binding("Description"));
+            descBlock.SetValue(TextBlock.FontSizeProperty, 12.0);
+            descBlock.SetValue(TextBlock.ForegroundProperty, new SolidColorBrush((Color)ColorConverter.ConvertFromString("#64748B")));
+            descBlock.SetValue(TextBlock.TextWrappingProperty, TextWrapping.Wrap);
+            descBlock.SetValue(TextBlock.MarginProperty, new Thickness(0, 2, 0, 4));
+            stack.AppendChild(descBlock);
+
+            var metaPanel = new FrameworkElementFactory(typeof(StackPanel));
+            metaPanel.SetValue(StackPanel.OrientationProperty, Orientation.Horizontal);
+
+            var catBlock = new FrameworkElementFactory(typeof(TextBlock));
+            catBlock.SetBinding(TextBlock.TextProperty, new System.Windows.Data.Binding("Category"));
+            catBlock.SetValue(TextBlock.FontSizeProperty, 11.0);
+            catBlock.SetValue(TextBlock.ForegroundProperty, new SolidColorBrush((Color)ColorConverter.ConvertFromString("#3B82F6")));
+            catBlock.SetValue(TextBlock.BackgroundProperty, new SolidColorBrush((Color)ColorConverter.ConvertFromString("#EFF6FF")));
+            catBlock.SetValue(TextBlock.PaddingProperty, new Thickness(6, 2, 6, 2));
+            metaPanel.AppendChild(catBlock);
+
+            var durBlock = new FrameworkElementFactory(typeof(TextBlock));
+            durBlock.SetBinding(TextBlock.TextProperty, new System.Windows.Data.Binding("EstimatedDuration"));
+            durBlock.SetValue(TextBlock.FontSizeProperty, 11.0);
+            durBlock.SetValue(TextBlock.ForegroundProperty, new SolidColorBrush((Color)ColorConverter.ConvertFromString("#94A3B8")));
+            durBlock.SetValue(TextBlock.MarginProperty, new Thickness(10, 0, 0, 0));
+            metaPanel.AppendChild(durBlock);
+
+            stack.AppendChild(metaPanel);
+            factory.AppendChild(stack);
+
+            template.VisualTree = factory;
+            return template;
+        }
+
         #region Helper Methods: Button State & Status Bar
 
         /// <summary>
@@ -521,6 +779,38 @@ namespace AssetAutomator
                 TxtPythonServerLog.Clear();
                 Log("[INFO] Đã xóa Python Server log panel.");
             }
+        }
+
+        /// <summary>
+        /// Toggles the collapse/expand state of the Python Server Logs panel.
+        /// </summary>
+        private void BtnTogglePythonLogs_Click(object sender, RoutedEventArgs e)
+        {
+            if (TxtPythonServerLog == null) return;
+
+            bool isCollapsed = TxtPythonServerLog.Visibility == Visibility.Collapsed;
+            if (isCollapsed)
+            {
+                // Expand
+                TxtPythonServerLog.Visibility = Visibility.Visible;
+                if (sender is Button btn)
+                    btn.Content = "▼";
+            }
+            else
+            {
+                // Collapse
+                TxtPythonServerLog.Visibility = Visibility.Collapsed;
+                if (sender is Button btn)
+                    btn.Content = "▶";
+            }
+        }
+
+        /// <summary>
+        /// Collapses the currently expanded Gemini task row details.
+        /// </summary>
+        private void BtnCollapseGeminiRowDetails_Click(object sender, RoutedEventArgs e)
+        {
+            DgridGeminiTasks.SelectedItem = null;
         }
 
         private void BtnDeleteGeminiTasks_Click(object sender, RoutedEventArgs e)
@@ -648,11 +938,15 @@ namespace AssetAutomator
 
             string scriptwriterGemId = taskItem.SelectedScriptwriterGem?.Id ?? string.Empty;
             string sceneCreatorGemId = taskItem.SelectedSceneCreatorGem?.Id ?? string.Empty;
+            string sceneCreatorGemName = taskItem.SelectedSceneCreatorGem?.Name ?? string.Empty;
             string voiceId = taskItem.VoiceId.Trim();
             bool enableDeepResearch = taskItem.EnableDeepResearch;
             string providerKey = taskItem.SelectedImageProvider ?? "flow_local";
-            string selectedModel = taskItem.SelectedModel ?? "gemini-3-flash";
-            string selectedExtension = taskItem.SelectedExtension ?? "None";
+            string scriptwriterModel = taskItem.ScriptwriterModel ?? "gemini-3-flash";
+            string sceneCreatorModel = taskItem.SceneCreatorModel ?? "gemini-3-flash";
+
+            string resolvedScript = GeminiApiService.ResolveModelName(scriptwriterModel);
+            string resolvedScene = GeminiApiService.ResolveModelName(sceneCreatorModel);
 
             taskItem.Status = NodeStatus.Running;
             taskItem.CurrentStepInfo = "Khởi chạy Pipeline...";
@@ -686,7 +980,7 @@ namespace AssetAutomator
             }
             task.OutputFolderOverride = taskItem.OutputFolderName;
 
-            AppendGeminiTaskLog(taskItem, $"[TASK-RUN] 🚀 Đang xử lý task '{topic}' (Model: {selectedModel}, Ext: {selectedExtension})...");
+            AppendGeminiTaskLog(taskItem, $"[TASK-RUN] 🚀 Đang xử lý task '{topic}' (Script: {resolvedScript}, Scene: {resolvedScene})...");
             AppendGeminiTaskLog(taskItem, $"[TASK-RUN] 📁 Thư mục output: {task.OutputDir}");
 
             try
@@ -698,6 +992,7 @@ namespace AssetAutomator
                         topicOrUrl: topic,
                         scriptwriterGemId: scriptwriterGemId,
                         sceneCreatorGemId: sceneCreatorGemId,
+                        sceneCreatorGemName: sceneCreatorGemName,
                         enableDeepResearch: enableDeepResearch,
                         voiceId: voiceId,
                         imageGenProvider: providerKey,
@@ -706,8 +1001,8 @@ namespace AssetAutomator
                             AppendGeminiTaskLog(taskItem, msg);
                             UpdateTaskStepInfoFromLog(taskItem, msg);
                         }),
-                        model: selectedModel,
-                        extension: selectedExtension
+                        scriptwriterModel: resolvedScript,
+                        sceneCreatorModel: resolvedScene
                     );
                 });
 
@@ -898,6 +1193,78 @@ namespace AssetAutomator
                     GeminiTasks.Remove(taskItem);
                 }
             }
+        }
+
+        /// <summary>
+        /// Shows a context menu with secondary actions (Logs, Assets, Delete) when clicking ⋮.
+        /// </summary>
+        private void BtnGeminiTaskMenu_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is not Button btn || btn.Tag is not GeminiTaskModel taskItem) return;
+
+            var contextMenu = new ContextMenu();
+
+            var logsItem = new MenuItem { Header = "📋 Xem Logs" };
+            logsItem.Click += (s, args) => OpenTaskLogSidebar(taskItem);
+            contextMenu.Items.Add(logsItem);
+
+            var assetsItem = new MenuItem { Header = "🎬 Xem Assets (scenes.json)" };
+            assetsItem.Click += (s, args) =>
+            {
+                string folderKey = taskItem.OutputFolderName ?? YoutubeHelper.ExtractVideoId(taskItem.Topic.Trim());
+                string outputDir = YoutubeHelper.GetOutputDir(folderKey);
+                string scenesPath = Path.Combine(outputDir, "scenes.json");
+                if (!File.Exists(scenesPath))
+                {
+                    MessageBox.Show($"Không tìm thấy file scenes.json tại:\n{scenesPath}.\nVui lòng chạy task trước.", "Thông báo", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+                try
+                {
+                    string jsonText = File.ReadAllText(scenesPath);
+                    var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+                    var rootData = JsonSerializer.Deserialize<ScenesJsonRootModel>(jsonText, options);
+                    if (rootData != null)
+                    {
+                        var viewerWin = new Windows.ScenesViewerWindow(rootData) { Owner = this };
+                        viewerWin.ShowDialog();
+                    }
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Không thể đọc scenes.json: {ex.Message}", "Lỗi", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            };
+            contextMenu.Items.Add(assetsItem);
+
+            var folderItem = new MenuItem { Header = "📁 Mở Thư Mục Output" };
+            folderItem.Click += (s, args) =>
+            {
+                string folderKey = taskItem.OutputFolderName ?? YoutubeHelper.ExtractVideoId(taskItem.Topic.Trim());
+                string outputDir = YoutubeHelper.GetOutputDir(folderKey);
+                if (!Directory.Exists(outputDir)) Directory.CreateDirectory(outputDir);
+                try
+                {
+                    Process.Start(new ProcessStartInfo { FileName = outputDir, UseShellExecute = true, Verb = "open" });
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Không thể mở thư mục: {ex.Message}", "Lỗi", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            };
+            contextMenu.Items.Add(folderItem);
+
+            contextMenu.Items.Add(new Separator());
+
+            var deleteItem = new MenuItem { Header = "🗑️ Xóa Task", Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#EF4444")) };
+            deleteItem.Click += (s, args) =>
+            {
+                var result = MessageBox.Show($"Bạn có chắc chắn muốn xóa task '{taskItem.Topic}'?", "Xác nhận xóa", MessageBoxButton.YesNo, MessageBoxImage.Question);
+                if (result == MessageBoxResult.Yes) GeminiTasks.Remove(taskItem);
+            };
+            contextMenu.Items.Add(deleteItem);
+
+            contextMenu.IsOpen = true;
         }
 
         private void BtnViewSingleGeminiTaskLog_Click(object sender, RoutedEventArgs e)

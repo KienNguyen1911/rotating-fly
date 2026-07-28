@@ -1,32 +1,60 @@
 using System;
 using System.IO;
 using System.Text.Json;
+using AssetAutomator.Models;
 
-namespace AssetAutomator
+namespace AssetAutomator.Services
 {
-
-    public static class ConfigService
+    public class ConfigService : IConfigService
     {
-        public static AppSettings CurrentSettings { get; set; } = new AppSettings();
-        
-        private static readonly string AppDataFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "AssetAutomator");
-        private static readonly string ConfigPath = Path.Combine(AppDataFolder, "appsettings.json");
+        /// <summary>Static singleton instance, set automatically on construction.</summary>
+        public static ConfigService? Instance { get; private set; }
 
-        public static AppSettings LoadSettings()
+        /// <summary>Static convenience accessor for CurrentSettings.</summary>
+        public static AppSettings CurrentSettings => Instance?._currentSettings ?? new AppSettings();
+
+        AppSettings IConfigService.CurrentSettings => _currentSettings;
+
+        private AppSettings _currentSettings = new AppSettings();
+
+        private readonly string _appDataFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "AssetAutomator");
+        private readonly string _configPath;
+
+        public ConfigService()
+        {
+            Instance = this;
+            _configPath = Path.Combine(_appDataFolder, "appsettings.json");
+        }
+
+        // ── Instance methods (IConfigService implementation) ──
+
+        AppSettings IConfigService.LoadSettings() => LoadSettings();
+        void IConfigService.SaveSettings(AppSettings s) => SaveSettings(s);
+        void IConfigService.EnsureDefaults(AppSettings s) => EnsureDefaults(s);
+
+        // ── Static convenience methods (for code that uses ConfigService statically) ──
+
+        public static AppSettings LoadSettings() => Instance != null ? Instance.LoadSettingsImpl() : new AppSettings();
+        public static void SaveSettings(AppSettings settings) => Instance?.SaveSettingsImpl(settings);
+        public static void EnsureDefaults(AppSettings settings) => Instance?.EnsureDefaultsImpl(settings);
+
+        // ── Private instance implementations ──
+
+        private AppSettings LoadSettingsImpl()
         {
             var settings = new AppSettings();
 
             // 1. Migrate local appsettings.json to AppData if local exists but AppData doesn't
             string localConfigPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "appsettings.json");
-            if (File.Exists(localConfigPath) && !File.Exists(ConfigPath))
+            if (File.Exists(localConfigPath) && !File.Exists(_configPath))
             {
-                try 
+                try
                 {
-                    if (!Directory.Exists(AppDataFolder))
+                    if (!Directory.Exists(_appDataFolder))
                     {
-                        Directory.CreateDirectory(AppDataFolder);
+                        Directory.CreateDirectory(_appDataFolder);
                     }
-                    File.Copy(localConfigPath, ConfigPath, overwrite: true);
+                    File.Copy(localConfigPath, _configPath, overwrite: true);
                 }
                 catch (Exception ex)
                 {
@@ -35,11 +63,11 @@ namespace AssetAutomator
             }
 
             // 2. Load from JSON config file in AppData if it exists
-            if (File.Exists(ConfigPath))
+            if (File.Exists(_configPath))
             {
                 try
                 {
-                    string json = File.ReadAllText(ConfigPath);
+                    string json = File.ReadAllText(_configPath);
                     var loaded = JsonSerializer.Deserialize<AppSettings>(json);
                     if (loaded != null)
                     {
@@ -58,7 +86,7 @@ namespace AssetAutomator
             }
 
             // 3. Ensure smart defaults for empty or invalid paths
-            EnsureDefaults(settings);
+            EnsureDefaultsImpl(settings);
 
             // 4. Override with Environment Variables if defined (Precedence: Env > Config File)
             string? envAi84Key = Environment.GetEnvironmentVariable("AI84_API_KEY");
@@ -79,15 +107,15 @@ namespace AssetAutomator
                 settings.ImageApiKey = envImageKey.Trim();
             }
 
-            CurrentSettings = settings;
+            _currentSettings = settings;
 
             // Auto-save to AppData to ensure any missing fields or defaults are persisted
-            SaveSettings(settings);
+            SaveSettingsImpl(settings);
 
             return settings;
         }
 
-        public static void EnsureDefaults(AppSettings settings)
+        private void EnsureDefaultsImpl(AppSettings settings)
         {
             if (string.IsNullOrWhiteSpace(settings.ImageApiUrl))
                 settings.ImageApiUrl = "http://localhost:8765";
@@ -121,7 +149,7 @@ namespace AssetAutomator
 
             if (string.IsNullOrWhiteSpace(settings.ManualProxiesFilePath) || (!File.Exists(settings.ManualProxiesFilePath) && settings.ManualProxiesFilePath.Contains(@"\Users\")))
             {
-                settings.ManualProxiesFilePath = Path.Combine(AppDataFolder, "manual-proxies.txt");
+                settings.ManualProxiesFilePath = Path.Combine(_appDataFolder, "manual-proxies.txt");
             }
 
             if (string.IsNullOrWhiteSpace(settings.LicenseServerUrl))
@@ -135,19 +163,19 @@ namespace AssetAutomator
             }
         }
 
-        public static void SaveSettings(AppSettings settings)
+        private void SaveSettingsImpl(AppSettings settings)
         {
-            CurrentSettings = settings;
+            _currentSettings = settings;
             try
             {
-                if (!Directory.Exists(AppDataFolder))
+                if (!Directory.Exists(_appDataFolder))
                 {
-                    Directory.CreateDirectory(AppDataFolder);
+                    Directory.CreateDirectory(_appDataFolder);
                 }
 
                 var options = new JsonSerializerOptions { WriteIndented = true };
                 string json = JsonSerializer.Serialize(settings, options);
-                File.WriteAllText(ConfigPath, json);
+                File.WriteAllText(_configPath, json);
             }
             catch (Exception ex)
             {
@@ -155,7 +183,7 @@ namespace AssetAutomator
             }
         }
 
-        private static void MigrateLegacyFiles(AppSettings settings)
+        private void MigrateLegacyFiles(AppSettings settings)
         {
             try
             {

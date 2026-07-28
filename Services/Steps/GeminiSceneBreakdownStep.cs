@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
@@ -8,16 +10,74 @@ using AssetAutomator.Services;
 namespace AssetAutomator
 {
     /// <summary>
-    /// Pipeline Step 4: Takes voiceover.srt + transcript.txt, sends them to Gemini Gem "Scene Creator",
-    /// and parses the response into scenes.json containing timestamps, narration, and visual image prompts.
+    /// LEGACY — Scene Breakdown via Gemini REST API.
+    ///
+    /// Kept as an opt-in fallback when Playwright is not viable (no Chrome profile,
+    /// headless CI environments, or when the user explicitly disables browser automation).
+    /// The active production pipeline uses <see cref="GeminiPlaywrightSceneBreakdownStep"/>,
+    /// which drives the real Gemini Web UI through a persistent Chrome profile.
+    ///
+    /// This class intentionally preserves the original Playwright → API fallback chain so
+    /// callers that still hold a reference (legacy code paths, debugging) keep working.
+    /// New callers should depend on <see cref="GeminiPlaywrightSceneBreakdownStep"/>.
     /// </summary>
-    public class GeminiSceneBreakdownStep
+    [Obsolete("Use GeminiPlaywrightSceneBreakdownStep instead. This Legacy class is only kept as an opt-in API-mode fallback.")]
+    public class GeminiSceneBreakdownStepLegacy
     {
         private readonly GeminiApiService _geminiApiService;
+        private readonly string? _explicitProfilePath;
 
-        public GeminiSceneBreakdownStep(GeminiApiService geminiApiService)
+        public GeminiSceneBreakdownStepLegacy(GeminiApiService geminiApiService, string? chromeProfilePath = null)
         {
             _geminiApiService = geminiApiService;
+            _explicitProfilePath = chromeProfilePath;
+        }
+
+        /// <summary>
+        /// Resolves the Chrome profile path to use for Playwright.
+        /// Priority: task.SelectedProfile > settings.DefaultChromeProfile.
+        /// </summary>
+        private static string? ResolveChromeProfilePath(AutomationTask task, Action<AutomationTask, string> logTask)
+        {
+            try
+            {
+                var settings = ConfigService.CurrentSettings;
+
+                // Determine profile name: task selection first, then settings default
+                string profileName = !string.IsNullOrWhiteSpace(task.SelectedProfile)
+                    ? task.SelectedProfile
+                    : settings.DefaultChromeProfile;
+
+                logTask(task, $"[STEP 4] 🔍 Resolving Chrome profile: task.SelectedProfile='{task.SelectedProfile}', settings.DefaultChromeProfile='{settings.DefaultChromeProfile}'");
+
+                if (string.IsNullOrWhiteSpace(profileName))
+                {
+                    logTask(task, "[STEP 4] ❌ No Chrome profile configured. Set 'DefaultChromeProfile' in Settings or select a profile for this task.");
+                    return null;
+                }
+
+                // Determine base directory
+                string baseDir = !string.IsNullOrWhiteSpace(settings.ChromeProfilesDir)
+                    ? settings.ChromeProfilesDir
+                    : Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ChromeProfiles");
+
+                string profilePath = Path.Combine(baseDir, profileName);
+                logTask(task, $"[STEP 4] 🔍 Checking profile path: {profilePath}");
+
+                if (!Directory.Exists(profilePath))
+                {
+                    logTask(task, $"[STEP 4] ❌ Profile directory not found: {profilePath}");
+                    return null;
+                }
+
+                logTask(task, $"[STEP 4] ✅ Profile found: {profilePath}");
+                return profilePath;
+            }
+            catch (Exception ex)
+            {
+                logTask(task, $"[STEP 4] ❌ Error resolving profile: {ex.Message}");
+            }
+            return null;
         }
 
         public async Task ExecuteAsync(
@@ -26,84 +86,90 @@ namespace AssetAutomator
             AutomationTask task,
             Action<AutomationTask, string> logTask,
             string? selectedModel = null,
-            string? selectedExtension = null,
-            string? sessionId = null)
+            string? sessionId = null,
+            string? gemName = null,
+            bool usePlaywright = true)
         {
             logTask(task, "[STEP 4] Starting Scene Breakdown & Prompt Generation via Gemini Scene Creator Gem...");
-            task.Step4Status = "In Progress";
+            task.Step4Status = "Running";
 
             string srtPath = Path.Combine(outputDir, "voiceover.srt");
             string transcriptPath = Path.Combine(outputDir, "transcript.txt");
 
             if (!File.Exists(srtPath))
-            {
-                throw new FileNotFoundException($"voiceover.srt not found at {srtPath}. Please complete Step 3 (Voiceover/SRT) first.");
-            }
+                throw new FileNotFoundException($"voiceover.srt not found at {srtPath}.");
 
-            // Validate SRT file has actual content
             string srtContent = await File.ReadAllTextAsync(srtPath);
             if (string.IsNullOrWhiteSpace(srtContent) || srtContent.Length < 20)
+                throw new InvalidOperationException($"voiceover.srt empty ({srtContent.Length} chars).");
+
+            string resolvedModel = GeminiApiService.ResolveModelName(selectedModel);
+            string responseText = "";
+
+            // Resolve profile path: explicit constructor param > task.SelectedProfile > settings.DefaultChromeProfile
+            string? profilePath = _explicitProfilePath ?? ResolveChromeProfilePath(task, logTask);
+
+            // ── Playwright mode ──
+            if (usePlaywright && !string.IsNullOrWhiteSpace(profilePath))
             {
-                throw new InvalidOperationException($"voiceover.srt exists but appears empty or invalid ({srtContent.Length} chars). Cannot create scene breakdown.");
+                try
+                {
+                    logTask(task, $"[STEP 4] 🎭 Playwright browser mode (Profile: {Path.GetFileName(profilePath)}, Gem: {gemName ?? "default"}, Model: {resolvedModel})...");
+                    var pwCreator = new GeminiPlaywrightSceneCreator(profilePath, msg => logTask(task, msg));
+                    bool isThinking = true; // Always attempt thinking — harmless if not available
+
+                    string? thoughts;
+                    (responseText, thoughts) = await pwCreator.CreateScenesAsync(
+                        outputDir, srtPath, transcriptPath, gemName ?? "", gemId, resolvedModel, isThinking);
+
+                    if (!string.IsNullOrWhiteSpace(thoughts))
+                    {
+                        await File.WriteAllTextAsync(Path.Combine(outputDir, "scene_thoughts.txt"), thoughts, System.Text.Encoding.UTF8);
+                        logTask(task, $"[STEP 4] 🧠 Thinking saved ({thoughts.Length} chars) → scene_thoughts.txt");
+                    }
+                }
+                catch (Exception pwEx)
+                {
+                    logTask(task, $"[STEP 4] ⚠️ Playwright failed: {pwEx.Message}. Falling back to API...");
+                    usePlaywright = false;
+                }
+            }
+            else if (usePlaywright)
+            {
+                logTask(task, "[STEP 4] ⚠️ Playwright mode enabled but no Chrome profile available. Check logs above for details. Falling back to API...");
+                usePlaywright = false;
             }
 
-            // Build a detailed prompt with exact JSON format specification
-            string prompt = @"Bạn là một Scene Creator chuyên nghiệp. Hãy đọc nội dung từ file transcript.txt và voiceover.srt đính kèm, sau đó chuyển đổi chúng thành 1 đối tượng JSON phân cảnh duy nhất.
-
-Cấu trúc JSON bắt buộc tuân thủ 100% (chỉ trả về JSON thuần trong khối ```json ```, không kèm câu dẫn, không kèm code python, không kèm giải thích):
-
-```json
-{
-    ""video_title"": ""Tên video tự động sinh từ nội dung"",
-    ""scene_count"": 5,
-    ""scenes"": [
-        {
-            ""scene"": 1,
-            ""id"": ""scene_001"",
-            ""time"": {
-                ""start"": ""00:00:00,000"",
-                ""end"": ""00:00:05,500"",
-                ""duration"": 5.5
-            },
-            ""transcript"": ""Nội dung câu nói ở cảnh này (lấy từ transcript.txt)"",
-            ""image_prompt"": ""Mô tả chi tiết bằng tiếng Anh những gì diễn ra trong cảnh, bao gồm góc quay, ánh sáng, đối tượng, chất liệu, tâm trạng. Phong cách: Minimalist golden neon line art stickman doodle style, dark 2D lo-fi aesthetic, pitch black background.""
-        }
-    ]
-}
-```
-
-Yêu cầu QUAN TRỌNG:
-1. Mỗi scene có duration 3-6 giây, dựa trên timing từ file voiceover.srt
-2. image_prompt viết bằng TIẾNG ANH, mô tả trực quan phù hợp với cảm xúc đoạn transcript
-3. Phong cách image_prompt: Minimalist golden neon line art stickman doodle style, dark 2D lo-fi aesthetic, pitch black background
-4. KHÔNG kèm câu dẫn, không kèm giải thích, không kèm code python - CHỈ trả về JSON thuần
-5. Số lượng scene phải khớp với nội dung transcript và timing từ SRT";
-
-            var attachedFiles = new List<string>();
-            if (File.Exists(transcriptPath)) attachedFiles.Add(transcriptPath);
-            if (File.Exists(srtPath)) attachedFiles.Add(srtPath);
-
-            logTask(task, $"[STEP 4] Attaching {attachedFiles.Count} files ({string.Join(", ", attachedFiles.Select(Path.GetFileName))}) with detailed JSON format prompt to Gemini Gem (Gem ID: {gemId ?? "Scene Creator"}, Model: {selectedModel ?? "Default"})...");
-
-            var response = await _geminiApiService.SendChatAsync(
-                message: prompt,
-                gemId: gemId,
-                model: selectedModel,
-                extension: selectedExtension,
-                sessionId: sessionId,
-                filePaths: attachedFiles
-            );
-
-            if (string.IsNullOrWhiteSpace(response.text))
+            // ── API mode ──
+            if (!usePlaywright)
             {
-                throw new InvalidOperationException("[STEP 4] Gemini API returned empty response for scene breakdown.");
+                var attachedFiles = new List<string>();
+                if (File.Exists(transcriptPath)) attachedFiles.Add(transcriptPath);
+                if (File.Exists(srtPath)) attachedFiles.Add(srtPath);
+
+                string prompt = "Tạo scenes JSON cho video từ file SRT và transcript đính kèm.";
+                logTask(task, $"[STEP 4] API mode: {attachedFiles.Count} files, Gem={gemId ?? "default"}, Model={resolvedModel}");
+
+                var response = await _geminiApiService.SendChatAsync(
+                    message: prompt, gemId: gemId, model: resolvedModel,
+                    sessionId: sessionId, filePaths: attachedFiles);
+
+                if (string.IsNullOrWhiteSpace(response.text))
+                    throw new InvalidOperationException("[STEP 4] Gemini API returned empty response.");
+
+                responseText = response.text;
+
+                if (!string.IsNullOrWhiteSpace(response.thoughts))
+                {
+                    await File.WriteAllTextAsync(Path.Combine(outputDir, "scene_thoughts.txt"), response.thoughts, System.Text.Encoding.UTF8);
+                    logTask(task, $"[STEP 4] 🧠 Thinking saved ({response.thoughts.Length} chars) → scene_thoughts.txt");
+                }
+                else
+                    logTask(task, "[STEP 4] ⚠️ No thoughts returned — model may not support thinking.");
             }
 
-            // Log raw response length for debugging
-            logTask(task, $"[STEP 4] Received Gemini response ({response.text.Length} chars). Extracting JSON...");
-
-            // Clean and extract JSON string
-            string jsonText = ExtractJsonContent(response.text);
+            logTask(task, $"[STEP 4] Response: text={responseText.Length} chars. Extracting JSON...");
+            string jsonText = ExtractJsonContent(responseText);
 
             // Validate JSON parsing
             ScenesJsonRootModel? rootData;
@@ -122,8 +188,8 @@ Yêu cầu QUAN TRỌNG:
                 logTask(task, $"[ERROR] [STEP 4] Failed to parse JSON from Gemini response: {ex.Message}");
                 // Fallback: save raw output for debugging
                 string rawPath = Path.Combine(outputDir, "scenes_raw_response.txt");
-                await File.WriteAllTextAsync(rawPath, response.text);
-                logTask(task, $"[ERROR] [STEP 4] Saved raw response ({response.text.Length} chars) to: {rawPath}");
+                await File.WriteAllTextAsync(rawPath, responseText);
+                logTask(task, $"[ERROR] [STEP 4] Saved raw response ({responseText.Length} chars) to: {rawPath}");
                 throw;
             }
 
@@ -135,7 +201,7 @@ Yêu cầu QUAN TRỌNG:
             string outputScenesPath = Path.Combine(outputDir, "output_scenes.json");
             await File.WriteAllTextAsync(outputScenesPath, formattedJson, System.Text.Encoding.UTF8);
 
-            task.Step4Status = "Completed";
+            task.Step4Status = "Done";
             logTask(task, $"[STEP 4] Success! Successfully created scenes.json ({rootData.scenes.Count} scenes) at: {scenesPath}");
         }
 

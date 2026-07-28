@@ -1,7 +1,6 @@
 <Application x:Class="AssetAutomator.App"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             StartupUri="Windows/MainWindow.xaml">
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
     <!-- App.xaml is deliberately a composition root: visual rules live in dedicated dictionaries. -->
     <Application.Resources>
         <ResourceDictionary>

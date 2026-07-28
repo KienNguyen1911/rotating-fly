@@ -233,16 +233,18 @@ namespace AssetAutomator.Services
             Directory.CreateDirectory(outputDir);
             string transcriptPath = Path.Combine(outputDir, "transcript.txt");
 
+            // Strict primary-folder check only — do NOT scan sibling folders.
+            // The skip must reflect real assets in the current task's folder so subsequent
+            // stages (which read from the same path) can actually consume them.
             if (File.Exists(transcriptPath) && new FileInfo(transcriptPath).Length > 50)
             {
-                log(task, $"[STAGE-A] ⏭️ transcript.txt đã tồn tại ({new FileInfo(transcriptPath).Length} bytes), bỏ qua Deep Research.");
-                task.Step2Status = "Completed";
+                log(task, $"[STAGE-A] ⏭️ transcript.txt đã tồn tại trong folder hiện tại ({new FileInfo(transcriptPath).Length} bytes), bỏ qua Deep Research.");
+                task.Step2Status = "Done";
                 return;
             }
 
             string gemId = taskModel.SelectedScriptwriterGem?.Id ?? string.Empty;
-            string model = taskModel.SelectedModel ?? "gemini-3-flash";
-            string ext = taskModel.SelectedExtension ?? "None";
+            string model = GeminiApiService.ResolveModelName(taskModel.ScriptwriterModel);
             bool deepResearch = taskModel.EnableDeepResearch;
 
             var topicResearchStep = new GeminiTopicResearchStep(_geminiApiService);
@@ -254,7 +256,6 @@ namespace AssetAutomator.Services
                 task: task,
                 logTask: log,
                 selectedModel: model,
-                selectedExtension: ext,
                 existingSessionId: null
             );
         }
@@ -268,15 +269,16 @@ namespace AssetAutomator.Services
             string wavPath = Path.Combine(outputDir, "voiceover.wav");
             string srtPath = Path.Combine(outputDir, "voiceover.srt");
 
+            // Strict primary-folder check only.
             bool hasAudio = (File.Exists(mp3Path) && new FileInfo(mp3Path).Length > 1000)
                          || (File.Exists(wavPath) && new FileInfo(wavPath).Length > 1000);
             bool hasSrt = File.Exists(srtPath) && new FileInfo(srtPath).Length > 10;
 
             if (hasAudio && hasSrt)
             {
-                log(task, $"[STAGE-B] ⏭️ voiceover.mp3/srt đã tồn tại, bỏ qua Voiceover.");
-                task.Step4Status = "Completed";
-                task.StepSrtStatus = "Completed";
+                log(task, $"[STAGE-B] ⏭️ Voiceover/SRT đã tồn tại trong folder hiện tại, bỏ qua Voiceover.");
+                task.Step4Status = "Done";
+                task.StepSrtStatus = "Done";
                 return;
             }
 
@@ -285,7 +287,7 @@ namespace AssetAutomator.Services
                 ? await File.ReadAllTextAsync(transcriptPath)
                 : string.Empty;
 
-            var voiceoverStep = new VoiceoverGenerationStep();
+            var voiceoverStep = new VoiceoverGenerationStep(ConfigService.Instance!);
             await voiceoverStep.ExecuteAsync(
                 voiceId: taskModel.VoiceId.Trim(),
                 outputDir: outputDir,
@@ -304,26 +306,27 @@ namespace AssetAutomator.Services
             string outputDir = task.OutputDir;
             string scenesPath = Path.Combine(outputDir, "scenes.json");
 
+            // Strict primary-folder check only — do NOT skip when scenes.json only exists in a sibling folder.
             if (File.Exists(scenesPath) && new FileInfo(scenesPath).Length > 50 && IsValidScenesJson(scenesPath))
             {
-                log(task, $"[STAGE-C] ⏭️ scenes.json hợp lệ đã tồn tại, bỏ qua Scene Creator.");
-                task.Step3Status = "Completed";
+                log(task, $"[STAGE-C] ⏭️ scenes.json hợp lệ đã tồn tại trong folder hiện tại, bỏ qua Scene Creator.");
+                task.Step3Status = "Done";
                 return;
             }
 
             string gemId = taskModel.SelectedSceneCreatorGem?.Id ?? string.Empty;
-            string model = taskModel.SelectedModel ?? "gemini-3-flash";
-            string ext = taskModel.SelectedExtension ?? "None";
+            string gemName = taskModel.SelectedSceneCreatorGem?.Name ?? string.Empty;
+            string model = GeminiApiService.ResolveModelName(taskModel.SceneCreatorModel);
 
-            var sceneBreakdownStep = new GeminiSceneBreakdownStep(_geminiApiService);
+            var sceneBreakdownStep = new GeminiPlaywrightSceneBreakdownStep();
             await sceneBreakdownStep.ExecuteAsync(
                 outputDir: outputDir,
                 gemId: string.IsNullOrWhiteSpace(gemId) ? null : gemId,
                 task: task,
                 logTask: log,
                 selectedModel: model,
-                selectedExtension: ext,
-                sessionId: null
+                sessionId: null,
+                gemName: gemName
             );
         }
 
@@ -343,7 +346,7 @@ namespace AssetAutomator.Services
             if (AreAllSceneImagesGenerated(scenesPath, outputDir))
             {
                 log(task, $"[STAGE-D] ⏭️ Tất cả scene images đã tồn tại, bỏ qua Image Gen.");
-                task.Step5Status = "Completed";
+                task.Step5Status = "Done";
                 return;
             }
 

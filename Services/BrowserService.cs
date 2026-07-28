@@ -13,7 +13,7 @@ namespace AssetAutomator
     /// Manages Playwright browser lifecycle: initialization, slot allocation, profile cloning, and cleanup.
     /// Extracted from MainWindow.AutomationSteps.cs to follow SRP.
     /// </summary>
-    public class BrowserService
+    public class BrowserService : IBrowserService
     {
         private IPlaywright? _playwright;
         private readonly ConcurrentDictionary<string, IBrowserContext> _browserContexts = new();

@@ -5,6 +5,7 @@ using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.Playwright;
+using AssetAutomator.Services;
 
 namespace AssetAutomator
 {

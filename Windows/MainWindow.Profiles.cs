@@ -3,6 +3,7 @@ using System.IO;
 using System.Threading.Tasks;
 using System.Windows;
 using Microsoft.Playwright;
+using AssetAutomator.Services;
 
 namespace AssetAutomator
 {

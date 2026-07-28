@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Text.RegularExpressions;
+using AssetAutomator.Services;
 
 namespace AssetAutomator
 {
@@ -10,6 +11,12 @@ namespace AssetAutomator
     /// </summary>
     public static class YoutubeHelper
     {
+        /// <summary>
+        /// Static reference to IConfigService, set once at application startup (App.xaml.cs).
+        /// Required because AutomationTask.OutputDir calls GetOutputDir from a POCO getter.
+        /// </summary>
+        internal static IConfigService? ConfigServiceInstance { get; set; }
+
         private static readonly Regex VideoIdRegex = new Regex(
             @"(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^""&?\/ ]{11})",
             RegexOptions.IgnoreCase | RegexOptions.Compiled);
@@ -43,7 +50,7 @@ namespace AssetAutomator
         /// </summary>
         public static string GetOutputDir(string videoId)
         {
-            string baseDir = ConfigService.CurrentSettings.OutputsDir;
+            string baseDir = ConfigServiceInstance?.CurrentSettings.OutputsDir ?? string.Empty;
             if (string.IsNullOrEmpty(baseDir))
             {
                 string desktopPath = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);

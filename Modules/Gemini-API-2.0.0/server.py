@@ -404,12 +404,17 @@ async def health_check():
         }
 
     status = client.account_status
+    available_models = client.list_models()
+    thinking_models = [m.model_name for m in (available_models or []) if "thinking" in m.model_name.lower()]
+    
     return {
         "status": "ok" if status == AccountStatus.AVAILABLE else "degraded",
         "initialized": True,
         "account_status": status.name,
         "account_description": status.description if hasattr(status, 'description') else str(status),
         "cookies_path": str(get_cookies_path()),
+        "models_available": len(available_models) if available_models else 0,
+        "thinking_models": thinking_models,
     }
 
 
@@ -505,6 +510,52 @@ async def list_gems(include_hidden: bool = Query(False, description="Include hid
         raise HTTPException(status_code=500, detail=f"Failed to fetch gems: {str(e)}")
 
 
+class ModelInfoResponse(BaseModel):
+    model_id: str
+    model_name: str
+    display_name: str
+    description: str
+    capacity: int
+    is_available: bool
+    is_thinking: bool = False
+    is_advanced_only: bool = False
+
+
+@app.get("/api/models", response_model=List[ModelInfoResponse], summary="List Available Models")
+async def list_models():
+    """
+    Lấy danh sách tất cả các model đang khả dụng từ Gemini (dynamic registry).
+    Bao gồm model_id (hex), model_name, display_name, capacity, và có hỗ trợ thinking hay không.
+    """
+    if client is None:
+        raise HTTPException(status_code=503, detail="Gemini client is not initialized.")
+
+    try:
+        models = client.list_models()
+        if not models:
+            return []
+
+        result = []
+        for m in models:
+            name_lower = m.model_name.lower()
+            result.append(ModelInfoResponse(
+                model_id=m.model_id,
+                model_name=m.model_name,
+                display_name=m.display_name,
+                description=m.description,
+                capacity=m.capacity,
+                is_available=m.is_available,
+                is_thinking="thinking" in name_lower,
+                is_advanced_only=m.advanced_only,
+            ))
+
+        # Sort: thinking models first, then by name
+        result.sort(key=lambda x: (not x.is_thinking, x.model_name))
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to list models: {str(e)}")
+
+
 @app.post("/api/chat", response_model=ChatResponse, summary="Send Message / Chat with Gem")
 async def chat_with_gem(req: ChatRequest):
     """
@@ -525,6 +576,11 @@ async def chat_with_gem(req: ChatRequest):
             if req.model:
                 chat_kwargs["model"] = req.model
             chat_sessions[session_id] = client.start_chat(**chat_kwargs)
+            # ── MODEL LOGGING: hiển thị model + thinking status ──
+            model_name = req.model or "default"
+            is_thinking = "thinking" in model_name.lower()
+            thinking_tag = "🧠 THINKING" if is_thinking else "📄 STANDARD"
+            log.info(f"[MODEL] Session {session_id[:8]} → model={model_name} | {thinking_tag} | gem={req.gem_id or 'default'}")
         elif req.gem_id:
             # Safeguard: if session exists but requested gem_id differs, re-initialize chat session for new Gem
             existing_chat = chat_sessions[session_id]
@@ -586,8 +642,13 @@ async def chat_with_gem(req: ChatRequest):
 
 
 
-        # Case 2: Normal / Extended Chat (supports @YouTube, @Gmail extensions in req.message and file attachments)
+        # Case 2: Normal / Extended Chat
         output = await chat.send_message(req.message, files=req.files, temporary=req.temporary)
+        
+        # ── THOUGHTS LOGGING ──
+        has_thoughts = bool(output.thoughts)
+        thought_len = len(output.thoughts) if output.thoughts else 0
+        log.info(f"[OUTPUT] Session {session_id[:8]} → text={len(output.text or '')} chars, thoughts={thought_len} chars {'🧠' if has_thoughts else '⚠️ no thinking'}")
         
         images_data = []
         if output.images:

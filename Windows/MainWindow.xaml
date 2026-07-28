@@ -6,6 +6,7 @@
         xmlns:local="clr-namespace:AssetAutomator"
         xmlns:converters="clr-namespace:AssetAutomator.Converters"
         mc:Ignorable="d"
+        x:Name="RootWindow"
         Title="AssetAutomator" Height="700" Width="1240" MinWidth="1240" MinHeight="700" WindowStartupLocation="CenterScreen"
         Background="{DynamicResource CanvasBrush}" FontFamily="Segoe UI"
         Icon="pack://application:,,,/Resources/app_logo.png">
@@ -262,7 +263,7 @@
                                         <DataGridTemplateColumn Header="Chrome Profile" Width="1.5*">
                                             <DataGridTemplateColumn.CellTemplate>
                                                 <DataTemplate>
-                                                    <ComboBox ItemsSource="{Binding RelativeSource={RelativeSource AncestorType=Window}, Path=ProfileList}"
+                                                    <ComboBox ItemsSource="{Binding ProfileList, ElementName=RootWindow}"
                                                               SelectedItem="{Binding SelectedProfile, UpdateSourceTrigger=PropertyChanged}"
                                                               IsEditable="False"
                                                               Height="28" VerticalAlignment="Center" VerticalContentAlignment="Center"/>
@@ -1514,6 +1515,7 @@
                             <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
                                 <Button Content="➕ Thêm Task Mới" Click="BtnAddGeminiTask_Click" Height="34" Padding="14,0" Style="{StaticResource SecondaryButton}" Margin="0,0,10,0" FontSize="12" FontWeight="SemiBold"/>
                                 <Button Content="🗑️ Xóa Task Đã Chọn" Click="BtnDeleteGeminiTasks_Click" Height="34" Padding="14,0" Style="{StaticResource DeleteButton}" Margin="0,0,10,0" FontSize="12" FontWeight="SemiBold"/>
+                                <Button x:Name="BtnSuggestTopics" Content="🔍 Gợi Ý Chủ Đề" Click="BtnSuggestTopics_Click" Height="34" Padding="14,0" Style="{StaticResource SecondaryButton}" Margin="0,0,10,0" FontSize="12" FontWeight="SemiBold" ToolTip="Nhập link kênh YouTube vào ô 'Chủ Đề' rồi bấm để lấy gợi ý"/>
                                 <Button x:Name="BtnRefreshGems" Content="🔄 Tải Danh Sách Gems" Click="BtnRefreshGems_Click" Height="34" Padding="14,0" Style="{StaticResource SecondaryButton}" Margin="0,0,10,0" FontSize="12" FontWeight="SemiBold"/>
                                 <Button x:Name="BtnImportCookies" Content="🔑 Nạp Cookies Gemini" Click="BtnImportCookies_Click" Height="34" Padding="14,0" Style="{StaticResource SecondaryButton}" Margin="0,0,10,0" FontSize="12" FontWeight="SemiBold"/>
                             </StackPanel>
@@ -1534,12 +1536,174 @@
 
                             <TextBlock Grid.Row="0" Text="📋 Danh Sách Gemini Automation Tasks" Style="{StaticResource SectionTitle}" Margin="0,0,0,12"/>
 
-                            <DataGrid Grid.Row="1" ItemsSource="{Binding GeminiTasks}" AutoGenerateColumns="False" CanUserAddRows="False" 
+                            <DataGrid Grid.Row="1" x:Name="DgridGeminiTasks" ItemsSource="{Binding GeminiTasks}" AutoGenerateColumns="False" CanUserAddRows="False" 
                                       Background="Transparent" BorderThickness="0" HeadersVisibility="Column" GridLinesVisibility="Horizontal"
-                                      RowHeaderWidth="0" IsReadOnly="False" RowHeight="42" FontSize="12">
+                                      RowHeaderWidth="0" IsReadOnly="False" RowHeight="48" FontSize="12"
+                                      RowDetailsVisibilityMode="VisibleWhenSelected"
+                                      SelectionMode="Single">
+                                <DataGrid.Resources>
+                                    <!-- Progress bar style for step progress -->
+                                    <Style x:Key="StepProgressBar" TargetType="ProgressBar">
+                                        <Setter Property="Height" Value="8"/>
+                                        <Setter Property="Minimum" Value="0"/>
+                                        <Setter Property="Maximum" Value="100"/>
+                                        <Setter Property="Background" Value="#2D3748"/>
+                                        <Setter Property="Foreground">
+                                            <Setter.Value>
+                                                <LinearGradientBrush EndPoint="1,0.5" StartPoint="0,0.5">
+                                                    <GradientStop Color="#3B82F6" Offset="0"/>
+                                                    <GradientStop Color="#8B5CF6" Offset="1"/>
+                                                </LinearGradientBrush>
+                                            </Setter.Value>
+                                        </Setter>
+                                        <Setter Property="Template">
+                                            <Setter.Value>
+                                                <ControlTemplate TargetType="ProgressBar">
+                                                    <Grid MinHeight="{TemplateBinding Height}">
+                                                        <Border Background="{TemplateBinding Background}" CornerRadius="4"/>
+                                                        <Border x:Name="PART_Track" CornerRadius="4">
+                                                            <Border x:Name="PART_Indicator" CornerRadius="4"
+                                                                    Background="{TemplateBinding Foreground}"
+                                                                    HorizontalAlignment="Left"/>
+                                                        </Border>
+                                                    </Grid>
+                                                </ControlTemplate>
+                                            </Setter.Value>
+                                        </Setter>
+                                    </Style>
+                                </DataGrid.Resources>
+
+                                <DataGrid.RowStyle>
+                                    <Style TargetType="DataGridRow">
+                                        <Setter Property="Background" Value="Transparent"/>
+                                        <Setter Property="BorderBrush" Value="{DynamicResource HairlineBrush}"/>
+                                        <Setter Property="BorderThickness" Value="0,0,0,1"/>
+                                        <Setter Property="Padding" Value="4,0"/>
+                                        <Style.Triggers>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter Property="Background" Value="{DynamicResource SurfaceCardBrush}"/>
+                                            </Trigger>
+                                            <Trigger Property="IsSelected" Value="True">
+                                                <Setter Property="Background" Value="{DynamicResource SurfaceSoftBrush}"/>
+                                            </Trigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </DataGrid.RowStyle>
+
+                                <DataGrid.RowDetailsTemplate>
+                                    <DataTemplate>
+                                        <Border Background="{DynamicResource SurfaceCardBrush}" Padding="16,12" Margin="0,0,0,4"
+                                                BorderBrush="{DynamicResource HairlineBrush}" BorderThickness="0,0,0,1">
+                                            <Grid>
+                                                <!-- Content Grid -->
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <Grid.RowDefinitions>
+                                                        <RowDefinition Height="Auto"/>
+                                                        <RowDefinition Height="Auto"/>
+                                                        <RowDefinition Height="Auto"/>
+                                                    </Grid.RowDefinitions>
+
+                                                    <!-- Left Column: 🎬 Scriptwriter Config -->
+                                                    <Border Grid.Row="0" Grid.Column="0" Margin="0,0,8,8" Padding="12,10"
+                                                            Background="{DynamicResource CanvasBrush}" CornerRadius="6"
+                                                            BorderBrush="{DynamicResource HairlineBrush}" BorderThickness="1">
+                                                        <StackPanel>
+                                                            <TextBlock Text="🎬 Scriptwriter" FontWeight="Bold" FontSize="12" Margin="0,0,0,8"
+                                                                       Foreground="{DynamicResource PrimaryBrush}"/>
+                                                            <TextBlock Text="Gem" FontSize="11" Foreground="{DynamicResource SubtleBrush}" Margin="0,0,0,2"/>
+                                                            <ComboBox ItemsSource="{Binding DataContext.AvailableScriptwriterGems, ElementName=RootWindow}"
+                                                                      SelectedItem="{Binding SelectedScriptwriterGem, Mode=TwoWay}"
+                                                                      Height="28" Margin="0,0,0,6"/>
+                                                            <TextBlock Text="Model" FontSize="11" Foreground="{DynamicResource SubtleBrush}"/>
+                                                            <ComboBox ItemsSource="{Binding DataContext.AvailableAiModels, ElementName=RootWindow}"
+                                                                      SelectedItem="{Binding ScriptwriterModel, Mode=TwoWay}" Height="28"/>
+                                                            <CheckBox IsChecked="{Binding EnableDeepResearch, Mode=TwoWay}" Content="Bật Deep Research"
+                                                                      FontSize="11" Foreground="{DynamicResource InkBrush}" Margin="0,4,0,0"/>
+                                                        </StackPanel>
+                                                    </Border>
+
+                                                    <!-- Right Column: 🎭 Scene Creator Config -->
+                                                    <Border Grid.Row="0" Grid.Column="1" Margin="8,0,0,8" Padding="12,10"
+                                                            Background="{DynamicResource CanvasBrush}" CornerRadius="6"
+                                                            BorderBrush="{DynamicResource HairlineBrush}" BorderThickness="1">
+                                                        <StackPanel>
+                                                            <TextBlock Text="🎭 Scene Creator" FontWeight="Bold" FontSize="12" Margin="0,0,0,8"
+                                                                       Foreground="{DynamicResource PrimaryBrush}"/>
+                                                            <TextBlock Text="Gem" FontSize="11" Foreground="{DynamicResource SubtleBrush}" Margin="0,0,0,2"/>
+                                                            <ComboBox ItemsSource="{Binding DataContext.AvailableSceneCreatorGems, ElementName=RootWindow}"
+                                                                      SelectedItem="{Binding SelectedSceneCreatorGem, Mode=TwoWay}"
+                                                                      Height="28" Margin="0,0,0,6"/>
+                                                            <TextBlock Text="Model" FontSize="11" Foreground="{DynamicResource SubtleBrush}"/>
+                                                            <ComboBox ItemsSource="{Binding DataContext.AvailableAiModels, ElementName=RootWindow}"
+                                                                      SelectedItem="{Binding SceneCreatorModel, Mode=TwoWay}" Height="28"/>
+                                                        </StackPanel>
+                                                    </Border>
+
+                                                    <!-- Row 1: Voice ID + Provider + Character Ref -->
+                                                    <Border Grid.Row="1" Grid.ColumnSpan="2" Margin="0,0,0,8" Padding="12,10"
+                                                            Background="{DynamicResource CanvasBrush}" CornerRadius="6"
+                                                            BorderBrush="{DynamicResource HairlineBrush}" BorderThickness="1">
+                                                        <Grid>
+                                                            <Grid.ColumnDefinitions>
+                                                                <ColumnDefinition Width="*"/>
+                                                                <ColumnDefinition Width="*"/>
+                                                                <ColumnDefinition Width="*"/>
+                                                            </Grid.ColumnDefinitions>
+                                                            <StackPanel Grid.Column="0" Margin="0,0,8,0">
+                                                                <TextBlock Text="🎙️ Voice ID" FontSize="11" Foreground="{DynamicResource SubtleBrush}" Margin="0,0,0,2"/>
+                                                                <Grid>
+                                                                    <Grid.ColumnDefinitions>
+                                                                        <ColumnDefinition Width="*"/>
+                                                                        <ColumnDefinition Width="Auto"/>
+                                                                    </Grid.ColumnDefinitions>
+                                                                    <TextBox Grid.Column="0" Text="{Binding VoiceId, UpdateSourceTrigger=PropertyChanged}" Height="28"/>
+                                                                    <Button Grid.Column="1" Content="🔍" Style="{StaticResource IconButton}"
+                                                                            Background="{DynamicResource PrimaryBrush}" Foreground="{DynamicResource OnPrimaryBrush}"
+                                                                            BorderThickness="0" Margin="4,0,0,0" Click="BtnBrowseVoice_Click"/>
+                                                                </Grid>
+                                                            </StackPanel>
+                                                            <StackPanel Grid.Column="1" Margin="4,0,4,0">
+                                                                <TextBlock Text="🖼️ Provider" FontSize="11" Foreground="{DynamicResource SubtleBrush}" Margin="0,0,0,2"/>
+                                                                <ComboBox ItemsSource="{Binding DataContext.AvailableImageProviders, ElementName=RootWindow}"
+                                                                          SelectedItem="{Binding SelectedImageProvider, Mode=TwoWay}" Height="28"/>
+                                                            </StackPanel>
+                                                            <StackPanel Grid.Column="2" Margin="8,0,0,0">
+                                                                <TextBlock Text="👤 Character Ref" FontSize="11" Foreground="{DynamicResource SubtleBrush}" Margin="0,0,0,2"/>
+                                                                <Grid>
+                                                                    <Grid.ColumnDefinitions>
+                                                                        <ColumnDefinition Width="*"/>
+                                                                        <ColumnDefinition Width="Auto"/>
+                                                                    </Grid.ColumnDefinitions>
+                                                                    <TextBox Grid.Column="0" Text="{Binding CharacterRef, UpdateSourceTrigger=PropertyChanged}" Height="28"/>
+                                                                    <Button Grid.Column="1" Content="📁" Style="{StaticResource IconButton}"
+                                                                            Background="{DynamicResource PrimaryBrush}" Foreground="{DynamicResource OnPrimaryBrush}"
+                                                                            BorderThickness="0" Margin="4,0,0,0" Click="BtnBrowseCharacterRef_Click"/>
+                                                                </Grid>
+                                                            </StackPanel>
+                                                        </Grid>
+                                                    </Border>
+                                                </Grid>
+
+                                                <!-- Collapse button (top-right overlay) -->
+                                                <Button Content="▲" Width="28" Height="28"
+                                                        HorizontalAlignment="Right" VerticalAlignment="Top"
+                                                        Background="Transparent" Foreground="{DynamicResource SubtleBrush}"
+                                                        BorderThickness="0" FontSize="11" FontWeight="Bold"
+                                                        Click="BtnCollapseGeminiRowDetails_Click"
+                                                        ToolTip="Thu gọn bảng cấu hình"
+                                                        Cursor="Hand" Margin="0,-4,-4,0"/>
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </DataGrid.RowDetailsTemplate>
+
                                 <DataGrid.Columns>
-                                    <!-- CheckBox Select -->
-                                    <DataGridTemplateColumn Width="45">
+                                    <!-- 1. CheckBox Select -->
+                                    <DataGridTemplateColumn Width="40">
                                         <DataGridTemplateColumn.Header>
                                             <CheckBox x:Name="ChkSelectAllGeminiTasks" Click="ChkSelectAllGeminiTasks_Click" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                         </DataGridTemplateColumn.Header>
@@ -1550,8 +1714,8 @@
                                         </DataGridTemplateColumn.CellTemplate>
                                     </DataGridTemplateColumn>
 
-                                    <!-- Topic / Link -->
-                                    <DataGridTemplateColumn Header="Chủ Đề / Link YouTube" Width="2.2*">
+                                    <!-- 2. Topic / Link -->
+                                    <DataGridTemplateColumn Header="Chủ Đề / Link YouTube" Width="2.5*">
                                         <DataGridTemplateColumn.CellTemplate>
                                             <DataTemplate>
                                                 <TextBox Text="{Binding Topic, UpdateSourceTrigger=PropertyChanged}" VerticalContentAlignment="Center" Padding="6,2" Height="30" Margin="4,0"/>
@@ -1559,220 +1723,59 @@
                                         </DataGridTemplateColumn.CellTemplate>
                                     </DataGridTemplateColumn>
 
-                                    <!-- Scriptwriter Gem -->
-                                    <DataGridTemplateColumn Header="Scriptwriter Gem" Width="1.5*">
+                                    <!-- 3. Progress Bar + Status (merged) -->
+                                    <DataGridTemplateColumn Header="Tiến Trình" Width="1.6*">
                                         <DataGridTemplateColumn.CellTemplate>
                                             <DataTemplate>
-                                                <ComboBox ItemsSource="{Binding DataContext.AvailableScriptwriterGems, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                          SelectedItem="{Binding SelectedScriptwriterGem, Mode=TwoWay}" VerticalContentAlignment="Center" Height="30" Margin="4,0"/>
+                                                <Border CornerRadius="6" Padding="6,4" Margin="4,2"
+                                                        Background="{DynamicResource SurfaceCardBrush}"
+                                                        BorderBrush="{DynamicResource HairlineBrush}" BorderThickness="1">
+                                                    <StackPanel VerticalAlignment="Center">
+                                                        <ProgressBar Value="{Binding ProgressPercent, Mode=OneWay}"
+                                                                     Style="{StaticResource StepProgressBar}" Margin="0,0,0,4"/>
+                                                        <TextBlock Text="{Binding ProgressText}" FontSize="10"
+                                                                   Foreground="{DynamicResource SubtleBrush}" HorizontalAlignment="Center"
+                                                                   FontWeight="SemiBold"/>
+                                                    </StackPanel>
+                                                </Border>
                                             </DataTemplate>
                                         </DataGridTemplateColumn.CellTemplate>
                                     </DataGridTemplateColumn>
 
-                                    <!-- Model AI -->
-                                    <DataGridTemplateColumn Header="Model AI" Width="1.4*">
+                                    <!-- 4. Scriptwriter Quick Badge -->
+                                    <DataGridTemplateColumn Header="🎬 Scriptwriter" Width="1.8*">
                                         <DataGridTemplateColumn.CellTemplate>
                                             <DataTemplate>
-                                                <ComboBox ItemsSource="{Binding DataContext.AvailableAiModels, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                          SelectedItem="{Binding SelectedModel, Mode=TwoWay}" VerticalContentAlignment="Center" Height="30" Margin="4,0"/>
+                                                <Border CornerRadius="4" Padding="6,3" Margin="2,0"
+                                                        Background="{DynamicResource SurfaceCardBrush}"
+                                                        BorderBrush="{DynamicResource HairlineBrush}" BorderThickness="1"
+                                                        ToolTip="{Binding ScriptwriterSummary}">
+                                                    <TextBlock Text="{Binding ScriptwriterSummary}" FontSize="11"
+                                                               TextTrimming="CharacterEllipsis"
+                                                               Foreground="{DynamicResource InkBrush}"/>
+                                                </Border>
                                             </DataTemplate>
                                         </DataGridTemplateColumn.CellTemplate>
                                     </DataGridTemplateColumn>
 
-                                    <!-- Tư duy mở rộng (Extended Thinking) -->
-                                    <DataGridTemplateColumn Header="Tư duy mở rộng" Width="1.5*">
+                                    <!-- 5. Scene Creator Quick Badge -->
+                                    <DataGridTemplateColumn Header="🎭 Scene Creator" Width="1.8*">
                                         <DataGridTemplateColumn.CellTemplate>
                                             <DataTemplate>
-                                                <ComboBox ItemsSource="{Binding DataContext.AvailableExtensions, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                          SelectedItem="{Binding SelectedExtension, Mode=TwoWay}" VerticalContentAlignment="Center" Height="30" Margin="4,0"/>
+                                                <Border CornerRadius="4" Padding="6,3" Margin="2,0"
+                                                        Background="{DynamicResource SurfaceCardBrush}"
+                                                        BorderBrush="{DynamicResource HairlineBrush}" BorderThickness="1"
+                                                        ToolTip="{Binding SceneCreatorSummary}">
+                                                    <TextBlock Text="{Binding SceneCreatorSummary}" FontSize="11"
+                                                               TextTrimming="CharacterEllipsis"
+                                                               Foreground="{DynamicResource InkBrush}"/>
+                                                </Border>
                                             </DataTemplate>
                                         </DataGridTemplateColumn.CellTemplate>
                                     </DataGridTemplateColumn>
 
-                                    <!-- Deep Research -->
-                                    <DataGridTemplateColumn Header="Deep Research" Width="1.1*">
-                                        <DataGridTemplateColumn.CellTemplate>
-                                            <DataTemplate>
-                                                <CheckBox IsChecked="{Binding EnableDeepResearch, Mode=TwoWay}" Content="Research" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                            </DataTemplate>
-                                        </DataGridTemplateColumn.CellTemplate>
-                                    </DataGridTemplateColumn>
-
-                                    <!-- Voice ID -->
-                                    <DataGridTemplateColumn Header="Voice ID" Width="1.5*">
-                                        <DataGridTemplateColumn.CellTemplate>
-                                            <DataTemplate>
-                                                <Grid Margin="2,0">
-                                                    <Grid.ColumnDefinitions>
-                                                        <ColumnDefinition Width="*"/>
-                                                        <ColumnDefinition Width="Auto"/>
-                                                    </Grid.ColumnDefinitions>
-                                                    <TextBox Grid.Column="0" Text="{Binding VoiceId, UpdateSourceTrigger=PropertyChanged}" Height="28" VerticalAlignment="Center" VerticalContentAlignment="Center"/>
-                                                    <Button Grid.Column="1" Content="🔍" Style="{StaticResource IconButton}" Background="{DynamicResource PrimaryBrush}" Foreground="{DynamicResource OnPrimaryBrush}" BorderThickness="0" Margin="4,0,0,0" VerticalAlignment="Center" Click="BtnBrowseVoice_Click" ToolTip="Chọn Voice ID từ danh sách">
-                                                    </Button>
-                                                </Grid>
-                                            </DataTemplate>
-                                        </DataGridTemplateColumn.CellTemplate>
-                                    </DataGridTemplateColumn>
-
-                                    <!-- Scene Creator Gem -->
-                                    <DataGridTemplateColumn Header="Scene Gem" Width="1.5*">
-                                        <DataGridTemplateColumn.CellTemplate>
-                                            <DataTemplate>
-                                                <ComboBox ItemsSource="{Binding DataContext.AvailableSceneCreatorGems, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                          SelectedItem="{Binding SelectedSceneCreatorGem, Mode=TwoWay}" VerticalContentAlignment="Center" Height="30" Margin="4,0"/>
-                                            </DataTemplate>
-                                        </DataGridTemplateColumn.CellTemplate>
-                                    </DataGridTemplateColumn>
-
-                                    <!-- Provider -->
-                                    <DataGridTemplateColumn Header="Provider Sinh Ảnh" Width="1.2*">
-                                        <DataGridTemplateColumn.CellTemplate>
-                                            <DataTemplate>
-                                                <ComboBox ItemsSource="{Binding DataContext.AvailableImageProviders, RelativeSource={RelativeSource AncestorType=Window}}"
-                                                          SelectedItem="{Binding SelectedImageProvider, Mode=TwoWay}" VerticalContentAlignment="Center" Height="30" Margin="4,0"/>
-                                            </DataTemplate>
-                                        </DataGridTemplateColumn.CellTemplate>
-                                    </DataGridTemplateColumn>
-
-                                    <!-- Character Ref -->
-                                    <DataGridTemplateColumn Header="Character Ref" Width="1.8*">
-                                        <DataGridTemplateColumn.CellTemplate>
-                                            <DataTemplate>
-                                                <Grid Margin="4,0">
-                                                    <Grid.ColumnDefinitions>
-                                                        <ColumnDefinition Width="*"/>
-                                                        <ColumnDefinition Width="Auto"/>
-                                                    </Grid.ColumnDefinitions>
-                                                    <TextBox Text="{Binding CharacterRef, UpdateSourceTrigger=PropertyChanged}" VerticalContentAlignment="Center" Padding="6,2" Height="30" ToolTip="{Binding CharacterRef}"/>
-                                                    <Button Grid.Column="1" Content="📁" Style="{StaticResource IconButton}" Background="{DynamicResource PrimaryBrush}" Foreground="{DynamicResource OnPrimaryBrush}" BorderThickness="0" Margin="4,0,0,0" VerticalAlignment="Center" Click="BtnBrowseCharacterRef_Click" ToolTip="Chọn file ảnh nhân vật gốc (Character Reference)">
-                                                    </Button>
-                                                </Grid>
-                                            </DataTemplate>
-                                        </DataGridTemplateColumn.CellTemplate>
-                                    </DataGridTemplateColumn>
-
-                                    <!-- Các Bước Tiến Trình -->
-                                    <DataGridTemplateColumn Header="Các Bước Tiến Trình" Width="2.2*">
-                                        <DataGridTemplateColumn.HeaderStyle>
-                                            <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}">
-                                                <Setter Property="HorizontalContentAlignment" Value="Center"/>
-                                            </Style>
-                                        </DataGridTemplateColumn.HeaderStyle>
-                                        <DataGridTemplateColumn.CellTemplate>
-                                            <DataTemplate>
-                                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
-                                                    <!-- Step 1 -->
-                                                    <Border Width="22" Height="22" CornerRadius="11" Margin="2,0" ToolTip="Step 1: Deep Research &amp; Transcript">
-                                                        <Border.Style>
-                                                            <Style TargetType="Border">
-                                                                <Setter Property="Background" Value="#475569"/>
-                                                                <Style.Triggers>
-                                                                    <DataTrigger Binding="{Binding Step1Status}" Value="Running">
-                                                                        <Setter Property="Background" Value="#F59E0B"/>
-                                                                    </DataTrigger>
-                                                                    <DataTrigger Binding="{Binding Step1Status}" Value="Success">
-                                                                        <Setter Property="Background" Value="#10B981"/>
-                                                                    </DataTrigger>
-                                                                    <DataTrigger Binding="{Binding Step1Status}" Value="Failed">
-                                                                        <Setter Property="Background" Value="#EF4444"/>
-                                                                    </DataTrigger>
-                                                                </Style.Triggers>
-                                                            </Style>
-                                                        </Border.Style>
-                                                        <TextBlock Text="1" Foreground="White" FontSize="10" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                                    </Border>
-
-                                                    <!-- Step 2 -->
-                                                    <Border Width="22" Height="22" CornerRadius="11" Margin="2,0" ToolTip="Step 2: Voiceover &amp; SRT Subtitles">
-                                                        <Border.Style>
-                                                            <Style TargetType="Border">
-                                                                <Setter Property="Background" Value="#475569"/>
-                                                                <Style.Triggers>
-                                                                    <DataTrigger Binding="{Binding Step2Status}" Value="Running">
-                                                                        <Setter Property="Background" Value="#F59E0B"/>
-                                                                    </DataTrigger>
-                                                                    <DataTrigger Binding="{Binding Step2Status}" Value="Success">
-                                                                        <Setter Property="Background" Value="#10B981"/>
-                                                                    </DataTrigger>
-                                                                    <DataTrigger Binding="{Binding Step2Status}" Value="Failed">
-                                                                        <Setter Property="Background" Value="#EF4444"/>
-                                                                    </DataTrigger>
-                                                                </Style.Triggers>
-                                                            </Style>
-                                                        </Border.Style>
-                                                        <TextBlock Text="2" Foreground="White" FontSize="10" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                                    </Border>
-
-                                                    <!-- Step 3 -->
-                                                    <Border Width="22" Height="22" CornerRadius="11" Margin="2,0" ToolTip="Step 3: Scene Breakdown &amp; Prompts">
-                                                        <Border.Style>
-                                                            <Style TargetType="Border">
-                                                                <Setter Property="Background" Value="#475569"/>
-                                                                <Style.Triggers>
-                                                                    <DataTrigger Binding="{Binding Step3Status}" Value="Running">
-                                                                        <Setter Property="Background" Value="#F59E0B"/>
-                                                                    </DataTrigger>
-                                                                    <DataTrigger Binding="{Binding Step3Status}" Value="Success">
-                                                                        <Setter Property="Background" Value="#10B981"/>
-                                                                    </DataTrigger>
-                                                                    <DataTrigger Binding="{Binding Step3Status}" Value="Failed">
-                                                                        <Setter Property="Background" Value="#EF4444"/>
-                                                                    </DataTrigger>
-                                                                </Style.Triggers>
-                                                            </Style>
-                                                        </Border.Style>
-                                                        <TextBlock Text="3" Foreground="White" FontSize="10" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                                    </Border>
-
-                                                    <!-- Step 4 -->
-                                                    <Border Width="22" Height="22" CornerRadius="11" Margin="2,0" ToolTip="Step 4: Batch Image Generation">
-                                                        <Border.Style>
-                                                            <Style TargetType="Border">
-                                                                <Setter Property="Background" Value="#475569"/>
-                                                                <Style.Triggers>
-                                                                    <DataTrigger Binding="{Binding Step4Status}" Value="Running">
-                                                                        <Setter Property="Background" Value="#F59E0B"/>
-                                                                    </DataTrigger>
-                                                                    <DataTrigger Binding="{Binding Step4Status}" Value="Success">
-                                                                        <Setter Property="Background" Value="#10B981"/>
-                                                                    </DataTrigger>
-                                                                    <DataTrigger Binding="{Binding Step4Status}" Value="Failed">
-                                                                        <Setter Property="Background" Value="#EF4444"/>
-                                                                    </DataTrigger>
-                                                                </Style.Triggers>
-                                                            </Style>
-                                                        </Border.Style>
-                                                        <TextBlock Text="4" Foreground="White" FontSize="10" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                                    </Border>
-
-                                                    <!-- Step 5 -->
-                                                    <Border Width="22" Height="22" CornerRadius="11" Margin="2,0" ToolTip="Step 5: Export &amp; Packaging">
-                                                        <Border.Style>
-                                                            <Style TargetType="Border">
-                                                                <Setter Property="Background" Value="#475569"/>
-                                                                <Style.Triggers>
-                                                                    <DataTrigger Binding="{Binding Step5Status}" Value="Running">
-                                                                        <Setter Property="Background" Value="#F59E0B"/>
-                                                                    </DataTrigger>
-                                                                    <DataTrigger Binding="{Binding Step5Status}" Value="Success">
-                                                                        <Setter Property="Background" Value="#10B981"/>
-                                                                    </DataTrigger>
-                                                                    <DataTrigger Binding="{Binding Step5Status}" Value="Failed">
-                                                                        <Setter Property="Background" Value="#EF4444"/>
-                                                                    </DataTrigger>
-                                                                </Style.Triggers>
-                                                            </Style>
-                                                        </Border.Style>
-                                                        <TextBlock Text="5" Foreground="White" FontSize="10" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                                    </Border>
-                                                </StackPanel>
-                                            </DataTemplate>
-                                        </DataGridTemplateColumn.CellTemplate>
-                                    </DataGridTemplateColumn>
-
-                                    <!-- Status Badge -->
-                                    <DataGridTemplateColumn Header="Trạng Thái" Width="1.1*">
+                                    <!-- 6. Status Badge -->
+                                    <DataGridTemplateColumn Header="Trạng Thái" Width="1*">
                                         <DataGridTemplateColumn.CellTemplate>
                                             <DataTemplate>
                                                 <Border CornerRadius="6" Padding="6,3" HorizontalAlignment="Center" VerticalAlignment="Center"
@@ -1783,19 +1786,8 @@
                                         </DataGridTemplateColumn.CellTemplate>
                                     </DataGridTemplateColumn>
 
-                                    <!-- Step Info -->
-                                    <DataGridTextColumn Header="Tiến Trình" Binding="{Binding CurrentStepInfo}" Width="1.3*" IsReadOnly="True">
-                                        <DataGridTextColumn.ElementStyle>
-                                            <Style TargetType="TextBlock">
-                                                <Setter Property="VerticalAlignment" Value="Center"/>
-                                                <Setter Property="Padding" Value="5,0"/>
-                                                <Setter Property="Foreground" Value="{DynamicResource InkBrush}"/>
-                                            </Style>
-                                        </DataGridTextColumn.ElementStyle>
-                                    </DataGridTextColumn>
-
-                                    <!-- Row Actions -->
-                                    <DataGridTemplateColumn Header="Thao Tác" Width="2.4*" IsReadOnly="True">
+                                    <!-- 7. Actions: Run + ... menu -->
+                                    <DataGridTemplateColumn Header="Thao Tác" Width="1.2*" IsReadOnly="True">
                                         <DataGridTemplateColumn.HeaderStyle>
                                             <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}">
                                                 <Setter Property="HorizontalContentAlignment" Value="Center"/>
@@ -1804,10 +1796,24 @@
                                         <DataGridTemplateColumn.CellTemplate>
                                             <DataTemplate>
                                                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
-                                                    <Button Content="Run" Style="{StaticResource GreenButton}" Padding="8,3" Height="26" Width="45" FontSize="11" FontWeight="SemiBold" Margin="2,0" Click="BtnRunSingleGeminiTask_Click" ToolTip="Chạy riêng task này"/>
-                                                    <Button Content="Logs" Style="{StaticResource SecondaryButton}" Padding="8,3" Height="26" Width="45" FontSize="11" Margin="2,0" Click="BtnViewSingleGeminiTaskLog_Click" ToolTip="Xem log của task này"/>
-                                                    <Button Content="Assets" Style="{StaticResource SecondaryButton}" Padding="8,3" Height="26" Width="55" FontSize="11" Margin="2,0" Click="BtnViewTaskScenesJson_Click" ToolTip="Xem scenes.json"/>
-                                                    <Button Content="Delete" Style="{StaticResource DeleteButton}" Padding="8,3" Height="26" Width="55" FontSize="11" FontWeight="SemiBold" Margin="2,0" Click="BtnDeleteSingleGeminiTask_Click" ToolTip="Xóa task này"/>
+                                                    <Button Content="▶ Run" Style="{StaticResource PrimaryButton}" Padding="10,4" Height="28"
+                                                            FontSize="11" FontWeight="SemiBold" Margin="3,0"
+                                                            Click="BtnRunSingleGeminiTask_Click" ToolTip="Chạy task này"
+                                                            Background="#3B82F6" Foreground="White" BorderThickness="0"/>
+                                                    <Button Content="⋮" Height="28" Width="32"
+                                                            FontSize="16" FontWeight="ExtraBold" Margin="3,0"
+                                                            Click="BtnGeminiTaskMenu_Click" Tag="{Binding}"
+                                                            ToolTip="Thêm tùy chọn (Logs, Assets, Delete)"
+                                                            Cursor="Hand">
+                                                        <Button.Style>
+                                                            <Style TargetType="Button" BasedOn="{StaticResource Button.Base}">
+                                                                <Setter Property="Background" Value="{DynamicResource SurfaceCardBrush}"/>
+                                                                <Setter Property="Foreground" Value="{DynamicResource InkBrush}"/>
+                                                                <Setter Property="BorderBrush" Value="{DynamicResource HairlineBrush}"/>
+                                                                <Setter Property="Padding" Value="0"/>
+                                                            </Style>
+                                                        </Button.Style>
+                                                    </Button>
                                                 </StackPanel>
                                             </DataTemplate>
                                         </DataGridTemplateColumn.CellTemplate>
@@ -1819,18 +1825,33 @@
 
                     <!-- Python Server Log Panel (Collapsible) -->
                     <Border Grid.Row="2" Style="{StaticResource Card}" Margin="0,8,0,0"
-                            Background="{DynamicResource CanvasBrush}" Padding="15"
+                            Background="{DynamicResource CanvasBrush}" Padding="12"
                             BorderBrush="{DynamicResource HairlineBrush}" BorderThickness="1">
                         <StackPanel>
-                            <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                                <TextBlock Text="🐍 Python Server Logs" FontSize="12" FontWeight="SemiBold"
-                                           Foreground="{DynamicResource InkBrush}" VerticalAlignment="Center"/>
-                                <TextBlock x:Name="TxtPythonServerStatus" Text="⚪ Unknown" FontSize="11"
-                                           Foreground="{DynamicResource SubtleBrush}" Margin="12,0,0,0" VerticalAlignment="Center"/>
-                                <Button Content="🗑️ Clear" Click="BtnClearPythonServerLog_Click" Height="22" Padding="8,0"
-                                        Style="{StaticResource SecondaryButton}" FontSize="10" Margin="16,0,0,0"
-                                        VerticalAlignment="Center"/>
-                            </StackPanel>
+                            <!-- Header with collapse toggle -->
+                            <Grid Cursor="Hand" Margin="0,0,0,4">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <Button x:Name="BtnTogglePythonLogs" Content="▼" Width="24" Height="24"
+                                        FontSize="10" FontWeight="Bold" Padding="0"
+                                        Background="Transparent" Foreground="{DynamicResource InkBrush}"
+                                        BorderThickness="0" Cursor="Hand"
+                                        Click="BtnTogglePythonLogs_Click"
+                                        ToolTip="Mở rộng / Thu gọn Python Server Logs"/>
+                                <TextBlock Grid.Column="1" Text="🐍 Python Server Logs" FontSize="12" FontWeight="SemiBold"
+                                           Foreground="{DynamicResource InkBrush}" VerticalAlignment="Center"
+                                           Margin="4,0,0,0"/>
+                                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                                    <TextBlock x:Name="TxtPythonServerStatus" Text="⚪ Unknown" FontSize="11"
+                                               Foreground="{DynamicResource SubtleBrush}" Margin="0,0,12,0" VerticalAlignment="Center"/>
+                                    <Button Content="🗑️ Clear" Click="BtnClearPythonServerLog_Click" Height="22" Padding="8,0"
+                                            Style="{StaticResource SecondaryButton}" FontSize="10" Margin="0,0,8,0"
+                                            VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </Grid>
                             <TextBox x:Name="TxtPythonServerLog"
                                      IsReadOnly="True"
                                      TextWrapping="Wrap"

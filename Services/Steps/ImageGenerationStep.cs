@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Net.Http;
 using System.Threading.Tasks;
+using AssetAutomator.Services;
 
 namespace AssetAutomator
 {
@@ -13,10 +14,12 @@ namespace AssetAutomator
     public class ImageGenerationStep
     {
         private readonly ImagePoolService _poolService;
+        private readonly IConfigService _configService;
 
-        public ImageGenerationStep(ImagePoolService poolService)
+        public ImageGenerationStep(ImagePoolService poolService, IConfigService configService)
         {
             _poolService = poolService;
+            _configService = configService;
             // Wire up the pool's edit function to our API method
             _poolService.EditImageFunc = EditImageViaApiAsync;
         }
@@ -32,7 +35,7 @@ namespace AssetAutomator
             }
 
             string apiUrl = ResolveApiUrl();
-            string apiKey = ConfigService.CurrentSettings.ImageApiKey;
+            string apiKey = _configService.CurrentSettings.ImageApiKey;
 
             if (string.IsNullOrWhiteSpace(apiKey))
             {
@@ -103,7 +106,7 @@ namespace AssetAutomator
 
         private string ResolveApiUrl()
         {
-            string apiUrl = ConfigService.CurrentSettings.ImageApiUrl;
+            string apiUrl = _configService.CurrentSettings.ImageApiUrl;
 
             if (string.IsNullOrWhiteSpace(apiUrl))
             {

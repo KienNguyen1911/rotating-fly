@@ -166,16 +166,35 @@ class Model(Enum):
     @classmethod
     def from_name(cls, name: str) -> "Model":
         name_lower = name.lower()
+
+        # 1. Exact match against all known model names (supports Plus/Advanced tiers)
+        for model in cls:
+            if model.model_name == name_lower or model.name.lower() == name_lower:
+                return model
+
+        # 2. Heuristic fallback for UI-friendly names (backward compat)
+        # ⚠️ VERIFIED 2026-07-28: Google merged thinking into Pro model.
+        #     Only Pro model_ids (9d8ca3786ebdfbea, e6fa609c3fa255c0) return thoughts.
+        #     "thinking" model_ids (5bf011840784117a, e051ce1aa80aa576) are OBSOLETE.
+        #     → Map all "thinking" requests to Pro variants.
         if "thinking" in name_lower or "tư duy" in name_lower:
-            return cls.BASIC_THINKING
+            if "plus" in name_lower:
+                return cls.PLUS_PRO        # Pro is the real thinking model
+            if "advanced" in name_lower:
+                return cls.ADVANCED_PRO    # Pro is the real thinking model
+            return cls.BASIC_PRO           # Pro is the real thinking model
         if "pro" in name_lower or "3.1 pro" in name_lower:
+            if "plus" in name_lower:
+                return cls.PLUS_PRO
+            if "advanced" in name_lower:
+                return cls.ADVANCED_PRO
             return cls.BASIC_PRO
         if "flash" in name_lower or "3.6 flash" in name_lower or "3.5 flash" in name_lower:
+            if "plus" in name_lower:
+                return cls.PLUS_FLASH
+            if "advanced" in name_lower:
+                return cls.ADVANCED_FLASH
             return cls.BASIC_FLASH
-
-        for model in cls:
-            if model.model_name == name or model.name.lower() == name_lower:
-                return model
 
         raise ValueError(
             f"Unknown model name: {name}. Available models: {', '.join([model.model_name for model in cls])}"

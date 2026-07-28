@@ -4,6 +4,7 @@ using System.IO;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using AssetAutomator.Services;
 
 namespace AssetAutomator
 {
@@ -29,7 +30,7 @@ namespace AssetAutomator
             Action<AutomationTask, string> logTask)
         {
             logTask(task, "[STEP 5] Starting Batch Image Generation for Scenes...");
-            task.Step5Status = "In Progress";
+            task.Step5Status = "Running";
 
             string scenesPath = Path.Combine(outputDir, "scenes.json");
             if (!File.Exists(scenesPath))
@@ -149,7 +150,7 @@ namespace AssetAutomator
                 }
             });
 
-            task.Step5Status = "Completed";
+            task.Step5Status = "Done";
             logTask(task, $"[STEP 5] Success! Finished Batch Image Generation. ({successCount}/{total} images created, {failCount} failed).");
         }
     }

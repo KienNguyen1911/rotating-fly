@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using AssetAutomator.Models.Nodes;
@@ -8,10 +9,10 @@ namespace AssetAutomator.Models
     public class GeminiTaskModel : INotifyPropertyChanged
     {
         private bool _isSelected = true;
-        private string _topic = "";
+        private string _topic = "Sunday Scaries";
         private GemOptionItem? _selectedScriptwriterGem;
-        private string _selectedModel = "3.6 Flash";
-        private string _selectedExtension = "Tắt (Standard)";
+        private string _scriptwriterModel = "gemini-3-flash";
+        private string _sceneCreatorModel = "gemini-3-flash";
         private bool _enableDeepResearch = true;
         private string _voiceId = "";
         private GemOptionItem? _selectedSceneCreatorGem;
@@ -50,27 +51,27 @@ namespace AssetAutomator.Models
         public NodeStatus Step1Status
         {
             get => _step1Status;
-            set { if (_step1Status != value) { _step1Status = value; OnPropertyChanged(); } }
+            set { if (_step1Status != value) { _step1Status = value; OnPropertyChanged(); OnPropertyChanged(nameof(ProgressPercent)); OnPropertyChanged(nameof(ProgressText)); OnPropertyChanged(nameof(ActiveStep)); } }
         }
         public NodeStatus Step2Status
         {
             get => _step2Status;
-            set { if (_step2Status != value) { _step2Status = value; OnPropertyChanged(); } }
+            set { if (_step2Status != value) { _step2Status = value; OnPropertyChanged(); OnPropertyChanged(nameof(ProgressPercent)); OnPropertyChanged(nameof(ProgressText)); OnPropertyChanged(nameof(ActiveStep)); } }
         }
         public NodeStatus Step3Status
         {
             get => _step3Status;
-            set { if (_step3Status != value) { _step3Status = value; OnPropertyChanged(); } }
+            set { if (_step3Status != value) { _step3Status = value; OnPropertyChanged(); OnPropertyChanged(nameof(ProgressPercent)); OnPropertyChanged(nameof(ProgressText)); OnPropertyChanged(nameof(ActiveStep)); } }
         }
         public NodeStatus Step4Status
         {
             get => _step4Status;
-            set { if (_step4Status != value) { _step4Status = value; OnPropertyChanged(); } }
+            set { if (_step4Status != value) { _step4Status = value; OnPropertyChanged(); OnPropertyChanged(nameof(ProgressPercent)); OnPropertyChanged(nameof(ProgressText)); OnPropertyChanged(nameof(ActiveStep)); } }
         }
         public NodeStatus Step5Status
         {
             get => _step5Status;
-            set { if (_step5Status != value) { _step5Status = value; OnPropertyChanged(); } }
+            set { if (_step5Status != value) { _step5Status = value; OnPropertyChanged(); OnPropertyChanged(nameof(ProgressPercent)); OnPropertyChanged(nameof(ProgressText)); OnPropertyChanged(nameof(ActiveStep)); } }
         }
 
         public string Step1Logs { get; set; } = "";
@@ -94,19 +95,28 @@ namespace AssetAutomator.Models
         public GemOptionItem? SelectedScriptwriterGem
         {
             get => _selectedScriptwriterGem;
-            set { if (_selectedScriptwriterGem != value) { _selectedScriptwriterGem = value; OnPropertyChanged(); } }
+            set { if (_selectedScriptwriterGem != value) { _selectedScriptwriterGem = value; OnPropertyChanged(); OnPropertyChanged(nameof(ScriptwriterSummary)); } }
         }
 
-        public string SelectedModel
+        /// <summary>
+        /// AI Model for Scriptwriter Gem. Holds the full model name directly
+        /// (e.g. "gemini-3-pro", "gemini-3-flash-thinking-advanced").
+        /// All 9 models from constants.py are available in the dropdown.
+        /// </summary>
+        public string ScriptwriterModel
         {
-            get => _selectedModel;
-            set { if (_selectedModel != value) { _selectedModel = value ?? "3.6 Flash"; OnPropertyChanged(); } }
+            get => _scriptwriterModel;
+            set { if (_scriptwriterModel != value) { _scriptwriterModel = value ?? "gemini-3-flash"; OnPropertyChanged(); OnPropertyChanged(nameof(ScriptwriterSummary)); } }
         }
 
-        public string SelectedExtension
+        /// <summary>
+        /// AI Model for Scene Creator Gem. Holds the full model name directly
+        /// (e.g. "gemini-3-pro", "gemini-3-flash-thinking-advanced").
+        /// </summary>
+        public string SceneCreatorModel
         {
-            get => _selectedExtension;
-            set { if (_selectedExtension != value) { _selectedExtension = value ?? "Tắt (Standard)"; OnPropertyChanged(); } }
+            get => _sceneCreatorModel;
+            set { if (_sceneCreatorModel != value) { _sceneCreatorModel = value ?? "gemini-3-flash"; OnPropertyChanged(); OnPropertyChanged(nameof(SceneCreatorSummary)); } }
         }
 
         public bool EnableDeepResearch
@@ -132,7 +142,7 @@ namespace AssetAutomator.Models
         public GemOptionItem? SelectedSceneCreatorGem
         {
             get => _selectedSceneCreatorGem;
-            set { if (_selectedSceneCreatorGem != value) { _selectedSceneCreatorGem = value; OnPropertyChanged(); } }
+            set { if (_selectedSceneCreatorGem != value) { _selectedSceneCreatorGem = value; OnPropertyChanged(); OnPropertyChanged(nameof(SceneCreatorSummary)); } }
         }
 
         private string _characterRef = "";
@@ -142,6 +152,38 @@ namespace AssetAutomator.Models
             get => _characterRef;
             set { if (_characterRef != value) { _characterRef = value; OnPropertyChanged(); } }
         }
+
+        /// <summary>
+        /// YouTube channel URL for topic suggestions (Step 1).
+        /// </summary>
+        private string _channelUrl = "";
+        public string ChannelUrl
+        {
+            get => _channelUrl;
+            set { if (_channelUrl != value) { _channelUrl = value; OnPropertyChanged(); } }
+        }
+
+        /// <summary>
+        /// List of suggested topics from Step 1 analysis.
+        /// </summary>
+        private List<SuggestedTopic> _suggestedTopics = new();
+        public List<SuggestedTopic> SuggestedTopics
+        {
+            get => _suggestedTopics;
+            set { _suggestedTopics = value ?? new(); OnPropertyChanged(); OnPropertyChanged(nameof(HasSuggestions)); }
+        }
+
+        /// <summary>
+        /// Whether topic suggestions are currently loading.
+        /// </summary>
+        private bool _isLoadingSuggestions;
+        public bool IsLoadingSuggestions
+        {
+            get => _isLoadingSuggestions;
+            set { _isLoadingSuggestions = value; OnPropertyChanged(); }
+        }
+
+        public bool HasSuggestions => SuggestedTopics.Count > 0;
 
         public string SelectedImageProvider
         {
@@ -183,6 +225,59 @@ namespace AssetAutomator.Models
         public bool IsRunning => Status == NodeStatus.Running;
         public bool IsSuccess => Status == NodeStatus.Success;
         public bool IsFailed => Status == NodeStatus.Failed;
+
+        // ── Row Details / Accordion support ──
+        private bool _isExpanded;
+        public bool IsExpanded
+        {
+            get => _isExpanded;
+            set { if (_isExpanded != value) { _isExpanded = value; OnPropertyChanged(); } }
+        }
+
+        /// <summary>
+        /// Progress percentage: 0–100 based on completed steps (1-5).
+        /// </summary>
+        public int ProgressPercent
+        {
+            get
+            {
+                int done = 0;
+                if (Step1Status == NodeStatus.Success) done++;
+                if (Step2Status == NodeStatus.Success) done++;
+                if (Step3Status == NodeStatus.Success) done++;
+                if (Step4Status == NodeStatus.Success) done++;
+                if (Step5Status == NodeStatus.Success) done++;
+                return done * 20;
+            }
+        }
+
+        public int ActiveStep
+        {
+            get
+            {
+                if (Step1Status == NodeStatus.Running) return 1;
+                if (Step2Status == NodeStatus.Running) return 2;
+                if (Step3Status == NodeStatus.Running) return 3;
+                if (Step4Status == NodeStatus.Running) return 4;
+                if (Step5Status == NodeStatus.Running) return 5;
+                if (Status == NodeStatus.Success) return 5;
+                return 0;
+            }
+        }
+
+        public string ProgressText => $"{ProgressPercent}%" + (ActiveStep > 0 ? $" (Bước {ActiveStep}/5)" : "");
+
+        /// <summary>
+        /// Quick config summary: "GemName · Model 🧠"
+        /// 🧠 = model contains "pro" (Pro models have built-in thinking).
+        /// </summary>
+        public string ScriptwriterSummary =>
+            $"{(SelectedScriptwriterGem?.Name ?? "Mặc Định")} · {ScriptwriterModel}" +
+            (ScriptwriterModel.Contains("pro", StringComparison.OrdinalIgnoreCase) ? " 🧠" : "");
+
+        public string SceneCreatorSummary =>
+            $"{(SelectedSceneCreatorGem?.Name ?? "Mặc Định")} · {SceneCreatorModel}" +
+            (SceneCreatorModel.Contains("pro", StringComparison.OrdinalIgnoreCase) ? " 🧠" : "");
 
         public event PropertyChangedEventHandler? PropertyChanged;
         protected void OnPropertyChanged([CallerMemberName] string? propertyName = null)
