@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Net.Http;
 using System.Threading.Tasks;
+using AssetAutomator.Core;
 using AssetAutomator.Services;
 
 namespace AssetAutomator
@@ -104,7 +105,7 @@ namespace AssetAutomator
             while (attempt < 100)
             {
                 attempt++;
-                await Task.Delay(3000);
+                await Task.Delay(Delays.VoiceoverDelayMs);
 
                 try
                 {
@@ -186,7 +187,7 @@ namespace AssetAutomator
                 while ((DateTime.UtcNow - startTime).TotalSeconds < maxPollingSeconds)
                 {
                     transcriptAttempt++;
-                    await Task.Delay(2000);
+                    await Task.Delay(Delays.PageRenderDelayMs);
 
                     try
                     {

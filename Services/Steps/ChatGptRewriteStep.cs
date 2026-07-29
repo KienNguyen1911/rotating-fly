@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Threading.Tasks;
 using Microsoft.Playwright;
+using AssetAutomator.Core;
 using AssetAutomator.Services;
 
 namespace AssetAutomator
@@ -63,7 +64,7 @@ namespace AssetAutomator
                 }
                 logTask(task, $"Navigating to Custom GPT URL: {customGptUrl} ...");
                 await page.GotoAsync(customGptUrl);
-                await Task.Delay(4000);
+                await Task.Delay(Delays.RewriteRetryDelayMs);
 
                 logTask(task, "Preparing transcript file for drag & drop...");
                 string transcriptPath = Path.Combine(outputDir, "transcript.txt");
@@ -72,41 +73,41 @@ namespace AssetAutomator
                     await File.WriteAllTextAsync(transcriptPath, transcriptText);
                 }
 
-                await Task.Delay(4000);
+                await Task.Delay(Delays.RewriteRetryDelayMs);
 
                 // Read file as Base64 and use ChatGptService for drag-drop
                 byte[] fileBytes = await File.ReadAllBytesAsync(transcriptPath);
                 string base64File = Convert.ToBase64String(fileBytes);
 
-                await Task.Delay(4000);
+                await Task.Delay(Delays.RewriteRetryDelayMs);
 
                 logTask(task, "Simulating drag & drop of transcript.txt onto ChatGPT page...");
                 await _chatGptService.SimulateDragDropFileAsync(page, base64File, "transcript.txt", "text/plain");
 
-                logTask(task, "Drag & Drop simulated, waiting 4 seconds for upload processing...");
-                await Task.Delay(4000);
+                logTask(task, "Drag & Drop simulated, waiting for upload processing...");
+                await Task.Delay(Delays.RewriteRetryDelayMs);
 
                 logTask(task, "Finding prompt input box to enter instruction...");
                 var promptBox = page.Locator("div#prompt-textarea, div[contenteditable='true']").First;
                 await promptBox.WaitForAsync(new LocatorWaitForOptions { State = WaitForSelectorState.Visible });
 
                 await HumanBehaviourHelper.RandomMouseMovementAsync(page);
-                await Task.Delay(1500);
+                await Task.Delay(Delays.AiWarmupDelayMs);
 
                 string promptText = $"Hãy viết lại kịch bản sau đây bằng ngôn ngữ '{targetLanguage}' , chỉ dịch, không chỉnh sửa nội dung sẵn có trong script";
                 logTask(task, "Typing prompt using Human Typing simulator...");
                 await HumanBehaviourHelper.TypeLikeHumanAsync(page, promptBox, promptText);
-                await Task.Delay(2000);
+                await Task.Delay(Delays.PageRenderDelayMs);
 
                 logTask(task, "Submitting prompt...");
                 var sendButton = page.Locator("button[data-testid='send-button'], button[aria-label='Send prompt']").First;
                 await sendButton.ClickAsync();
-                await Task.Delay(5000);
+                await Task.Delay(Delays.AiResponseDelayMs);
 
                 logTask(task, "Waiting for AI to finish writing script...");
                 await _chatGptService.WaitForGenerationToFinishAsync(page, 1800000);
 
-                await Task.Delay(2000);
+                await Task.Delay(Delays.PageRenderDelayMs);
 
                 logTask(task, "Extracting the ChatGPT response...");
                 scriptText = await _chatGptService.ExtractLastResponseTextAsync(page);

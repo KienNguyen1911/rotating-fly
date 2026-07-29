@@ -177,10 +177,10 @@ namespace AssetAutomator
         {
             logTask(task, "[FALLBACK] Running python fallback script for transcript extraction...");
             
-            string scriptPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Scripts", "fallback_transcript.py");
+            string scriptPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "tools", "Scripts", "fallback_transcript.py");
             if (!File.Exists(scriptPath))
             {
-                scriptPath = Path.Combine(Directory.GetCurrentDirectory(), "Scripts", "fallback_transcript.py");
+                scriptPath = Path.Combine(Directory.GetCurrentDirectory(), "tools", "Scripts", "fallback_transcript.py");
             }
 
             if (!File.Exists(scriptPath))
@@ -251,10 +251,8 @@ namespace AssetAutomator
         {
             string[] candidatePaths = new[]
             {
-                Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "PythonEmbed", "python.exe"),
-                Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Scripts", "PythonEmbed", "python.exe"),
-                Path.Combine(Directory.GetCurrentDirectory(), "PythonEmbed", "python.exe"),
-                Path.Combine(Directory.GetCurrentDirectory(), "Scripts", "PythonEmbed", "python.exe")
+                Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "tools", "PythonEmbed", "python.exe"),
+                Path.Combine(Directory.GetCurrentDirectory(), "tools", "PythonEmbed", "python.exe")
             };
 
             foreach (var path in candidatePaths)

@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Net.Http;
 using System.Threading.Tasks;
+using AssetAutomator.Core;
 using AssetAutomator.Services;
 
 namespace AssetAutomator
@@ -335,7 +336,7 @@ namespace AssetAutomator
             while (!isCompleted)
             {
                 attempts++;
-                await Task.Delay(3000);
+                await Task.Delay(Delays.ImageBatchDelayMs);
 
                 using var statusRequest = new HttpRequestMessage(HttpMethod.Get, statusUrl);
                 if (!string.IsNullOrWhiteSpace(req.ApiKey))

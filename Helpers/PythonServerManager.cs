@@ -206,7 +206,7 @@ namespace AssetAutomator.Helpers
         public string ResolvePythonExecutable()
         {
             string baseDir = AppDomain.CurrentDomain.BaseDirectory;
-            string embeddedPythonPath = Path.Combine(baseDir, "PythonEmbed", "python.exe");
+            string embeddedPythonPath = Path.Combine(baseDir, "tools", "PythonEmbed", "python.exe");
 
             if (File.Exists(embeddedPythonPath))
             {
@@ -214,7 +214,7 @@ namespace AssetAutomator.Helpers
             }
 
             // Check relative to working directory / solution root
-            string relativeEmbeddedPath = Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), "PythonEmbed", "python.exe"));
+            string relativeEmbeddedPath = Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), "tools", "PythonEmbed", "python.exe"));
             if (File.Exists(relativeEmbeddedPath))
             {
                 return relativeEmbeddedPath;

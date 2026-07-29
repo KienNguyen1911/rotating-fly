@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.Playwright;
+using AssetAutomator.Core;
 using AssetAutomator.Services;
 
 namespace AssetAutomator
@@ -23,9 +24,6 @@ namespace AssetAutomator
 
         /// <summary>Gemini base URL (may vary by region).</summary>
         private const string GEMINI_URL = "https://gemini.google.com/app";
-
-        /// <summary>Timeout for waiting on selectors (ms).</summary>
-        private const int SELECTOR_TIMEOUT = 30000;
 
         public GeminiPlaywrightSceneCreator(string chromeProfilePath, Action<string> log)
         {
@@ -140,7 +138,6 @@ namespace AssetAutomator
             string prompt, string srtPath, string transcriptPath, string outputDir)
         {
             const int MAX_CONTINUE_ATTEMPTS = 3;
-            const int COOLDOWN_SECONDS = 20;
 
             // First attempt: send prompt with files
             var result = await SendPromptWithFilesAsync(prompt, srtPath, transcriptPath);
@@ -191,17 +188,17 @@ namespace AssetAutomator
                     await CleanupAsync();
 
                     // Cooldown before reopening
-                    _log($"[PW-SCENE] 😴 Waiting {COOLDOWN_SECONDS}s before reopening browser...");
-                    await Task.Delay(TimeSpan.FromSeconds(COOLDOWN_SECONDS));
+                    _log($"[PW-SCENE] 😴 Waiting {Delays.VideoCooldownSeconds}s before reopening browser...");
+                    await Task.Delay(TimeSpan.FromSeconds(Delays.VideoCooldownSeconds));
 
                     // Reopen browser + navigate to chat URL
                     _log($"[PW-SCENE] 🔄 Reopening browser at: {chatUrl}");
                     await InitializeBrowserAsync();
-                    await _page!.GotoAsync(chatUrl, new PageGotoOptions { WaitUntil = WaitUntilState.DOMContentLoaded, Timeout = 30000 });
+                    await _page!.GotoAsync(chatUrl, new PageGotoOptions { WaitUntil = WaitUntilState.DOMContentLoaded, Timeout = Timeouts.PageNavigationTimeoutMs });
                     await WaitForGeminiReadyAsync();
 
                     // Wait a bit for the chat history to load
-                    await Task.Delay(3000);
+                    await Task.Delay(Delays.PageRenderDelayMs);
 
                     // Send "Continue" to resume generation
                     bool resumed = await SendContinueMessageAsync();

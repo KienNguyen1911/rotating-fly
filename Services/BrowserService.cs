@@ -6,6 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using Microsoft.Playwright;
+using AssetAutomator.Core;
 
 namespace AssetAutomator
 {
@@ -244,9 +245,9 @@ namespace AssetAutomator
             try
             {
                 var closeTask = context.CloseAsync();
-                if (await Task.WhenAny(closeTask, Task.Delay(15000)) != closeTask)
+                if (await Task.WhenAny(closeTask, Task.Delay(Timeouts.BrowserCloseTimeoutMs)) != closeTask)
                 {
-                    log("Browser close timed out after 15s, continuing anyway...");
+                    log($"Browser close timed out after {Timeouts.BrowserCloseTimeoutMs / 1000}s, continuing anyway...");
                 }
             }
             catch (Exception ex)
