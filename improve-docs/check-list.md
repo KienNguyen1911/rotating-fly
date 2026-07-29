@@ -27,7 +27,7 @@
 
 ## 🟢 P4 — LOW
 
-- [x] **P4.1** Split into 4 separate csproj projects (Core / Infrastructure / Application / UI) — **Deferred** (requires significant cross-dependency refactoring; see p4-project-cleanup.md)
+- [x] **P4.1** Split into 4 separate csproj projects (Core / Infrastructure / Application / UI) — **In Progress** (see p4-project-cleanup.md)
 - [x] **P4.2** Move magic numbers (timeouts, retries, sleeps) into `TimingConstants` — [p4-magic-numbers.md](./p4-magic-numbers.md)
 - [x] **P4.3** Move `Scripts/` out of source tree into a dedicated `tools/` folder — [p4-project-cleanup.md](./p4-project-cleanup.md)
 
@@ -40,12 +40,12 @@
 | P1   | 5    | 5     | 100%  |
 | P2   | 4    | 4     | 100%  |
 | P3   | 3    | 3     | 100%  |
-| P4   | 0    | 3     | 0%    |
-| **All** | **12** | **15** | **80%** |
+| P4   | 2    | 3     | 67%   |
+| **All** | **14** | **15** | **93%** |
 
 ```
 P1 ██████████ 5/5
 P2 ██████████ 4/4
 P3 ██████████ 3/3
-P4 ░░░░░░░░░░ 0/3
+P4 ██░░░░░░░░ 2/3
 ```

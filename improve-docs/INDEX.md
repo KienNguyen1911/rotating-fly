@@ -48,9 +48,9 @@
 
 | # | Item | Status | Report |
 |---|---|---|---|
-| 4.1 | Split into 4 separate csproj projects | ⬜ Not started | (not yet) |
-| 4.2 | Move magic numbers into `AppConstants` / config | ⬜ Not started | (not yet) |
-| 4.3 | Move `Scripts/` out of source tree into a dedicated `tools/` folder | ⬜ Not started | (not yet) |
+| 4.1 | Split into 4 separate csproj projects | 🔄 In Progress | (in progress - see p4-project-cleanup.md) |
+| 4.2 | Move magic numbers into `AppConstants` / config | ✅ Done | [p4-magic-numbers.md](./p4-magic-numbers.md) |
+| 4.3 | Move `Scripts/` out of source tree into a dedicated `tools/` folder | ✅ Done | [p4-project-cleanup.md](./p4-project-cleanup.md) |
 
 ---
 
@@ -60,9 +60,9 @@
 P1 ██████████ 5/5   (100%)
 P2 ██████████ 4/4   (100%)
 P3 ██████████ 3/3   (100%)   ← all P3 complete; remaining MVVM tabs tracked in P4 era
-P4 ░░░░░░░░░░ 0/3   (0%)
+P4 █░░░░░░░░░ 1/3   (33%)   ← P4.1 in progress
 ───────────────────────────
-Total: 12/15 (80%)
+Total: 13/15 (87%)
 ```
 
 ---
