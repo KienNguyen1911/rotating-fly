@@ -3,24 +3,46 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
+using AssetAutomator.Core.Interfaces;
+using AssetAutomator.Core.Models;
 
 namespace AssetAutomator.Application.Services
 {
     /// <summary>
     /// Manages the image generation request pool with worker-based concurrency.
+    /// Extracted from MainWindow.xaml.cs to follow SRP.
     /// </summary>
     public class ImagePoolService
     {
-        private readonly List<Core.Models.ImageGenRequest> _imageRequestPool = new();
+        private readonly IConfigService _configService;
+        private readonly List<ImageGenRequest> _imageRequestPool = new();
         private readonly object _poolLock = new();
         private int _maxImageWorkers = 1;
         private int _activeImageWorkers = 0;
 
-        public Action<Core.Models.AutomationTask, string>? LogTask { get; set; }
-        public event Action? OnPoolStateChanged;
-        public Func<Core.Models.ImageGenRequest, Task>? EditImageFunc { get; set; }
+        public ImagePoolService(IConfigService configService)
+        {
+            _configService = configService ?? throw new ArgumentNullException(nameof(configService));
+        }
 
-        public List<Core.Models.ImageGenRequest> GetAllRequests()
+        /// <summary>
+        /// Delegate used for logging messages associated with a specific task.
+        /// </summary>
+        public Action<AutomationTask, string>? LogTask { get; set; }
+
+        /// <summary>
+        /// Raised when pool state changes (items added, status changed, workers started/stopped).
+        /// The handler receives: (activeWorkers, maxWorkers, waitingCount, processingCount, finishedCount, avgSeconds, orderedRequests).
+        /// </summary>
+        public event Action? OnPoolStateChanged;
+
+        /// <summary>
+        /// Delegate to actually perform image generation for a single request.
+        /// Injected by the caller to keep API-specific logic decoupled.
+        /// </summary>
+        public Func<ImageGenRequest, Task>? EditImageFunc { get; set; }
+
+        public List<ImageGenRequest> GetAllRequests()
         {
             lock (_poolLock)
             {
@@ -47,7 +69,7 @@ namespace AssetAutomator.Application.Services
             }
         }
 
-        public List<Core.Models.ImageGenRequest> GetOrderedRequests()
+        public List<ImageGenRequest> GetOrderedRequests()
         {
             lock (_poolLock)
             {
@@ -55,11 +77,14 @@ namespace AssetAutomator.Application.Services
             }
         }
 
-        public async Task EnqueueImageRequestAsync(Core.Models.ImageGenRequest request)
+        /// <summary>
+        /// Enqueues a new image generation request and starts workers if needed.
+        /// </summary>
+        public async Task EnqueueImageRequestAsync(ImageGenRequest request)
         {
             try
             {
-                int calculatedWorkers = Math.Max(1, Math.Min(10, Infrastructure.Services.ConfigService.CurrentSettings.MaxConcurrentTasks * 2));
+                int calculatedWorkers = Math.Max(1, Math.Min(10, _configService.CurrentSettings.MaxConcurrentTasks * 2));
                 lock (_poolLock)
                 {
                     _maxImageWorkers = calculatedWorkers;
@@ -88,7 +113,7 @@ namespace AssetAutomator.Application.Services
         {
             while (true)
             {
-                Core.Models.ImageGenRequest? req = null;
+                ImageGenRequest? req = null;
                 lock (_poolLock)
                 {
                     req = GetNextRequestToProcess();
@@ -139,7 +164,7 @@ namespace AssetAutomator.Application.Services
             }
         }
 
-        private Core.Models.ImageGenRequest? GetNextRequestToProcess()
+        private ImageGenRequest? GetNextRequestToProcess()
         {
             var inProgressTaskIds = _imageRequestPool
                 .Where(r => r.Status == "Processing")

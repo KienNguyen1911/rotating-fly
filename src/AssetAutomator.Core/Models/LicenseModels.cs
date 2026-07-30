@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.Text.Json.Serialization;
 
 namespace AssetAutomator.Core.Models
@@ -71,9 +70,11 @@ namespace AssetAutomator.Core.Models
 
             DateTime now = DateTime.UtcNow;
 
+            // 1. License expiration check
             if (now > ExpiredAt)
                 return false;
 
+            // 2. Offline grace period: maximum 7 days since last online verification
             if ((now - LastVerifiedOnline).TotalDays > 7)
                 return false;
 

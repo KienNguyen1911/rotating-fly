@@ -2,17 +2,22 @@ using System;
 using System.Collections.Generic;
 using System.Net.Http;
 using System.Threading.Tasks;
+using AssetAutomator.Application.Services.Providers;
+using AssetAutomator.Core.Models;
 
 namespace AssetAutomator.Application.Services
 {
     /// <summary>
     /// Service responsible for Batch Image Generation.
-    /// Uses ImageGenProviderFactory to delegate execution to the appropriate Strategy Provider.
+    /// Uses ImageGenProviderFactory to delegate execution to the appropriate Strategy Provider (G-Labs vs Flow Local).
     /// </summary>
     public class BatchImageGenService
     {
-        private static readonly HttpClient _httpClient = new() { Timeout = TimeSpan.FromSeconds(10) };
+        private static readonly HttpClient _httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
 
+        /// <summary>
+        /// Tests connection health to the target server.
+        /// </summary>
         public async Task<bool> TestHealthAsync(string serverUrl)
         {
             try
@@ -31,26 +36,32 @@ namespace AssetAutomator.Application.Services
             }
         }
 
+        /// <summary>
+        /// Generates a single image item by delegating to the Strategy Provider specified in item.Provider.
+        /// </summary>
         public async Task ProcessSingleImageItemAsync(
-            Core.Models.BatchImageItem item,
+            BatchImageItem item,
             string serverUrl,
             string apiKey,
             List<(string base64Data, string tag)> referenceImages,
             string outputDirectory)
         {
-            var provider = Providers.ImageGenProviderFactory.GetProvider(item.Provider);
+            var provider = ImageGenProviderFactory.GetProvider(item.Provider);
             await provider.ProcessSingleItemAsync(item, serverUrl, apiKey, referenceImages, outputDirectory);
         }
 
+        /// <summary>
+        /// Generates a single image item with full file path details for reference images.
+        /// </summary>
         public async Task ProcessSingleImageItemAsync(
-            Core.Models.BatchImageItem item,
+            BatchImageItem item,
             string serverUrl,
             string apiKey,
             List<(string base64Data, string tag, string filePath)> referenceImagesWithFilePath,
             string outputDirectory)
         {
-            var provider = Providers.ImageGenProviderFactory.GetProvider(item.Provider);
-            if (provider is Providers.FlowLocalImageGenProvider flowProvider)
+            var provider = ImageGenProviderFactory.GetProvider(item.Provider);
+            if (provider is FlowLocalImageGenProvider flowProvider)
             {
                 await flowProvider.ProcessSingleItemAsync(item, serverUrl, apiKey, referenceImagesWithFilePath, outputDirectory);
             }

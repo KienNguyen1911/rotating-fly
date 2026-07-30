@@ -1,6 +1,5 @@
 using System;
 using System.IO;
-using System.Text.RegularExpressions;
 
 namespace AssetAutomator.Core.Models
 {
@@ -20,6 +19,7 @@ namespace AssetAutomator.Core.Models
         public string SelectedProfile { get; set; } = string.Empty;
         public string Logs { get; set; } = string.Empty;
         public DateTime CreatedAt { get; set; }
+
         public string Step1Status { get; set; } = "Pending";
         public string Step2Status { get; set; } = "Pending";
         public string Step3Status { get; set; } = "Pending";
@@ -29,20 +29,14 @@ namespace AssetAutomator.Core.Models
 
         public string CreatedAtFormatted => CreatedAt.ToString("dd/MM/yyyy HH:mm:ss");
 
-        private static readonly Regex VideoIdRegex = new Regex(
-            @"(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^""&?\/ ]{11})",
-            RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        public string VideoId => Core.Constants.YoutubeHelper.ExtractVideoId(VideoUrl);
 
-        public string VideoId
+        public string OutputDir => GetOutputDir(VideoId);
+
+        private static string GetOutputDir(string videoId)
         {
-            get
-            {
-                if (string.IsNullOrWhiteSpace(VideoUrl)) return "unknown";
-                var match = VideoIdRegex.Match(VideoUrl);
-                return match.Success ? match.Groups[1].Value : "unknown";
-            }
+            string baseDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "Outputs");
+            return Path.Combine(baseDir, videoId);
         }
-
-        public string OutputDir => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "Outputs", VideoId);
     }
 }

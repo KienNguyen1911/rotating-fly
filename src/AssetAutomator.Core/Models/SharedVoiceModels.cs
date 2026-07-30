@@ -4,6 +4,7 @@ namespace AssetAutomator.Core.Models
 {
     /// <summary>
     /// API response model for shared voices listing.
+    /// Extracted from VoiceSelectorWindow.xaml.cs.
     /// </summary>
     public class SharedVoicesResponse
     {

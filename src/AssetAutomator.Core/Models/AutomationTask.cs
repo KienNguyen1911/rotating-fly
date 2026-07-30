@@ -32,46 +32,196 @@ namespace AssetAutomator.Core.Models
         private string _characterRef = string.Empty;
         private string? _outputFolderOverride;
 
-        public Guid Id { get => _id; set { _id = value; OnPropertyChanged(); } }
-        public DateTime CreatedAt { get => _createdAt; set { _createdAt = value; OnPropertyChanged(); OnPropertyChanged(nameof(CreatedAtFormatted)); } }
+        public Guid Id
+        {
+            get => _id;
+            set { _id = value; OnPropertyChanged(); }
+        }
+
+        public DateTime CreatedAt
+        {
+            get => _createdAt;
+            set { _createdAt = value; OnPropertyChanged(); OnPropertyChanged(nameof(CreatedAtFormatted)); }
+        }
+
         public string CreatedAtFormatted => CreatedAt.ToString("dd/MM/yyyy HH:mm:ss");
-        public string SelectedProfile { get => _selectedProfile; set { _selectedProfile = value; OnPropertyChanged(); } }
-        public string VideoUrl { get => _videoUrl; set { _videoUrl = value ?? string.Empty; OnPropertyChanged(); OnPropertyChanged(nameof(VideoId)); } }
-        public string TargetLanguage { get => _targetLanguage; set { _targetLanguage = value; OnPropertyChanged(); } }
-        public string VoiceId { get => _voiceId; set { _voiceId = value; OnPropertyChanged(); } }
-        public bool Step1 { get => _step1; set { _step1 = value; OnPropertyChanged(); } }
-        public bool Step2 { get => _step2; set { _step2 = value; OnPropertyChanged(); } }
-        public bool Step3 { get => _step3; set { _step3 = value; OnPropertyChanged(); } }
-        public bool Step4 { get => _step4; set { _step4 = value; OnPropertyChanged(); } }
-        public bool Step5 { get => _step5; set { _step5 = value; OnPropertyChanged(); } }
-        public bool StepSrt { get => _stepSrt; set { _stepSrt = value; OnPropertyChanged(); } }
-        public bool IsSelected { get => _isSelected; set { _isSelected = value; OnPropertyChanged(); } }
-        public string Status { get => _status; set { _status = value; OnPropertyChanged(); } }
-        public string Logs { get => _logs; set { _logs = value; OnPropertyChanged(); } }
-        public string Step1Status { get => _step1Status; set { _step1Status = value ?? "Pending"; OnPropertyChanged(); } }
-        public string Step2Status { get => _step2Status; set { _step2Status = value ?? "Pending"; OnPropertyChanged(); } }
-        public string Step3Status { get => _step3Status; set { _step3Status = value ?? "Pending"; OnPropertyChanged(); } }
-        public string Step4Status { get => _step4Status; set { _step4Status = value ?? "Pending"; OnPropertyChanged(); } }
-        public string Step5Status { get => _step5Status; set { _step5Status = value ?? "Pending"; OnPropertyChanged(); } }
-        public string StepSrtStatus { get => _stepSrtStatus; set { _stepSrtStatus = value ?? "Pending"; OnPropertyChanged(); } }
-        public int SrtMethod { get => _srtMethod; set { _srtMethod = value; OnPropertyChanged(); OnPropertyChanged(nameof(UseSrtMethod1)); OnPropertyChanged(nameof(UseSrtMethod2)); } }
-        public bool UseSrtMethod1 { get => SrtMethod == 1; set { if (value) SrtMethod = 1; } }
-        public bool UseSrtMethod2 { get => SrtMethod == 2; set { if (value) SrtMethod = 2; } }
-        public string CharacterRef { get => _characterRef; set { _characterRef = value ?? string.Empty; OnPropertyChanged(); } }
+
+        public string SelectedProfile
+        {
+            get => _selectedProfile;
+            set { _selectedProfile = value; OnPropertyChanged(); }
+        }
+
+        public string VideoUrl
+        {
+            get => _videoUrl;
+            set
+            {
+                _videoUrl = value ?? string.Empty;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(VideoId));
+            }
+        }
+
+        public string TargetLanguage
+        {
+            get => _targetLanguage;
+            set { _targetLanguage = value; OnPropertyChanged(); }
+        }
+
+        public string VoiceId
+        {
+            get => _voiceId;
+            set { _voiceId = value; OnPropertyChanged(); }
+        }
+
+        public bool Step1
+        {
+            get => _step1;
+            set { _step1 = value; OnPropertyChanged(); }
+        }
+
+        public bool Step2
+        {
+            get => _step2;
+            set { _step2 = value; OnPropertyChanged(); }
+        }
+
+        public bool Step3
+        {
+            get => _step3;
+            set { _step3 = value; OnPropertyChanged(); }
+        }
+
+        public bool Step4
+        {
+            get => _step4;
+            set { _step4 = value; OnPropertyChanged(); }
+        }
+
+        public bool Step5
+        {
+            get => _step5;
+            set { _step5 = value; OnPropertyChanged(); }
+        }
+
+        public bool StepSrt
+        {
+            get => _stepSrt;
+            set { _stepSrt = value; OnPropertyChanged(); }
+        }
+
+        public bool IsSelected
+        {
+            get => _isSelected;
+            set { _isSelected = value; OnPropertyChanged(); }
+        }
+
+        public string Status
+        {
+            get => _status;
+            set { _status = value; OnPropertyChanged(); }
+        }
+
+        public string Logs
+        {
+            get => _logs;
+            set { _logs = value; OnPropertyChanged(); }
+        }
+
+        public string Step1Status
+        {
+            get => _step1Status;
+            set { _step1Status = value ?? "Pending"; OnPropertyChanged(); }
+        }
+
+        public string Step2Status
+        {
+            get => _step2Status;
+            set { _step2Status = value ?? "Pending"; OnPropertyChanged(); }
+        }
+
+        public string Step3Status
+        {
+            get => _step3Status;
+            set { _step3Status = value ?? "Pending"; OnPropertyChanged(); }
+        }
+
+        public string Step4Status
+        {
+            get => _step4Status;
+            set { _step4Status = value ?? "Pending"; OnPropertyChanged(); }
+        }
+
+        public string Step5Status
+        {
+            get => _step5Status;
+            set { _step5Status = value ?? "Pending"; OnPropertyChanged(); }
+        }
+
+        public string StepSrtStatus
+        {
+            get => _stepSrtStatus;
+            set { _stepSrtStatus = value ?? "Pending"; OnPropertyChanged(); }
+        }
+
+        public int SrtMethod
+        {
+            get => _srtMethod;
+            set
+            {
+                _srtMethod = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(UseSrtMethod1));
+                OnPropertyChanged(nameof(UseSrtMethod2));
+            }
+        }
+
+        public bool UseSrtMethod1
+        {
+            get => SrtMethod == 1;
+            set { if (value) SrtMethod = 1; }
+        }
+
+        public bool UseSrtMethod2
+        {
+            get => SrtMethod == 2;
+            set { if (value) SrtMethod = 2; }
+        }
+
+        public string CharacterRef
+        {
+            get => _characterRef;
+            set { _characterRef = value ?? string.Empty; OnPropertyChanged(); }
+        }
 
         public string VideoId => Core.Constants.YoutubeHelper.ExtractVideoId(VideoUrl);
-        public string? OutputFolderOverride { get => _outputFolderOverride; set { _outputFolderOverride = value; OnPropertyChanged(); } }
+
+        /// <summary>
+        /// When set, overrides the default VideoId-based folder naming.
+        /// Used by Gemini Pipeline to create timestamped output dirs (dd-MM-yyyy_HH-mm).
+        /// </summary>
+        public string? OutputFolderOverride
+        {
+            get => _outputFolderOverride;
+            set { _outputFolderOverride = value; OnPropertyChanged(); }
+        }
+
         public string OutputDir => GetOutputDir(OutputFolderOverride ?? VideoId);
 
         private static string GetOutputDir(string videoId)
         {
-            // This will be resolved at runtime via IConfigService injection
-            // For now, use a simple fallback
+            // Resolved at runtime via IConfigService injection in the Infrastructure layer.
+            // Core falls back to a simple Desktop/Outputs/<videoId> layout.
             string baseDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "Outputs");
             return Path.Combine(baseDir, videoId);
         }
 
         public event PropertyChangedEventHandler? PropertyChanged;
-        protected void OnPropertyChanged([CallerMemberName] string? propertyName = null) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+
+        protected void OnPropertyChanged([CallerMemberName] string? propertyName = null)
+        {
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+        }
     }
 }

@@ -38,7 +38,13 @@ namespace AssetAutomator.UI
                 .Build();
 
             Services = _host.Services;
-            MainWindow = new Windows.MainWindow();
+
+            // Bridge static ConfigService.Instance to the injected IConfigService.
+            // Required because legacy UI partial-classes still resolve ConfigService.Instance
+            // statically (e.g. field initializers in MainWindow.BatchImageGen.cs).
+            ConfigService.SetProvider(Services.GetRequiredService<Core.Interfaces.IConfigService>());
+
+            MainWindow = new MainWindow();
             MainWindow.Show();
         }
 

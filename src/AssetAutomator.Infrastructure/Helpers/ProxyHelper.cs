@@ -9,9 +9,6 @@ using System.Threading.Tasks;
 
 namespace AssetAutomator.Infrastructure.Helpers
 {
-    /// <summary>
-    /// Helper class for loading proxies from JSON file and validating if they are currently functional.
-    /// </summary>
     public static class ProxyHelper
     {
         public static List<string> LoadProxies(string filePath)
@@ -22,22 +19,23 @@ namespace AssetAutomator.Infrastructure.Helpers
 
             try
             {
-                string json = File.ReadAllText(filePath);
-                using var doc = JsonDocument.Parse(json);
+                using var doc = JsonDocument.Parse(File.ReadAllText(filePath));
                 if (doc.RootElement.TryGetProperty("proxies", out var proxiesArray) && proxiesArray.ValueKind == JsonValueKind.Array)
                 {
                     foreach (var item in proxiesArray.EnumerateArray())
                     {
                         if (item.TryGetProperty("proxy", out var proxyProp))
                         {
-                            string val = proxyProp.GetString() ?? "";
-                            if (!string.IsNullOrWhiteSpace(val))
-                                list.Add(val);
+                            string value = proxyProp.GetString() ?? string.Empty;
+                            if (!string.IsNullOrWhiteSpace(value))
+                                list.Add(value);
                         }
                     }
                 }
             }
-            catch { }
+            catch
+            {
+            }
 
             return list;
         }
@@ -53,23 +51,21 @@ namespace AssetAutomator.Infrastructure.Helpers
             if (allProxies == null || allProxies.Count == 0)
                 return aliveProxies;
 
-            var rng = new Random();
-            var shuffled = allProxies.OrderBy(_ => rng.Next()).Take(maxToCheck).ToList();
-
+            var shuffled = allProxies.OrderBy(_ => Random.Shared.Next()).Take(maxToCheck).ToList();
             logAction($"[PROXY] Checking up to {shuffled.Count} proxies in parallel for connectivity...");
 
             using var cts = new CancellationTokenSource();
             using var semaphore = new SemaphoreSlim(10);
             var lockObj = new object();
-
             var tasks = shuffled.Select(async proxy =>
             {
                 await semaphore.WaitAsync(cts.Token);
                 try
                 {
-                    if (cts.Token.IsCancellationRequested) return;
-                    bool isAlive = await TestProxyAsync(proxy, timeoutSeconds, cts.Token);
-                    if (isAlive)
+                    if (cts.Token.IsCancellationRequested)
+                        return;
+
+                    if (await TestProxyAsync(proxy, timeoutSeconds, cts.Token))
                     {
                         lock (lockObj)
                         {
@@ -83,12 +79,22 @@ namespace AssetAutomator.Infrastructure.Helpers
                         }
                     }
                 }
-                catch { }
-                finally { semaphore.Release(); }
+                catch
+                {
+                }
+                finally
+                {
+                    semaphore.Release();
+                }
             });
 
-            try { await Task.WhenAll(tasks); }
-            catch { }
+            try
+            {
+                await Task.WhenAll(tasks);
+            }
+            catch
+            {
+            }
 
             logAction($"[PROXY] Found {aliveProxies.Count} active proxies.");
             return aliveProxies;
@@ -102,34 +108,33 @@ namespace AssetAutomator.Infrastructure.Helpers
 
             try
             {
-                string extension = Path.GetExtension(filePath).ToLower();
-                if (extension == ".json")
+                if (Path.GetExtension(filePath).Equals(".json", StringComparison.OrdinalIgnoreCase))
                     return LoadProxies(filePath);
-                else
+
+                foreach (var line in File.ReadAllLines(filePath))
                 {
-                    var lines = File.ReadAllLines(filePath);
-                    foreach (var line in lines)
-                    {
-                        var trimmed = line.Trim();
-                        if (!string.IsNullOrEmpty(trimmed) && !trimmed.StartsWith("#"))
-                            list.Add(trimmed);
-                    }
+                    string trimmed = line.Trim();
+                    if (!string.IsNullOrEmpty(trimmed) && !trimmed.StartsWith("#"))
+                        list.Add(trimmed);
                 }
             }
-            catch { }
+            catch
+            {
+            }
 
             return list;
         }
 
         public static System.Net.WebProxy? ParseProxy(string proxyStr)
         {
-            if (string.IsNullOrWhiteSpace(proxyStr)) return null;
-            proxyStr = proxyStr.Trim();
+            if (string.IsNullOrWhiteSpace(proxyStr))
+                return null;
 
+            proxyStr = proxyStr.Trim();
             try
             {
                 string scheme = "http";
-                string hostPort = "";
+                string hostPort;
                 string? username = null;
                 string? password = null;
 
@@ -140,46 +145,44 @@ namespace AssetAutomator.Infrastructure.Helpers
                     hostPort = uri.Authority;
                     if (!string.IsNullOrEmpty(uri.UserInfo))
                     {
-                        var parts = uri.UserInfo.Split(':');
-                        username = parts[0];
-                        if (parts.Length > 1) password = parts[1];
+                        var credentials = uri.UserInfo.Split(':');
+                        username = credentials[0];
+                        if (credentials.Length > 1)
+                            password = credentials[1];
                     }
+                }
+                else if (proxyStr.Contains('@'))
+                {
+                    var mainParts = proxyStr.Split('@');
+                    var credentials = mainParts[0].Split(':');
+                    hostPort = mainParts[1];
+                    username = credentials[0];
+                    if (credentials.Length > 1)
+                        password = credentials[1];
                 }
                 else
                 {
-                    if (proxyStr.Contains("@"))
+                    var parts = proxyStr.Split(':');
+                    if (parts.Length == 4)
                     {
-                        var mainParts = proxyStr.Split('@');
-                        var credsPart = mainParts[0];
-                        hostPort = mainParts[1];
-                        var creds = credsPart.Split(':');
-                        username = creds[0];
-                        if (creds.Length > 1) password = creds[1];
+                        hostPort = $"{parts[0]}:{parts[1]}";
+                        username = parts[2];
+                        password = parts[3];
                     }
                     else
                     {
-                        var parts = proxyStr.Split(':');
-                        if (parts.Length == 4)
-                        {
-                            hostPort = $"{parts[0]}:{parts[1]}";
-                            username = parts[2];
-                            password = parts[3];
-                        }
-                        else
-                            hostPort = proxyStr;
+                        hostPort = proxyStr;
                     }
                 }
 
-                var partsHost = hostPort.Split(':');
-                var host = partsHost[0];
-                int port = partsHost.Length > 1 ? int.Parse(partsHost[1]) : 80;
-
-                var proxyUri = new UriBuilder(scheme, host) { Port = port }.Uri;
+                var hostParts = hostPort.Split(':');
+                var proxyUri = new UriBuilder(scheme, hostParts[0])
+                {
+                    Port = hostParts.Length > 1 ? int.Parse(hostParts[1]) : 80
+                }.Uri;
                 var webProxy = new System.Net.WebProxy(proxyUri);
-
                 if (!string.IsNullOrEmpty(username))
                     webProxy.Credentials = new System.Net.NetworkCredential(username, password);
-
                 return webProxy;
             }
             catch
@@ -193,11 +196,13 @@ namespace AssetAutomator.Infrastructure.Helpers
             try
             {
                 var webProxy = ParseProxy(proxy);
-                if (webProxy == null) return false;
+                if (webProxy == null)
+                    return false;
 
-                var handler = new HttpClientHandler { Proxy = webProxy, UseProxy = true };
-                using var client = new HttpClient(handler);
-                client.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
+                using var client = new HttpClient(new HttpClientHandler { Proxy = webProxy, UseProxy = true })
+                {
+                    Timeout = TimeSpan.FromSeconds(timeoutSeconds)
+                };
                 using var response = await client.GetAsync("https://www.youtube.com", HttpCompletionOption.ResponseHeadersRead, cancellationToken);
                 return response.IsSuccessStatusCode;
             }

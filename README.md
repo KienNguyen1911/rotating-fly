@@ -2,114 +2,151 @@
 
 AssetAutomator là công cụ hỗ trợ biến một video YouTube thành bộ tài nguyên sẵn sàng cho quy trình làm nội dung: ảnh minh họa, nội dung kịch bản đã được viết lại, giọng đọc và phụ đề. Thay vì thực hiện từng thao tác lặp lại, bạn chỉ cần tạo tác vụ, chọn những đầu ra cần có và theo dõi tiến độ ở một nơi.
 
-## Công cụ này phù hợp với ai?
+> 📖 **Đọc [`HOW-TO-RUN.md`](./HOW-TO-RUN.md) để biết cách build, run và kiến trúc dự án.**
+
+---
+
+## 🎯 Công cụ này phù hợp với ai?
 
 - Người làm nội dung muốn tái sử dụng và chuyển thể video tham khảo thành nội dung theo ngôn ngữ mới.
 - Nhóm sản xuất cần tạo nhiều kịch bản, giọng đọc và phụ đề theo một quy trình thống nhất.
 - Người quản lý nhiều video, cần biết rõ tác vụ nào đã xong, đang chạy hoặc cần xử lý lại.
 
-## Những việc AssetAutomator có thể làm
+---
 
-### Xử lý video từ một đường dẫn
+## ✨ Những việc AssetAutomator có thể làm
 
-Với mỗi đường dẫn video YouTube, công cụ có thể tạo các đầu ra sau:
+### 🎬 Xử lý video từ một đường dẫn YouTube
+Với mỗi URL video, công cụ có thể tạo các đầu ra:
+- Tải ảnh đại diện.
+- Trích xuất transcript / lời thoại.
+- Viết lại kịch bản theo ngôn ngữ đích (qua ChatGPT hoặc Gemini).
+- Tạo voice-over từ kịch bản (ElevenLabs / AI84).
+- Sinh file phụ đề SRT đồng bộ với voice-over.
 
-- Tải ảnh đại diện của video.
-- Tạo phiên bản ảnh đại diện phục vụ nội dung mới, gồm bản đã chuyển ngữ và bản đã làm sạch chữ.
-- Lấy phần lời thoại hoặc nội dung văn bản của video.
-- Viết lại kịch bản theo ngôn ngữ mục tiêu đã chọn.
-- Tạo giọng đọc từ kịch bản với giọng bạn chỉ định.
-- Tạo tệp phụ đề đồng bộ với giọng đọc.
+### 🤖 Gemini AI Creator (Tab Gemini)
+Quy trình 5-step tự động hoá toàn diện:
+1. **Deep Research** → báo cáo nghiên cứu + kịch bản (`transcript.txt`)
+2. **Voiceover** → `audio.mp3` + `subtitles.srt`
+3. **Scene Breakdown** → `scenes.json` (Visual Image Prompts)
+4. **Batch Image Generation** → `img/scene_NN.png` (Flow Local / G-Labs)
+5. **Export** → thư mục `Outputs/<task_id>/` hoàn chỉnh.
 
-Mỗi bước đều có thể bật hoặc tắt riêng. Bạn có thể chỉ lấy kịch bản, chỉ tạo giọng đọc, hoặc chạy toàn bộ quy trình tùy nhu cầu.
+Hỗ trợ **chạy batch nhiều task song song** qua `PipelineOrchestrator` (ma trận 4-stage với rate-limit).
 
-### Tạo và chạy nhiều tác vụ
+> Chi tiết: xem [`improve-docs/gemini-creator-architecture.md`](./improve-docs/gemini-creator-architecture.md).
 
-- Thêm từng tác vụ hoặc nhập một danh sách đường dẫn để tạo hàng loạt.
-- Gán giọng đọc và hồ sơ làm việc riêng cho từng video.
-- Chạy một tác vụ cụ thể hoặc chạy tất cả tác vụ đã chọn.
-- Thiết lập số lượng tác vụ được xử lý cùng lúc để phù hợp với khả năng máy và nhu cầu vận hành.
-- Dễ dàng mở thư mục kết quả, xem nhật ký hoặc xóa một tác vụ không còn cần thiết.
+### 🖼️ Tạo ảnh hàng loạt (Tab Hình ảnh)
+- Hỗ trợ 2 provider: **Google Flow Local** (port 8787) và **G-Labs** (port 8765).
+- Tái sử dụng `reference_media_id` để sinh nhiều biến thể từ 1 ảnh gốc (1-to-N pattern).
+- Auto-create Project trên `labs.google/fx/tools/flow` qua `POST /v1/projects`.
 
-### Theo dõi tiến độ rõ ràng
+> Chi tiết API: xem [`FLOW-API.md`](./FLOW-API.md).
 
-Danh sách tác vụ hiển thị tình trạng của từng công đoạn. Nhờ đó, bạn có thể nhanh chóng nhận biết phần nào đã hoàn thành, đang xử lý hoặc gặp lỗi.
+### 📋 Quản lý tác vụ
+- Thêm 1 hoặc nhiều URL YouTube (paste danh sách để tạo hàng loạt).
+- Gán giọng đọc và Chrome Profile riêng cho từng video.
+- Chạy 1 task hoặc batch nhiều task cùng lúc.
+- Theo dõi trạng thái realtime (Idle / Running / Success / Failed) trên DataGrid.
+- Mở thư mục kết quả, xem log chi tiết, xóa task không cần.
 
-Bạn cũng có thể:
+### 🔐 Quản lý bản quyền (License)
+- 1 License ↔ 1 thiết bị active tại 1 thời điểm (chống dùng đồng thời).
+- Heartbeat 5 phút/lần, Offline grace period 7 ngày.
+- Hỗ trợ chuyển máy, kích hoạt, hủy kích hoạt.
 
-- Lọc theo đường dẫn video, ngôn ngữ, giọng đọc hoặc trạng thái lỗi của từng công đoạn.
-- Xem nhật ký chi tiết của từng tác vụ để kiểm tra nguyên nhân khi cần.
-- Mở trực tiếp bộ tài nguyên đã tạo cho một video.
-- Xem lại lịch sử các tác vụ đã hoàn thành và tra cứu lại kết quả cũ.
+---
 
-### Quản lý hồ sơ làm việc
+## 🚀 Quick Start
 
-AssetAutomator cho phép tạo, chọn, mở và đặt hồ sơ làm việc mặc định. Mỗi tác vụ có thể sử dụng hồ sơ phù hợp, giúp bạn tách biệt các luồng công việc hoặc tài khoản khi cần.
+### 📦 Cho người dùng cuối (End-User)
+1. Tải bản release `.zip` từ mục Releases.
+2. Giải nén và chạy `AssetAutomator.exe`.
+3. Điền cấu hình API key trong **Settings** (Gemini, AI84, G-Labs, ElevenLabs, v.v.).
 
-Bạn cũng có thể lưu đường dẫn xử lý kịch bản tùy chỉnh để toàn bộ tác vụ sử dụng thống nhất.
+### 🛠️ Cho lập trình viên (Developer)
+```bash
+# 1. Clone
+git clone <URL>
+cd AssetAutomator
 
-### Chọn giọng đọc thuận tiện
+# 2. Build
+dotnet build AssetAutomator.sln
 
-- Duyệt và chọn giọng đọc từ danh sách được chia sẻ.
-- Gán giọng đọc trực tiếp vào từng tác vụ.
-- Kiểm tra thông tin truy cập trước khi bắt đầu xử lý để hạn chế gián đoạn giữa chừng.
+# 3. Run
+dotnet run --project src/AssetAutomator.UI/AssetAutomator.UI.csproj
+```
 
-### Quản lý yêu cầu tạo ảnh
+Chi tiết đầy đủ: **[HOW-TO-RUN.md](./HOW-TO-RUN.md)** — yêu cầu môi trường, cấu hình AppSettings, cách DI hoạt động, troubleshooting.
 
-Khu vực theo dõi tạo ảnh cho biết số yêu cầu đang chờ, đang xử lý, đã hoàn tất và thời gian xử lý trung bình. Điều này hữu ích khi bạn chạy nhiều video cùng lúc và muốn kiểm soát tải công việc.
+---
 
-### Kiểm tra kết nối trung gian
+## 📂 Cấu trúc dự án
 
-Công cụ hỗ trợ kiểm tra danh sách kết nối trung gian có sẵn hoặc danh sách bạn tự nhập. Kết quả hiển thị trạng thái hoạt động và thông tin phản hồi để bạn chủ động chọn danh sách phù hợp trước khi chạy nhiều tác vụ.
+```
+AssetAutomator/
+├── src/                              ← Source code (4 projects, Modular Monolith)
+│   ├── AssetAutomator.Core/          ← Domain models, interfaces, constants
+│   ├── AssetAutomator.Infrastructure/ ← OS/network helpers
+│   ├── AssetAutomator.Application/   ← Business logic + pipeline steps
+│   └── AssetAutomator.UI/            ← WPF presentation (composition root)
+├── tools/                            ← Runtime tools (Python embedded, scripts)
+├── Modules/                          ← External Python modules (Gemini server)
+├── Resources/                        ← Logo gốc
+├── improve-docs/                     ← Lịch sử cải tiến P1–P4 + tài liệu kiến trúc
+├── HOW-TO-RUN.md                     ← Hướng dẫn build/run chi tiết
+├── FLOW-API.md                       ← Tài liệu tích hợp Google Flow Image API
+├── README.md                         ← File này
+└── AssetAutomator.sln                ← Solution file
+```
 
-### Tùy chỉnh trải nghiệm sử dụng
+Chi tiết từng layer + dependency graph: **[HOW-TO-RUN.md §2](./HOW-TO-RUN.md)**.
 
-- Chọn thư mục lưu kết quả theo ý muốn.
-- Chuyển đổi giao diện sáng hoặc tối.
-- Lưu và nạp lại các thiết lập để thuận tiện khi đổi máy hoặc sao lưu cấu hình.
-- Kiểm tra các điều kiện cần thiết trước khi sử dụng.
+---
 
-## Hướng dẫn Cài đặt & Sử dụng
+## 📚 Tài liệu tham khảo
 
-### 📦 Dành cho Người dùng cuối (End-User)
+| Tài liệu | Mô tả |
+|---|---|
+| **[HOW-TO-RUN.md](./HOW-TO-RUN.md)** | Build, run, architecture overview, DI explanation, troubleshooting. |
+| **[FLOW-API.md](./FLOW-API.md)** | Google Flow Image API: endpoints, Python/JS/cURL examples, model list. |
+| **[improve-docs/INDEX.md](./improve-docs/INDEX.md)** | Index roadmap cải tiến P1–P4 (15 reports). |
+| **[improve-docs/DEVELOPER-RULES.md](./improve-docs/DEVELOPER-RULES.md)** | Coding conventions cho AI assistant + lập trình viên. |
+| **[improve-docs/gemini-creator-architecture.md](./improve-docs/gemini-creator-architecture.md)** | Kiến trúc 5-step Gemini pipeline + PipelineOrchestrator matrix. |
+| **[improve-docs/p4-project-cleanup.md](./improve-docs/p4-project-cleanup.md)** | Phase tái cấu trúc dự án (Core / Infrastructure / Application / UI). |
+| **[improve-docs/check-list.md](./improve-docs/check-list.md)** | Checkbox trạng thái từng đầu việc cải tiến. |
 
-1. Tải bản phát hành mới nhất dạng file `.zip` từ mục Release.
-2. Giải nén file `.zip` vào một thư mục bất kỳ trên máy tính.
-3. Chạy trực tiếp file `AssetAutomator.exe`.
-4. Điền các cấu hình cần thiết trong mục Cài đặt và sử dụng ngay lập tức (Bộ phần mềm đã tích hợp sẵn môi trường chạy tự động, **không yêu cầu cài đặt thêm Python hay thao tác qua CMD**).
+---
 
-### 🛠️ Dành cho Lập trình viên (Developer & Build Guide)
+## ⚙️ Yêu cầu hệ thống
 
-1. **Clone repository**:
-   ```bash
-   git clone <URL_REPOSITORY>
-   cd AssetAutomator
-   ```
+| Thành phần | Yêu cầu |
+|---|---|
+| OS | Windows 10/11 (64-bit) |
+| .NET SDK | .NET 10 SDK |
+| Chrome / Chromium | Bắt buộc (cho `BrowserService` + Playwright) |
+| WebView2 Runtime | Có sẵn trên Windows 10/11 |
+| Python Embedded | Đặt ở `tools/PythonEmbed/` (app tự quản lý) |
+| RAM tối thiểu | 8 GB |
 
-2. **Khởi tạo môi trường Python Portable (Chỉ thực hiện 1 lần trước khi build/đóng gói)**:
-   Chạy script tự động tải và cấu hình Python Portable kèm thư viện cần thiết:
-   ```powershell
-   powershell -ExecutionPolicy Bypass -File .\Scripts\Setup-PythonEmbed.ps1
-   ```
+---
 
-3. **Biên dịch & Đóng gói ứng dụng**:
-   ```bash
-   dotnet build -c Release
-   ```
-   *Lưu ý: Thư mục `PythonEmbed/` sẽ tự động được đóng gói chung vào output để gửi cho người dùng cuối.*
+## 🤝 Đóng góp
 
-## Quy trình sử dụng gợi ý
+Trước khi thêm tính năng mới:
+1. Đọc **[improve-docs/DEVELOPER-RULES.md](./improve-docs/DEVELOPER-RULES.md)**.
+2. Tách logic thành class riêng ở `Application/` hoặc `Infrastructure/` (SRP + DI).
+3. Build pass 0 errors, test run thành công.
+4. Cập nhật tài liệu liên quan trong `improve-docs/` hoặc `HOW-TO-RUN.md`.
 
-1. Hoàn tất các thông tin cần thiết trong mục cài đặt và chọn thư mục lưu kết quả.
-2. Tạo hoặc chọn hồ sơ làm việc phù hợp.
-3. Thêm một hoặc nhiều đường dẫn YouTube, chọn ngôn ngữ và giọng đọc.
-4. Chọn các đầu ra muốn tạo.
-5. Chạy các tác vụ đã chọn và theo dõi trạng thái trong danh sách.
-6. Mở thư mục của tác vụ để lấy ảnh, kịch bản, giọng đọc và phụ đề sau khi hoàn tất.
+---
 
-## Lưu ý
+## 📜 Lưu ý bản quyền
 
 - Chỉ sử dụng nội dung video khi bạn có quyền phù hợp hoặc được phép sử dụng.
 - Chất lượng đầu ra phụ thuộc vào nội dung gốc, ngôn ngữ được chọn và giọng đọc sử dụng.
-- Khi chạy số lượng lớn, nên bắt đầu với một vài tác vụ để kiểm tra thiết lập và chất lượng kết quả.
+- Khi chạy số lượng lớn, nên bắt đầu với 1–2 tác vụ để kiểm tra thiết lập trước.
 
+---
+
+**Trạng thái dự án**: ✅ Build pass (0 errors) · ✅ App khởi động thành công · ✅ Tài liệu cập nhật đầy đủ sau P4 cleanup.

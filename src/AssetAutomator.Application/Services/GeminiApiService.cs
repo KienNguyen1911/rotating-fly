@@ -4,88 +4,88 @@ using System.Net.Http;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
+using AssetAutomator.Core.Interfaces;
+using AssetAutomator.Infrastructure.Helpers;
 
 namespace AssetAutomator.Application.Services
 {
-    public class GemModel
-    {
-        public string id { get; set; } = string.Empty;
-        public string name { get; set; } = string.Empty;
-        public string description { get; set; } = string.Empty;
-        public string prompt { get; set; } = string.Empty;
-        public bool predefined { get; set; }
-    }
-
-    public class GeminiChatResponseModel
-    {
-        public string session_id { get; set; } = string.Empty;
-        public string text { get; set; } = string.Empty;
-        public string thoughts { get; set; } = string.Empty;
-        public List<string> images { get; set; } = new();
-        public bool deep_research_completed { get; set; }
-    }
-
-    public class DeepResearchStartResponseModel
-    {
-        public string research_id { get; set; } = string.Empty;
-        public string session_id { get; set; } = string.Empty;
-        public string plan_title { get; set; } = string.Empty;
-        public List<string> steps { get; set; } = new();
-    }
-
-    public class DeepResearchStatusResponseModel
-    {
-        public string research_id { get; set; } = string.Empty;
-        public string session_id { get; set; } = string.Empty;
-        public string status { get; set; } = string.Empty;
-        public double elapsed_seconds { get; set; }
-        public string plan_title { get; set; } = string.Empty;
-        public List<string> steps { get; set; } = new();
-        public string text { get; set; } = string.Empty;
-        public string error { get; set; } = string.Empty;
-    }
-
-    public class AvailableModelInfo
-    {
-        public string model_id { get; set; } = string.Empty;
-        public string model_name { get; set; } = string.Empty;
-        public string display_name { get; set; } = string.Empty;
-        public string description { get; set; } = string.Empty;
-        public int capacity { get; set; }
-        public bool is_available { get; set; }
-        public bool is_thinking { get; set; }
-        public bool is_advanced_only { get; set; }
-    }
-
     /// <summary>
-    /// Service for interacting with the Gemini WebAPI REST Server.
+    /// Service for interacting with the Gemini WebAPI REST Server (Modules/Gemini-API-2.0.0).
+    /// Handles listing gems, sending chat prompts (with Deep Research & Gem selection), and health checks.
     /// </summary>
     public class GeminiApiService
     {
         private readonly HttpClient _httpClient;
         private readonly string _baseUrl;
-        private readonly Infrastructure.Helpers.PythonServerManager _pythonServerManager;
+        private readonly PythonServerManager? _pythonServerManager;
+        private readonly IConfigService _configService;
 
+        // ─────────────────────────────────────────────────────
+        //  Model Mapping: C# UI names → Python model IDs
+        //  Mirrors: Modules/Gemini-API-2.0.0/src/gemini_webapi/constants.py Model enum
+        // ─────────────────────────────────────────────────────
+
+        /// <summary>
+        /// Resolves the model name to pass to the Python Gemini API.
+        /// Model names come directly from the UI dropdown (9 models from constants.py).
+        /// If already a valid "gemini-*" name, returns as-is (idempotent).
+        /// </summary>
         public static string ResolveModelName(string? modelName)
         {
             if (!string.IsNullOrWhiteSpace(modelName) && modelName.StartsWith("gemini-", StringComparison.OrdinalIgnoreCase))
                 return modelName.Trim();
+
+            // Fallback: default to flash
             return "gemini-3-flash";
         }
 
-        public GeminiApiService(string? baseUrl = null, Infrastructure.Helpers.PythonServerManager? pythonServerManager = null)
+        /// <summary>
+        /// Converts a GemOptionItem (UI model) to a GemModel (API model).
+        /// Used by PipelineOrchestrator to bridge UI selection with API calls.
+        /// </summary>
+        public static GemModel? ConvertFromGemOption(AssetAutomator.Core.Models.GemOptionItem? option)
         {
-            _baseUrl = (baseUrl ?? Infrastructure.Services.ConfigService.CurrentSettings.GeminiApiBaseUrl ?? "http://localhost:8000").TrimEnd('/');
-            _httpClient = new HttpClient { Timeout = TimeSpan.FromMinutes(10) };
-            _pythonServerManager = pythonServerManager ?? Infrastructure.Helpers.PythonServerManager.Default;
+            if (option == null) return null;
+            return new GemModel
+            {
+                id = option.Id,
+                name = option.Name
+            };
         }
 
+        public GeminiApiService(IConfigService configService, PythonServerManager? pythonServerManager = null)
+        {
+            _configService = configService ?? throw new ArgumentNullException(nameof(configService));
+            _baseUrl = (_configService.CurrentSettings.GeminiApiBaseUrl ?? "http://localhost:8000").TrimEnd('/');
+            _httpClient = new HttpClient { Timeout = TimeSpan.FromMinutes(10) };
+            _pythonServerManager = pythonServerManager;
+        }
+
+        /// <summary>
+        /// Verifies server health and launches Python background server if not running.
+        /// </summary>
         public async Task<bool> EnsureConnectedAsync()
         {
+            if (_pythonServerManager == null)
+            {
+                // Without a PythonServerManager, just check HTTP health.
+                try
+                {
+                    var response = await _httpClient.GetAsync($"{_baseUrl}/api/health");
+                    return response.IsSuccessStatusCode;
+                }
+                catch
+                {
+                    return false;
+                }
+            }
             var (success, _) = await _pythonServerManager.EnsureServerRunningAsync(_baseUrl);
             return success;
         }
 
+        /// <summary>
+        /// Fetches available Gemini Gems (Custom Gems + System Gems).
+        /// </summary>
         public async Task<List<GemModel>> GetGemsAsync(bool includeHidden = true)
         {
             await EnsureConnectedAsync();
@@ -94,12 +94,17 @@ namespace AssetAutomator.Application.Services
             string content = await response.Content.ReadAsStringAsync();
 
             if (!response.IsSuccessStatusCode)
+            {
                 throw new InvalidOperationException($"Gemini REST Server error ({response.StatusCode}): {content}");
+            }
 
             var gems = JsonSerializer.Deserialize<List<GemModel>>(content, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
             return gems ?? new List<GemModel>();
         }
 
+        /// <summary>
+        /// Sends a chat prompt to Gemini WebAPI.
+        /// </summary>
         public async Task<GeminiChatResponseModel> SendChatAsync(
             string message,
             string? gemId = null,
@@ -110,12 +115,15 @@ namespace AssetAutomator.Application.Services
             List<string>? filePaths = null)
         {
             await EnsureConnectedAsync();
+
+            // Model name is already the full Gemini model name (e.g. "gemini-3-pro")
             string resolvedModel = ResolveModelName(model);
 
+            // ── MODEL LOGGING ──
             bool isThinking = resolvedModel.Contains("pro", StringComparison.OrdinalIgnoreCase);
-            string thinkingTag = isThinking ? "THINKING (Pro)" : "STANDARD";
-            System.Diagnostics.Debug.WriteLine($"[GEMINI-API] SendChat: model={resolvedModel} | {thinkingTag} | gem={gemId ?? "default"} | deepResearch={deepResearch}");
-            Console.WriteLine($"[GEMINI-API] SendChat: model={resolvedModel} | {thinkingTag} | gem={gemId ?? "default"}");
+            string thinkingTag = isThinking ? $"🧠 THINKING (Pro)" : $"📄 STANDARD";
+            System.Diagnostics.Debug.WriteLine($"[GEMINI-API] ▶ SendChat: model={resolvedModel} | {thinkingTag} | gem={gemId ?? "default"} | deepResearch={deepResearch}");
+            Console.WriteLine($"[GEMINI-API] ▶ SendChat: model={resolvedModel} | {thinkingTag} | gem={gemId ?? "default"}");
 
             var payload = new Dictionary<string, object>
             {
@@ -126,11 +134,19 @@ namespace AssetAutomator.Application.Services
             };
 
             if (!string.IsNullOrWhiteSpace(gemId))
+            {
                 payload["gem_id"] = gemId;
+            }
+
             if (!string.IsNullOrWhiteSpace(sessionId))
+            {
                 payload["session_id"] = sessionId;
+            }
+
             if (filePaths != null && filePaths.Count > 0)
+            {
                 payload["files"] = filePaths;
+            }
 
             string jsonContent = JsonSerializer.Serialize(payload);
             using var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
@@ -140,28 +156,42 @@ namespace AssetAutomator.Application.Services
             string responseText = await response.Content.ReadAsStringAsync();
 
             if (!response.IsSuccessStatusCode)
+            {
                 throw new InvalidOperationException($"Gemini API error ({response.StatusCode}): {responseText}");
+            }
 
             var result = JsonSerializer.Deserialize<GeminiChatResponseModel>(responseText, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
             if (result == null)
+            {
                 throw new InvalidOperationException("Failed to deserialize Gemini API response.");
+            }
 
             return result;
         }
 
+        /// <summary>
+        /// Starts an asynchronous Deep Research job on the Python REST server and returns job metadata.
+        /// </summary>
         public async Task<DeepResearchStartResponseModel> StartDeepResearchAsync(
-            string message, string? gemId = null, string? model = null, string? sessionId = null)
+            string message,
+            string? gemId = null,
+            string? model = null,
+            string? sessionId = null)
         {
             await EnsureConnectedAsync();
 
+            // ── MODEL LOGGING cho Deep Research ──
             bool isThinking = model != null && model.Contains("thinking", StringComparison.OrdinalIgnoreCase);
             string tier = model != null && model.Contains("advanced", StringComparison.OrdinalIgnoreCase) ? "Advanced" :
                           model != null && model.Contains("plus", StringComparison.OrdinalIgnoreCase) ? "Plus" : "Basic";
-            string thinkingTag = isThinking ? $"THINKING ({tier})" : $"STANDARD ({tier})";
-            System.Diagnostics.Debug.WriteLine($"[GEMINI-API] StartDeepResearch: model={model ?? "default"} | {thinkingTag} | gem={gemId ?? "default"}");
-            Console.WriteLine($"[GEMINI-API] StartDeepResearch: model={model ?? "default"} | {thinkingTag} | gem={gemId ?? "default"}");
+            string thinkingTag = isThinking ? $"🧠 THINKING ({tier})" : $"📄 STANDARD ({tier})";
+            System.Diagnostics.Debug.WriteLine($"[GEMINI-API] ▶ StartDeepResearch: model={model ?? "default"} | {thinkingTag} | gem={gemId ?? "default"}");
+            Console.WriteLine($"[GEMINI-API] ▶ StartDeepResearch: model={model ?? "default"} | {thinkingTag} | gem={gemId ?? "default"}");
 
-            var payload = new Dictionary<string, object> { { "message", message } };
+            var payload = new Dictionary<string, object>
+            {
+                { "message", message }
+            };
             if (!string.IsNullOrWhiteSpace(gemId)) payload["gem_id"] = gemId;
             if (!string.IsNullOrWhiteSpace(model)) payload["model"] = model;
             if (!string.IsNullOrWhiteSpace(sessionId)) payload["session_id"] = sessionId;
@@ -174,12 +204,17 @@ namespace AssetAutomator.Application.Services
             string responseText = await response.Content.ReadAsStringAsync();
 
             if (!response.IsSuccessStatusCode)
+            {
                 throw new InvalidOperationException($"Gemini Deep Research start error ({response.StatusCode}): {responseText}");
+            }
 
             var result = JsonSerializer.Deserialize<DeepResearchStartResponseModel>(responseText, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
             return result ?? throw new InvalidOperationException("Failed to deserialize Deep Research start response.");
         }
 
+        /// <summary>
+        /// Polls the status of an active Deep Research job.
+        /// </summary>
         public async Task<DeepResearchStatusResponseModel> GetDeepResearchStatusAsync(string researchId)
         {
             await EnsureConnectedAsync();
@@ -188,23 +223,38 @@ namespace AssetAutomator.Application.Services
             string responseText = await response.Content.ReadAsStringAsync();
 
             if (!response.IsSuccessStatusCode)
+            {
                 throw new InvalidOperationException($"Gemini Deep Research status error ({response.StatusCode}): {responseText}");
+            }
 
             var result = JsonSerializer.Deserialize<DeepResearchStatusResponseModel>(responseText, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
             return result ?? throw new InvalidOperationException("Failed to deserialize Deep Research status response.");
         }
 
+        /// <summary>
+        /// High-level helper: Starts Deep Research and polls status continuously (every pollIntervalMs)
+        /// with live callbacks until finished or timeout.
+        /// </summary>
         public async Task<DeepResearchStatusResponseModel> ExecuteDeepResearchWithProgressAsync(
-            string message, string? gemId, string? model, string? sessionId, Action<string> onProgress,
-            int pollIntervalMs = 5000, int timeoutSeconds = 600)
+            string message,
+            string? gemId,
+            string? model,
+            string? sessionId,
+            Action<string> onProgress,
+            int pollIntervalMs = 5000,
+            int timeoutSeconds = 600)
         {
-            onProgress("[DEEP-RESEARCH] Creating Deep Research plan & starting background agent...");
+            onProgress("[DEEP-RESEARCH] 🚀 Creating Deep Research plan & starting background agent...");
             var startResp = await StartDeepResearchAsync(message, gemId, model, sessionId);
 
-            onProgress($"[DEEP-RESEARCH] Research Plan: '{startResp.plan_title}'");
+            onProgress($"[DEEP-RESEARCH] 📋 Research Plan: '{startResp.plan_title}'");
             if (startResp.steps != null && startResp.steps.Count > 0)
+            {
                 foreach (var step in startResp.steps)
-                    onProgress($"[DEEP-RESEARCH]   - Step: {step}");
+                {
+                    onProgress($"[DEEP-RESEARCH]   • Step: {step}");
+                }
+            }
 
             var startTime = DateTime.Now;
             while ((DateTime.Now - startTime).TotalSeconds < timeoutSeconds)
@@ -214,18 +264,25 @@ namespace AssetAutomator.Application.Services
 
                 if (statusResp.status.Equals("COMPLETED", StringComparison.OrdinalIgnoreCase))
                 {
-                    onProgress($"[DEEP-RESEARCH] Research completed in {statusResp.elapsed_seconds:F1}s! Report length: {statusResp.text?.Length ?? 0} chars.");
+                    onProgress($"[DEEP-RESEARCH] ✅ Research completed in {statusResp.elapsed_seconds:F1}s! Report length: {statusResp.text?.Length ?? 0} chars.");
                     return statusResp;
                 }
                 else if (statusResp.status.Equals("FAILED", StringComparison.OrdinalIgnoreCase))
+                {
                     throw new InvalidOperationException($"[DEEP-RESEARCH] Failed: {statusResp.error}");
+                }
                 else
-                    onProgress($"[DEEP-RESEARCH-POLL] Deep Research in progress... Elapsed: {statusResp.elapsed_seconds:F0}s (Checking internet sources & aggregating data...)");
+                {
+                    onProgress($"[DEEP-RESEARCH-POLL] ⏳ Deep Research in progress... Elapsed: {statusResp.elapsed_seconds:F0}s (Checking internet sources & aggregating data...)");
+                }
             }
 
             throw new TimeoutException($"[DEEP-RESEARCH] Research timed out after {timeoutSeconds}s.");
         }
 
+        /// <summary>
+        /// Triggers Python REST server to reload cookies.json and re-initialize GeminiClient.
+        /// </summary>
         public async Task<bool> RefreshCookiesAsync()
         {
             if (!await EnsureConnectedAsync()) return false;
@@ -236,9 +293,15 @@ namespace AssetAutomator.Application.Services
                 var response = await _httpClient.PostAsync(url, content);
                 return response.IsSuccessStatusCode;
             }
-            catch { return false; }
+            catch
+            {
+                return false;
+            }
         }
 
+        /// <summary>
+        /// Triggers Python REST server to read installed browser cookies directly and re-initialize GeminiClient.
+        /// </summary>
         public async Task<bool> RefreshFromBrowserAsync()
         {
             if (!await EnsureConnectedAsync()) return false;
@@ -249,9 +312,17 @@ namespace AssetAutomator.Application.Services
                 var response = await _httpClient.PostAsync(url, content);
                 return response.IsSuccessStatusCode;
             }
-            catch { return false; }
+            catch
+            {
+                return false;
+            }
         }
 
+        /// <summary>
+        /// Fetches the list of available Gemini models from the Python server's dynamic model registry.
+        /// Returns models with thinking status, capacity, and availability info.
+        /// This is the GROUND TRUTH for what models Gemini actually supports on your account.
+        /// </summary>
         public async Task<List<AvailableModelInfo>> ListAvailableModelsAsync()
         {
             await EnsureConnectedAsync();
@@ -260,9 +331,12 @@ namespace AssetAutomator.Application.Services
             string content = await response.Content.ReadAsStringAsync();
 
             if (!response.IsSuccessStatusCode)
+            {
                 throw new InvalidOperationException($"List models error ({response.StatusCode}): {content}");
+            }
 
-            var models = JsonSerializer.Deserialize<List<AvailableModelInfo>>(content, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            var models = JsonSerializer.Deserialize<List<AvailableModelInfo>>(content,
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
             return models ?? new List<AvailableModelInfo>();
         }
     }

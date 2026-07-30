@@ -1,9 +1,11 @@
-using System;
 using System.Collections.Generic;
 using System.Text.Json.Serialization;
 
 namespace AssetAutomator.Core.Models
 {
+    /// <summary>
+    /// Response model from Gemini when asked to suggest video topics for a YouTube channel.
+    /// </summary>
     public class YoutubeTopicSuggestionResponse
     {
         [JsonPropertyName("channel_name")]
@@ -30,6 +32,7 @@ namespace AssetAutomator.Core.Models
         [JsonPropertyName("estimated_duration")]
         public string EstimatedDuration { get; set; } = "8-12 phút";
 
+        /// <summary>User has selected this topic for pipeline execution.</summary>
         [JsonIgnore]
         public bool IsSelected { get; set; }
     }

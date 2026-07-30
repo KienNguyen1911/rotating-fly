@@ -6,9 +6,6 @@ using System.Text;
 
 namespace AssetAutomator.Infrastructure.Helpers
 {
-    /// <summary>
-    /// Generates a unique hardware DeviceId based on SHA256(CPU + Mainboard + Disk Serial + Windows SID).
-    /// </summary>
     public static class DeviceHelper
     {
         private static string? _cachedDeviceId;
@@ -16,9 +13,7 @@ namespace AssetAutomator.Infrastructure.Helpers
         public static string GetDeviceId()
         {
             if (!string.IsNullOrEmpty(_cachedDeviceId))
-            {
                 return _cachedDeviceId;
-            }
 
             try
             {
@@ -26,7 +21,6 @@ namespace AssetAutomator.Infrastructure.Helpers
                 string motherboardId = GetWmiProperty("Win32_BaseBoard", "SerialNumber");
                 string diskSerial = GetWmiProperty("Win32_DiskDrive", "SerialNumber");
                 string userSid = GetWindowsUserSid();
-
                 string rawHardwareId = $"CPU:{cpuId}|MB:{motherboardId}|DISK:{diskSerial}|SID:{userSid}";
                 _cachedDeviceId = ComputeSha256(rawHardwareId);
             }
@@ -48,17 +42,16 @@ namespace AssetAutomator.Infrastructure.Helpers
                 using var collection = searcher.Get();
                 foreach (var obj in collection)
                 {
-                    var val = obj[propertyName]?.ToString();
-                    if (!string.IsNullOrWhiteSpace(val))
-                    {
-                        return val.Trim();
-                    }
+                    var value = obj[propertyName]?.ToString();
+                    if (!string.IsNullOrWhiteSpace(value))
+                        return value.Trim();
                 }
             }
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"[DeviceHelper] WMI Query {wmiClass}.{propertyName} failed: {ex.Message}");
             }
+
             return "UNKNOWN";
         }
 
@@ -66,7 +59,7 @@ namespace AssetAutomator.Infrastructure.Helpers
         {
             try
             {
-                var currentIdentity = WindowsIdentity.GetCurrent();
+                using var currentIdentity = WindowsIdentity.GetCurrent();
                 return currentIdentity.User?.Value ?? "UNKNOWN_SID";
             }
             catch
@@ -79,10 +72,8 @@ namespace AssetAutomator.Infrastructure.Helpers
         {
             byte[] bytes = SHA256.HashData(Encoding.UTF8.GetBytes(rawData));
             var builder = new StringBuilder();
-            for (int i = 0; i < bytes.Length; i++)
-            {
-                builder.Append(bytes[i].ToString("x2"));
-            }
+            foreach (byte value in bytes)
+                builder.Append(value.ToString("x2"));
             return builder.ToString();
         }
     }

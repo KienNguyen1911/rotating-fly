@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using AssetAutomator.Core.Models;
 
 namespace AssetAutomator.Core.Interfaces
 {
@@ -23,17 +24,5 @@ namespace AssetAutomator.Core.Interfaces
             string apiKey,
             List<(string base64Data, string tag)> referenceImages,
             string outputDirectory);
-    }
-
-    /// <summary>
-    /// Model for batch image generation items.
-    /// </summary>
-    public class BatchImageItem
-    {
-        public string Id { get; set; } = string.Empty;
-        public string Prompt { get; set; } = string.Empty;
-        public string? ReferenceImagePath { get; set; }
-        public string? AspectRatio { get; set; }
-        public int? Seed { get; set; }
     }
 }

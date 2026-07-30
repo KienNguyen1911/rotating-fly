@@ -20,6 +20,7 @@ namespace AssetAutomator.Core.Models
         private string? _flowProjectUrl;
         private DateTime? _startedAt;
         private DateTime? _finishedAt;
+
         private string _transcript = string.Empty;
         private string _sceneTitle = string.Empty;
         private string _aspectRatio = "16:9";
@@ -27,7 +28,7 @@ namespace AssetAutomator.Core.Models
 
         public int Index { get; set; }
         public string TaskId { get; set; } = string.Empty;
-        public string Provider { get; set; } = "glabs";
+        public string Provider { get; set; } = "glabs"; // "glabs" or "flow_local"
 
         public string Prompt
         {
@@ -53,7 +54,13 @@ namespace AssetAutomator.Core.Models
         public string AspectRatio
         {
             get => _aspectRatio;
-            set { _aspectRatio = value; OnPropertyChanged(); OnPropertyChanged(nameof(RatioWidth)); OnPropertyChanged(nameof(RatioHeight)); }
+            set
+            {
+                _aspectRatio = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(RatioWidth));
+                OnPropertyChanged(nameof(RatioHeight));
+            }
         }
 
         public double RatioWidth => AspectRatio switch
@@ -62,7 +69,7 @@ namespace AssetAutomator.Core.Models
             "1:1" => 100,
             "4:3" => 120,
             "3:4" => 90,
-            _ => 160
+            _ => 160 // 16:9
         };
 
         public double RatioHeight => AspectRatio switch
@@ -71,7 +78,7 @@ namespace AssetAutomator.Core.Models
             "1:1" => 100,
             "4:3" => 90,
             "3:4" => 120,
-            _ => 90
+            _ => 90 // 16:9
         };
 
         public string Upscale { get; set; } = "none";
@@ -80,7 +87,13 @@ namespace AssetAutomator.Core.Models
         public string Status
         {
             get => _status;
-            set { _status = value; OnPropertyChanged(); OnPropertyChanged(nameof(IsGenerating)); OnPropertyChanged(nameof(IsDone)); }
+            set
+            {
+                _status = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(IsGenerating));
+                OnPropertyChanged(nameof(IsDone));
+            }
         }
 
         public bool IsGenerating => Status != null && (Status.Equals("Generating...", StringComparison.OrdinalIgnoreCase) || Status.Equals("Processing", StringComparison.OrdinalIgnoreCase));
@@ -144,6 +157,9 @@ namespace AssetAutomator.Core.Models
         public string FinishedTimeFormatted => FinishedAt?.ToString("HH:mm:ss") ?? string.Empty;
 
         public event PropertyChangedEventHandler? PropertyChanged;
-        protected void OnPropertyChanged([CallerMemberName] string? propertyName = null) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+        protected void OnPropertyChanged([CallerMemberName] string? propertyName = null)
+        {
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+        }
     }
 }

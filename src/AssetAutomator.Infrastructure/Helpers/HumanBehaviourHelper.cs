@@ -5,16 +5,10 @@ using AssetAutomator.Core.Constants;
 
 namespace AssetAutomator.Infrastructure.Helpers
 {
-    /// <summary>
-    /// Simulates human-like browser interactions to avoid bot detection.
-    /// </summary>
     public static class HumanBehaviourHelper
     {
         private static readonly Random _random = new();
 
-        /// <summary>
-        /// Types text character-by-character with random delays to simulate human typing.
-        /// </summary>
         public static async Task TypeLikeHumanAsync(IPage page, ILocator locator, string text)
         {
             await locator.FocusAsync();
@@ -25,9 +19,6 @@ namespace AssetAutomator.Infrastructure.Helpers
             }
         }
 
-        /// <summary>
-        /// Performs random mouse movements across the page to simulate human behavior.
-        /// </summary>
         public static async Task RandomMouseMovementAsync(IPage page)
         {
             int steps = _random.Next(3, 8);

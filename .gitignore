@@ -22,3 +22,21 @@ dist_package/
 PythonEmbed/
 get-pip.py
 
+# Runtime logs (created by app or PowerShell test wrappers)
+*.log
+crash.log
+trace_log.txt
+
+# Test runners (PowerShell wrapper outputs)
+run-stdout.log
+run-stderr.log
+test-stdout.log
+test-stderr.log
+
+# Legacy mono csproj (disabled)
+*.csproj.disabled
+
+# Python module dependencies (downloaded into Modules/)
+Modules/*/venv/
+Modules/*/__pycache__/
+Modules/*/.pytest_cache/

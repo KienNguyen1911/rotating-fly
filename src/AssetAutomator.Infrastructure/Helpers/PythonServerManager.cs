@@ -8,13 +8,9 @@ using AssetAutomator.Core.Interfaces;
 
 namespace AssetAutomator.Infrastructure.Helpers
 {
-    /// <summary>
-    /// Manages launching and ensuring health of the embedded Python Gemini WebAPI Server (server.py).
-    /// Uses ILogService for all diagnostics.
-    /// Prefers embedded Python at tools/PythonEmbed/python.exe if available.
-    /// </summary>
     public class PythonServerManager
     {
+        public static PythonServerManager Default { get; set; } = null!;
         private readonly ILogService _log;
         private readonly IConfigService _configService;
         private Process? _serverProcess;
@@ -24,6 +20,7 @@ namespace AssetAutomator.Infrastructure.Helpers
         {
             _log = logService ?? throw new ArgumentNullException(nameof(logService));
             _configService = configService ?? throw new ArgumentNullException(nameof(configService));
+            Default = this;
         }
 
         public async Task<(bool IsRunning, string Diagnostics)> IsServerRunningAsync(string baseUrl = "http://localhost:8000")
@@ -64,12 +61,11 @@ namespace AssetAutomator.Infrastructure.Helpers
 
             string pythonExe = ResolvePythonExecutable();
             string serverScriptPath = ResolveServerScriptPath();
-
             if (!File.Exists(serverScriptPath))
             {
-                string errMsg = $"server.py not found at: {serverScriptPath}";
-                _log.Error(LogCategory.PythonServer, errMsg);
-                return (false, errMsg);
+                string message = $"server.py not found at: {serverScriptPath}";
+                _log.Error(LogCategory.PythonServer, message);
+                return (false, message);
             }
 
             if (!File.Exists(pythonExe) && pythonExe != "python")
@@ -77,10 +73,6 @@ namespace AssetAutomator.Infrastructure.Helpers
                 _log.Warning(LogCategory.PythonServer, $"Embedded Python not found at '{pythonExe}', falling back to system 'python'");
                 pythonExe = "python";
             }
-
-            _log.Info(LogCategory.PythonServer, $"Launching Python server...");
-            _log.Debug(LogCategory.PythonServer, $"  Python: {pythonExe}");
-            _log.Debug(LogCategory.PythonServer, $"  Script: {serverScriptPath}");
 
             try
             {
@@ -94,43 +86,33 @@ namespace AssetAutomator.Infrastructure.Helpers
                     RedirectStandardOutput = true,
                     RedirectStandardError = true
                 };
-
                 startInfo.EnvironmentVariables["PYTHONIOENCODING"] = "utf-8";
                 startInfo.EnvironmentVariables["PYTHONUNBUFFERED"] = "1";
                 string scriptDir = Path.GetDirectoryName(serverScriptPath)!;
-                string srcDir = Path.Combine(scriptDir, "src");
-                startInfo.EnvironmentVariables["PYTHONPATH"] = srcDir + ";" + (Environment.GetEnvironmentVariable("PYTHONPATH") ?? "");
+                startInfo.EnvironmentVariables["PYTHONPATH"] = Path.Combine(scriptDir, "src") + ";" + (Environment.GetEnvironmentVariable("PYTHONPATH") ?? "");
 
                 var settings = _configService.CurrentSettings;
                 if (!string.IsNullOrEmpty(settings.ChromeProfilesDir))
-                {
                     startInfo.EnvironmentVariables["CHROME_PROFILES_DIR"] = settings.ChromeProfilesDir;
-                }
                 if (!string.IsNullOrEmpty(settings.DefaultChromeProfile))
-                {
                     startInfo.EnvironmentVariables["DEFAULT_CHROME_PROFILE"] = settings.DefaultChromeProfile;
-                }
 
                 _serverProcess = new Process { StartInfo = startInfo };
-
-                _serverProcess.OutputDataReceived += (s, e) =>
+                _serverProcess.OutputDataReceived += (_, e) =>
                 {
                     if (!string.IsNullOrEmpty(e.Data))
                         _log.Debug(LogCategory.PythonServer, e.Data, "stdout");
                 };
-
-                _serverProcess.ErrorDataReceived += (s, e) =>
+                _serverProcess.ErrorDataReceived += (_, e) =>
                 {
                     if (!string.IsNullOrEmpty(e.Data))
                     {
-                        bool isLikelyError =
-                            e.Data.Contains("Error", StringComparison.OrdinalIgnoreCase) ||
-                            e.Data.Contains("Traceback", StringComparison.OrdinalIgnoreCase) ||
-                            e.Data.Contains("Exception", StringComparison.OrdinalIgnoreCase) ||
-                            e.Data.Contains("CRITICAL", StringComparison.OrdinalIgnoreCase) ||
-                            e.Data.Contains("FATAL", StringComparison.OrdinalIgnoreCase);
-
-                        if (isLikelyError)
+                        bool isError = e.Data.Contains("Error", StringComparison.OrdinalIgnoreCase) ||
+                                       e.Data.Contains("Traceback", StringComparison.OrdinalIgnoreCase) ||
+                                       e.Data.Contains("Exception", StringComparison.OrdinalIgnoreCase) ||
+                                       e.Data.Contains("CRITICAL", StringComparison.OrdinalIgnoreCase) ||
+                                       e.Data.Contains("FATAL", StringComparison.OrdinalIgnoreCase);
+                        if (isError)
                             _log.Error(LogCategory.PythonServer, e.Data, "stderr");
                         else
                             _log.Debug(LogCategory.PythonServer, e.Data, "stderr");
@@ -140,25 +122,20 @@ namespace AssetAutomator.Infrastructure.Helpers
                 _serverProcess.Start();
                 _serverProcess.BeginOutputReadLine();
                 _serverProcess.BeginErrorReadLine();
-
                 _log.Info(LogCategory.PythonServer, $"Python server process started (PID: {_serverProcess.Id})");
 
-                int[] pollDelays = { 250, 250, 250, 250, 250, 250, 250, 250,
-                                     500, 500, 500, 500, 500, 500, 500, 500,
-                                     500, 500, 500, 500 };
-
+                int[] pollDelays = { 250, 250, 250, 250, 250, 250, 250, 250, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500 };
                 foreach (int delayMs in pollDelays)
                 {
                     await Task.Delay(delayMs);
-
                     if (_serverProcess.HasExited)
                     {
-                        string crashMsg = $"Python server process exited prematurely with code {_serverProcess.ExitCode}";
-                        _log.Error(LogCategory.PythonServer, crashMsg);
-                        return (false, crashMsg);
+                        string message = $"Python server process exited prematurely with code {_serverProcess.ExitCode}";
+                        _log.Error(LogCategory.PythonServer, message);
+                        return (false, message);
                     }
 
-                    var (isRunning, diag) = await IsServerRunningAsync(baseUrl);
+                    var (isRunning, _) = await IsServerRunningAsync(baseUrl);
                     if (isRunning)
                     {
                         _log.Success(LogCategory.PythonServer, $"Server successfully launched (PID: {_serverProcess.Id})");
@@ -166,42 +143,36 @@ namespace AssetAutomator.Infrastructure.Helpers
                     }
                 }
 
-                string timeoutMsg = $"Server did not respond within 8s at {baseUrl}/api/health";
-                _log.Error(LogCategory.PythonServer, timeoutMsg);
-                return (false, timeoutMsg);
+                string timeoutMessage = $"Server did not respond within 8s at {baseUrl}/api/health";
+                _log.Error(LogCategory.PythonServer, timeoutMessage);
+                return (false, timeoutMessage);
             }
             catch (Exception ex)
             {
-                string errMsg = $"Exception launching Python server: {ex.GetType().Name}: {ex.Message}";
-                _log.Error(LogCategory.PythonServer, errMsg);
-                return (false, errMsg);
+                string message = $"Exception launching Python server: {ex.GetType().Name}: {ex.Message}";
+                _log.Error(LogCategory.PythonServer, message);
+                return (false, message);
             }
         }
 
         public string ResolvePythonExecutable()
         {
             string baseDir = AppDomain.CurrentDomain.BaseDirectory;
-            string embeddedPythonPath = Path.Combine(baseDir, "tools", "PythonEmbed", "python.exe");
+            string embeddedPath = Path.Combine(baseDir, "tools", "PythonEmbed", "python.exe");
+            if (File.Exists(embeddedPath))
+                return embeddedPath;
 
-            if (File.Exists(embeddedPythonPath))
-                return embeddedPythonPath;
-
-            string relativeEmbeddedPath = Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), "tools", "PythonEmbed", "python.exe"));
-            if (File.Exists(relativeEmbeddedPath))
-                return relativeEmbeddedPath;
-
-            return "python";
+            string relativePath = Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), "tools", "PythonEmbed", "python.exe"));
+            return File.Exists(relativePath) ? relativePath : "python";
         }
 
         public string ResolveServerScriptPath()
         {
             string baseDir = AppDomain.CurrentDomain.BaseDirectory;
             string scriptPath = Path.Combine(baseDir, "Modules", "Gemini-API-2.0.0", "server.py");
-
-            if (File.Exists(scriptPath))
-                return scriptPath;
-
-            return Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), "Modules", "Gemini-API-2.0.0", "server.py"));
+            return File.Exists(scriptPath)
+                ? scriptPath
+                : Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), "Modules", "Gemini-API-2.0.0", "server.py"));
         }
 
         public async Task<(bool Success, string Diagnostics)> RestartServerAsync(string baseUrl = "http://localhost:8000")
@@ -210,12 +181,10 @@ namespace AssetAutomator.Infrastructure.Helpers
             StopServer();
             await Task.Delay(300);
             var result = await EnsureServerRunningAsync(baseUrl, skipInitialCheck: true);
-
             if (result.Success)
                 _log.Success(LogCategory.PythonServer, "Server restarted successfully.");
             else
                 _log.Error(LogCategory.PythonServer, $"Server restart failed: {result.Diagnostics}");
-
             return result;
         }
 
@@ -243,7 +212,6 @@ namespace AssetAutomator.Infrastructure.Helpers
         {
             if (_serverProcess == null)
                 return (false, null, null);
-
             try
             {
                 return (!_serverProcess.HasExited, _serverProcess.Id, _serverProcess.StartTime.ToString("HH:mm:ss"));

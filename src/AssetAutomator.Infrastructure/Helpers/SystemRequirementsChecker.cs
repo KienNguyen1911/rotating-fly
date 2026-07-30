@@ -23,11 +23,9 @@ namespace AssetAutomator.Infrastructure.Helpers
         public static async Task<SystemRequirementResult> CheckAsync()
         {
             var result = new SystemRequirementResult();
-
             CheckChrome(result);
             await CheckPlaywrightAsync(result);
             CheckPython(result);
-
             return result;
         }
 
@@ -35,25 +33,22 @@ namespace AssetAutomator.Infrastructure.Helpers
         {
             try
             {
-                string? regPath = Registry.GetValue(@"HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\chrome.exe", "", null) as string;
-                if (string.IsNullOrEmpty(regPath))
-                    regPath = Registry.GetValue(@"HKEY_CURRENT_USER\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\chrome.exe", "", null) as string;
-
-                if (!string.IsNullOrEmpty(regPath) && File.Exists(regPath))
+                string? registryPath = Registry.GetValue(@"HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\chrome.exe", "", null) as string;
+                registryPath ??= Registry.GetValue(@"HKEY_CURRENT_USER\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\chrome.exe", "", null) as string;
+                if (!string.IsNullOrEmpty(registryPath) && File.Exists(registryPath))
                 {
                     result.IsChromeInstalled = true;
-                    result.ChromePath = regPath;
+                    result.ChromePath = registryPath;
                     return;
                 }
 
-                string[] defaultPaths = new[]
+                string[] defaultPaths =
                 {
                     Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), @"Google\Chrome\Application\chrome.exe"),
                     Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), @"Google\Chrome\Application\chrome.exe"),
                     Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), @"Google\Chrome\Application\chrome.exe")
                 };
-
-                foreach (var path in defaultPaths)
+                foreach (string path in defaultPaths)
                 {
                     if (File.Exists(path))
                     {
@@ -62,13 +57,12 @@ namespace AssetAutomator.Infrastructure.Helpers
                         return;
                     }
                 }
-
-                result.IsChromeInstalled = false;
             }
             catch
             {
-                result.IsChromeInstalled = false;
             }
+
+            result.IsChromeInstalled = false;
         }
 
         private static async Task CheckPlaywrightAsync(SystemRequirementResult result)
@@ -90,13 +84,12 @@ namespace AssetAutomator.Infrastructure.Helpers
             try
             {
                 string pythonExe = "python";
-                string[] portablePaths = new[]
+                string[] portablePaths =
                 {
                     Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "python", "python.exe"),
                     Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "runtimes", "python", "python.exe")
                 };
-
-                foreach (var path in portablePaths)
+                foreach (string path in portablePaths)
                 {
                     if (File.Exists(path))
                     {
@@ -105,7 +98,7 @@ namespace AssetAutomator.Infrastructure.Helpers
                     }
                 }
 
-                var psi = new ProcessStartInfo
+                using var process = Process.Start(new ProcessStartInfo
                 {
                     FileName = pythonExe,
                     Arguments = "--version",
@@ -113,14 +106,12 @@ namespace AssetAutomator.Infrastructure.Helpers
                     RedirectStandardError = true,
                     UseShellExecute = false,
                     CreateNoWindow = true
-                };
-
-                using var proc = Process.Start(psi);
-                if (proc != null)
+                });
+                if (process != null)
                 {
-                    proc.WaitForExit(3000);
-                    string output = (proc.StandardOutput.ReadToEnd() + proc.StandardError.ReadToEnd()).Trim();
-                    if (proc.ExitCode == 0 && !string.IsNullOrEmpty(output))
+                    process.WaitForExit(3000);
+                    string output = (process.StandardOutput.ReadToEnd() + process.StandardError.ReadToEnd()).Trim();
+                    if (process.ExitCode == 0 && !string.IsNullOrEmpty(output))
                     {
                         result.IsPythonInstalled = true;
                         result.PythonVersion = output;
@@ -128,7 +119,9 @@ namespace AssetAutomator.Infrastructure.Helpers
                     }
                 }
             }
-            catch { }
+            catch
+            {
+            }
 
             result.IsPythonInstalled = false;
         }

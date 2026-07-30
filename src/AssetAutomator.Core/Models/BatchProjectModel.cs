@@ -3,6 +3,10 @@ using System.Collections.Generic;
 
 namespace AssetAutomator.Core.Models
 {
+    /// <summary>
+    /// Represents a Batch Image Generation project configuration and state.
+    /// Saved as project.json inside Output/Projects/[ProjectName]/
+    /// </summary>
     public class BatchProjectModel
     {
         public string ProjectId { get; set; } = Guid.NewGuid().ToString();
@@ -12,7 +16,7 @@ namespace AssetAutomator.Core.Models
 
         public string ScriptJson { get; set; } = string.Empty;
         public string OutputDir { get; set; } = string.Empty;
-        public List<string> RefImagePaths { get; set; } = new();
+        public List<string> RefImagePaths { get; set; } = new List<string>();
 
         public string Provider { get; set; } = "glabs";
         public string Engine { get; set; } = "flow";
@@ -23,11 +27,14 @@ namespace AssetAutomator.Core.Models
         public string? FlowProjectId { get; set; }
         public string? FlowProjectUrl { get; set; }
 
-        public List<BatchImageItemState> Items { get; set; } = new();
+        public List<BatchImageItemState> Items { get; set; } = new List<BatchImageItemState>();
 
         public override string ToString() => ProjectName;
     }
 
+    /// <summary>
+    /// Serializable state for BatchImageItem inside project.json
+    /// </summary>
     public class BatchImageItemState
     {
         public int Index { get; set; }

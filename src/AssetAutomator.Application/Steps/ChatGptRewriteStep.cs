@@ -1,15 +1,143 @@
+using System;
+using System.IO;
 using System.Threading.Tasks;
+using Microsoft.Playwright;
+using AssetAutomator.Application.Services;
+using AssetAutomator.Core.Constants;
+using AssetAutomator.Core.Interfaces;
 using AssetAutomator.Core.Models;
+using AssetAutomator.Infrastructure.Helpers;
 
 namespace AssetAutomator.Application.Steps
 {
+    /// <summary>
+    /// Step 3: Rewrites the transcript using ChatGPT via browser automation.
+    /// Uses ChatGptService for drag-drop, prompt submission, and response extraction.
+    /// </summary>
     public class ChatGptRewriteStep
     {
-        public async Task<string?> ExecuteAsync(string targetLanguage, string outputDir, string transcriptText, string videoId, AutomationTask task, Microsoft.Playwright.IBrowserContext context, Action<AutomationTask, string> logTask)
+        private readonly ChatGptService _chatGptService;
+        private readonly IConfigService _configService;
+
+        public ChatGptRewriteStep(ChatGptService chatGptService, IConfigService configService)
         {
-            logTask(task, "[STEP 3] ChatGPT rewrite placeholder");
-            await Task.CompletedTask;
-            return null;
+            _chatGptService = chatGptService;
+            _configService = configService;
+        }
+
+        public async Task<string?> ExecuteAsync(
+            string targetLanguage,
+            string outputDir,
+            string transcriptText,
+            string videoId,
+            AutomationTask task,
+            IBrowserContext context,
+            Action<AutomationTask, string> logTask)
+        {
+            logTask(task, "[STEP 3] Starting ChatGPT rewrite...");
+            if (context == null) throw new InvalidOperationException("Browser not initialized.");
+
+            var page = await context.NewPageAsync();
+            string? scriptText = null;
+            try
+            {
+                string? customGptUrl = null;
+                if (!string.IsNullOrEmpty(task.SelectedProfile))
+                {
+                    string baseDir = _configService.CurrentSettings.ChromeProfilesDir;
+                    if (string.IsNullOrEmpty(baseDir))
+                    {
+                        baseDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ChromeProfiles");
+                    }
+                    string profilePath = Path.Combine(baseDir, task.SelectedProfile);
+                    string gptUrlPath = Path.Combine(profilePath, "gpt_url.txt");
+                    if (File.Exists(gptUrlPath))
+                    {
+                        customGptUrl = File.ReadAllText(gptUrlPath).Trim();
+                    }
+                }
+
+                if (string.IsNullOrWhiteSpace(customGptUrl))
+                {
+                    customGptUrl = _configService.CurrentSettings.CustomGptUrl;
+                    if (string.IsNullOrWhiteSpace(customGptUrl))
+                    {
+                        customGptUrl = "https://chatgpt.com/g/g-6a4083a0e37081919a248ef7721dae3d-dich-chay";
+                    }
+                }
+                logTask(task, $"Navigating to Custom GPT URL: {customGptUrl} ...");
+                await page.GotoAsync(customGptUrl);
+                await Task.Delay(Delays.RewriteRetryDelayMs);
+
+                logTask(task, "Preparing transcript file for drag & drop...");
+                string transcriptPath = Path.Combine(outputDir, "transcript.txt");
+                if (!File.Exists(transcriptPath))
+                {
+                    await File.WriteAllTextAsync(transcriptPath, transcriptText);
+                }
+
+                await Task.Delay(Delays.RewriteRetryDelayMs);
+
+                // Read file as Base64 and use ChatGptService for drag-drop
+                byte[] fileBytes = await File.ReadAllBytesAsync(transcriptPath);
+                string base64File = Convert.ToBase64String(fileBytes);
+
+                await Task.Delay(Delays.RewriteRetryDelayMs);
+
+                logTask(task, "Simulating drag & drop of transcript.txt onto ChatGPT page...");
+                await _chatGptService.SimulateDragDropFileAsync(page, base64File, "transcript.txt", "text/plain");
+
+                logTask(task, "Drag & Drop simulated, waiting for upload processing...");
+                await Task.Delay(Delays.RewriteRetryDelayMs);
+
+                logTask(task, "Finding prompt input box to enter instruction...");
+                var promptBox = page.Locator("div#prompt-textarea, div[contenteditable='true']").First;
+                await promptBox.WaitForAsync(new LocatorWaitForOptions { State = WaitForSelectorState.Visible });
+
+                await HumanBehaviourHelper.RandomMouseMovementAsync(page);
+                await Task.Delay(Delays.AiWarmupDelayMs);
+
+                string promptText = $"Hãy viết lại kịch bản sau đây bằng ngôn ngữ '{targetLanguage}' , chỉ dịch, không chỉnh sửa nội dung sẵn có trong script";
+                logTask(task, "Typing prompt using Human Typing simulator...");
+                await HumanBehaviourHelper.TypeLikeHumanAsync(page, promptBox, promptText);
+                await Task.Delay(Delays.PageRenderDelayMs);
+
+                logTask(task, "Submitting prompt...");
+                var sendButton = page.Locator("button[data-testid='send-button'], button[aria-label='Send prompt']").First;
+                await sendButton.ClickAsync();
+                await Task.Delay(Delays.AiResponseDelayMs);
+
+                logTask(task, "Waiting for AI to finish writing script...");
+                await _chatGptService.WaitForGenerationToFinishAsync(page, 1800000);
+
+                await Task.Delay(Delays.PageRenderDelayMs);
+
+                logTask(task, "Extracting the ChatGPT response...");
+                scriptText = await _chatGptService.ExtractLastResponseTextAsync(page);
+
+                if (!string.IsNullOrWhiteSpace(scriptText))
+                {
+                    logTask(task, $"Success! Generated script length: {scriptText.Length} characters.");
+                    string outputPath = Path.Combine(outputDir, "rewritten_script.txt");
+                    await File.WriteAllTextAsync(outputPath, scriptText);
+                    logTask(task, $"Saved rewritten script to: {outputPath}");
+                }
+                else
+                {
+                    logTask(task, "[ERROR] Failed to extract rewritten script content.");
+                }
+            }
+            catch (Exception ex)
+            {
+                logTask(task, $"[ERROR] ChatGPT execution failed: {ex.Message}");
+                throw;
+            }
+            finally
+            {
+                await page.CloseAsync();
+            }
+
+            return scriptText;
         }
     }
 }
