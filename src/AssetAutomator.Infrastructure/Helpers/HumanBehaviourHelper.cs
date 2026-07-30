@@ -1,0 +1,34 @@
+using System;
+using System.Threading.Tasks;
+using Microsoft.Playwright;
+using AssetAutomator.Core.Constants;
+
+namespace AssetAutomator.Infrastructure.Helpers
+{
+    public static class HumanBehaviourHelper
+    {
+        private static readonly Random _random = new();
+
+        public static async Task TypeLikeHumanAsync(IPage page, ILocator locator, string text)
+        {
+            await locator.FocusAsync();
+            foreach (var ch in text)
+            {
+                await page.Keyboard.TypeAsync(ch.ToString());
+                await Task.Delay(_random.Next(Delays.HumanTypingMinMs, Delays.HumanTypingMaxMs));
+            }
+        }
+
+        public static async Task RandomMouseMovementAsync(IPage page)
+        {
+            int steps = _random.Next(3, 8);
+            for (int i = 0; i < steps; i++)
+            {
+                int x = _random.Next(100, 700);
+                int y = _random.Next(100, 500);
+                await page.Mouse.MoveAsync(x, y, new MouseMoveOptions { Steps = _random.Next(2, 5) });
+                await Task.Delay(_random.Next(Delays.HumanActionMinMs, Delays.HumanActionMaxMs));
+            }
+        }
+    }
+}
