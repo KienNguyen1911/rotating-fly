@@ -262,6 +262,8 @@ MainWindow.Show();
 | App crash ngay khi mở, log `configService` null | Bridge `ConfigService.SetProvider(...)` chưa được gọi trước `new MainWindow()`. Kiểm tra `App.OnStartup`. |
 | `Cannot locate resource 'resources/app_logo.png'` | File `src/AssetAutomator.UI/Resources/app_logo.png` bị xóa hoặc csproj mất `<Resource Include="Resources\app_logo.png" />`. |
 | Tab Gemini không load gem list | Server Python chưa chạy. Kiểm tra `PythonServerManager.Default` & cổng 8000. |
+| Tab Gemini log `UNUTHENTICATED` / `Unexpected response data structure: )]}'` / `500 Internal Server Error` từ `/api/gems` | `cookies.json` hết hạn (Google rotate session tokens mỗi ~24h). Vào tab Gemini → **Nhập Cookies** (Chrome profile có gemini.google.com đang đăng nhập) hoặc chạy Playwright login. Xem mục "Làm mới cookies" trong tab Gemini. |
+| `Errno 10048 address already in use` khi restart server | Có process `python.exe` khác đang giữ cổng 8000. Đã fix tự động trong `PythonServerManager` (kill theo PID port-holder). Nếu orphan thuộc SYSTEM thì cần `taskkill /PID <pid> /T /F` với quyền Admin. |
 | Ảnh lô lỗi "API key invalid" | Mở Settings → nhập lại API key cho provider tương ứng. |
 | `CS0234 GemOptionItem ambiguous` | Không nên xảy ra sau P4; nếu vẫn gặp thì kiểm tra cả 2 file `Models/Nodes/GeminiGraphModels.cs` và `Core/Models/GemOptionItem.cs`. UI chỉ dùng Core version (đã alias). |
 | AngleSharp warning `NU1902` | Cảnh báo transitive dependency; không ảnh hưởng runtime. Có thể bỏ qua. |

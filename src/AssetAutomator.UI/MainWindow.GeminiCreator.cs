@@ -65,85 +65,108 @@ namespace AssetAutomator.UI
 
         /// <summary>
         /// Initializes all Gemini-related services with proper dependency injection.
-        /// Called lazily on first use. Thread-safe via _geminiApiService null check.
+        /// Called lazily on first use. Thread-safe via _logService null check.
+        /// Wrapped in try-catch so any service init failure doesn't blank out the whole
+        /// tab — at worst the user sees a working empty grid + status bar.
         /// </summary>
         private void InitializeGeminiCreatorServices()
         {
-            if (_logService != null) return; // Already initialized
+            if (_logService != null && _geminiCreatorService != null) return; // Already initialized
 
-            // 1. Centralized logging (shared across all services)
-            _logService = new LogService();
-
-            // 2. Subscribe to log entries for UI updates
-            _logService.OnLogEntry += entry =>
+            try
             {
-                Dispatcher.Invoke(() =>
+                // 1. Centralized logging (shared across all services)
+                _logService ??= new LogService();
+
+                // 2. Subscribe to log entries for UI updates
+                _logService.OnLogEntry += entry =>
                 {
-                    // Route to main log and Python server log panel
-                    AppendToMainLog(entry);
-                    AppendToPythonServerLog(entry);
-                });
-            };
+                    Dispatcher.Invoke(() =>
+                    {
+                        // Route to main log and Python server log panel
+                        AppendToMainLog(entry);
+                        AppendToPythonServerLog(entry);
+                    });
+                };
 
-            // 3. Python server manager (uses log service internally)
-            _pythonServerManager = new PythonServerManager(_logService, ConfigService.Instance);
+                // 3. Python server manager (uses log service internally)
+                _pythonServerManager ??= new PythonServerManager(_logService, ConfigService.Instance);
 
-            // 4. Gemini API service
-            _geminiApiService = new GeminiApiService(ConfigService.Instance);
+                // 4. Gemini API service — must pass _pythonServerManager so EnsureConnectedAsync()
+                //    auto-spawns the embedded Python server (tools/PythonEmbed/python.exe) when it is
+                //    not already running. Without it, /api/gems requests fail with "connection refused".
+                _geminiApiService ??= new GeminiApiService(ConfigService.Instance, _pythonServerManager);
 
-            // 5. Gemini Creator business logic service
-            _geminiCreatorService = new GeminiCreatorService(_logService, ConfigService.Instance, _geminiApiService, _pythonServerManager);
+                // 5. Gemini Creator business logic service
+                _geminiCreatorService ??= new GeminiCreatorService(_logService, ConfigService.Instance, _geminiApiService, _pythonServerManager);
 
-            // 6. Lazy-initialize step services for Gemini Pipeline (single-task)
-            if (_geminiVideoPipelineService == null)
+                // 6. Lazy-initialize step services for Gemini Pipeline (single-task)
+                if (_geminiVideoPipelineService == null)
+                {
+                    var batchImageGenService = new BatchImageGenService();
+                    var topicResearchStep = new GeminiTopicResearchStep(_geminiApiService);
+                    var voiceoverStep = new VoiceoverGenerationStep(ConfigService.Instance);
+                    var sceneBreakdownStep = new GeminiPlaywrightSceneBreakdownStep(ConfigService.Instance);
+                    var imageBatchStep = new SceneImageBatchStep(batchImageGenService, ConfigService.Instance);
+
+                    _geminiVideoPipelineService = new GeminiVideoPipelineService(
+                        ConfigService.Instance,
+                        topicResearchStep,
+                        voiceoverStep,
+                        sceneBreakdownStep,
+                        imageBatchStep
+                    );
+                }
+
+                // 7. Lazy-initialize PipelineOrchestrator (multi-task batch)
+                if (_pipelineOrchestrator == null)
+                {
+                    var batchImageGenServiceForOrchestrator = new BatchImageGenService();
+                    var topicResearchStepForOrchestrator = new GeminiTopicResearchStep(_geminiApiService);
+                    var voiceoverStepForOrchestrator = new VoiceoverGenerationStep(ConfigService.Instance);
+                    var sceneBreakdownStepForOrchestrator = new GeminiPlaywrightSceneBreakdownStep(ConfigService.Instance);
+
+                    _pipelineOrchestrator = new PipelineOrchestrator(
+                        geminiApiService: _geminiApiService,
+                        configService: ConfigService.Instance,
+                        voiceoverStep: voiceoverStepForOrchestrator,
+                        sceneBreakdownStep: sceneBreakdownStepForOrchestrator,
+                        batchImageGenService: batchImageGenServiceForOrchestrator,
+                        topicResearchStep: topicResearchStepForOrchestrator,
+                        maxDeepResearch: 2,
+                        maxVoiceover: 3,
+                        maxSceneCreator: 4,
+                        maxImageGen: 1
+                    );
+                }
+
+                _logService.Info(LogCategory.GeminiCreator, "Gemini Creator services initialized successfully.");
+            }
+            catch (Exception ex)
             {
-                var batchImageGenService = new BatchImageGenService();
-                var topicResearchStep = new GeminiTopicResearchStep(_geminiApiService);
-                var voiceoverStep = new VoiceoverGenerationStep(ConfigService.Instance);
-                var sceneBreakdownStep = new GeminiPlaywrightSceneBreakdownStep(ConfigService.Instance);
-                var imageBatchStep = new SceneImageBatchStep(batchImageGenService, ConfigService.Instance);
-
-                _geminiVideoPipelineService = new GeminiVideoPipelineService(
-                    ConfigService.Instance,
-                    topicResearchStep,
-                    voiceoverStep,
-                    sceneBreakdownStep,
-                    imageBatchStep
-                );
+                Log($"[GEMINI-INIT-ERROR] Failed to initialize Gemini Creator services: {ex.Message}");
             }
 
-            // 7. Lazy-initialize PipelineOrchestrator (multi-task batch)
-            var batchImageGenServiceForOrchestrator = new BatchImageGenService();
-            var topicResearchStepForOrchestrator = new GeminiTopicResearchStep(_geminiApiService);
-            var voiceoverStepForOrchestrator = new VoiceoverGenerationStep(ConfigService.Instance);
-            var sceneBreakdownStepForOrchestrator = new GeminiPlaywrightSceneBreakdownStep(ConfigService.Instance);
-
-            _pipelineOrchestrator ??= new PipelineOrchestrator(
-                geminiApiService: _geminiApiService,
-                configService: ConfigService.Instance,
-                voiceoverStep: voiceoverStepForOrchestrator,
-                sceneBreakdownStep: sceneBreakdownStepForOrchestrator,
-                batchImageGenService: batchImageGenServiceForOrchestrator,
-                topicResearchStep: topicResearchStepForOrchestrator,
-                maxDeepResearch: 2,
-                maxVoiceover: 3,
-                maxSceneCreator: 4,
-                maxImageGen: 1
-            );
-
-            // 8. Add default initial task if empty
+            // 8. ALWAYS add a default initial task if empty so the DataGrid has at least one
+            //    row to render. This runs even if service init partially failed so the UI is usable.
             if (GeminiTasks.Count == 0)
             {
-                GeminiTasks.Add(_geminiCreatorService!.CreateDefaultTask(AvailableScriptwriterGems, AvailableSceneCreatorGems));
+                GeminiTasks.Add(new GeminiTaskModel
+                {
+                    Topic = "",
+                    EnableDeepResearch = true,
+                    VoiceId = "",
+                    SelectedImageProvider = "flow_local",
+                    Status = NodeStatus.Idle,
+                    CurrentStepInfo = "Sẵn sàng"
+                });
             }
 
-            // 9. Load gems ONCE on initial setup if not yet loaded
-            if (AvailableScriptwriterGems.Count == 0)
+            // 9. Load gems ONCE on initial setup if not yet loaded and service is healthy
+            if (AvailableScriptwriterGems.Count == 0 && _geminiCreatorService != null)
             {
                 _ = LoadGeminiGemsToComboboxesAsync();
             }
-
-            _logService.Info(LogCategory.GeminiCreator, "Gemini Creator services initialized successfully.");
         }
 
         // ─────────────────────────────────────────────────────
@@ -227,7 +250,7 @@ namespace AssetAutomator.UI
         {
             try
             {
-                _geminiApiService ??= new GeminiApiService(ConfigService.Instance);
+                _geminiApiService ??= new GeminiApiService(ConfigService.Instance, _pythonServerManager);
 
                 await _geminiCreatorService!.LoadGeminiGemsAsync(
                     AvailableScriptwriterGems,
@@ -294,50 +317,46 @@ namespace AssetAutomator.UI
                 return;
             }
 
-            var choice = MessageBox.Show(
-                "Bạn muốn nạp Gemini Cookies theo phương thức nào?\n\n" +
-                "• Bấm YES: Tự động trích xuất Cookies từ các Profile Chrome sẵn có trên hệ thống.\n" +
-                "• Bấm NO: Chọn file cookies.json (hoặc văn bản cookie) để nạp thủ công.\n" +
-                "• Bấm CANCEL: Hủy bỏ.",
-                "🔑 Nạp / Import Cookies Gemini",
-                MessageBoxButton.YesNoCancel,
-                MessageBoxImage.Question
-            );
-
-            if (choice == MessageBoxResult.Cancel) return;
-
             _isGeminiOperationBusy = true;
-            SetButtonLoading(BtnImportCookies, "⏳ Đang nạp Cookies...");
             InitializeGeminiCreatorServices();
 
             try
             {
-                if (choice == MessageBoxResult.Yes)
-                {
-                    // ── Auto-sync from system Chrome profiles ──
-                    Log("[COOKIE-IMPORT] ⏳ Đang tự động quét & trích xuất Cookies Gemini từ các Chrome Profiles...");
-                    SetGeminiStatus("🔍", "Đang quét Chrome Profiles để tìm Cookies Gemini...", "#3B82F6");
+                bool hasProfile = _geminiCreatorService!.HasSavedChromeProfile();
 
-                    var (success, msg) = await _geminiCreatorService!.ImportCookiesAsync(
-                        GeminiCreatorService.CookieImportMode.Auto,
-                        _browserService,
-                        onStatus: status => Dispatcher.Invoke(() => SetGeminiStatus("🔍", status, "#3B82F6"))
-                    );
+                if (hasProfile)
+                {
+                    // ── Profile đã có: refresh cookies từ profile (không cần user nhập) ──
+                    Log("[COOKIE-IMPORT] 🔄 Phát hiện Chrome profile đã lưu — đang refresh cookies...");
+                    SetGeminiStatus("🔄", "Đang refresh cookies từ Chrome profile đã lưu...", "#3B82F6");
+
+                    var (success, msg, expired) = await _geminiCreatorService.RefreshCookiesFromSavedProfileAsync(
+                        onStatus: status => Dispatcher.Invoke(() => SetGeminiStatus("🔄", status, "#3B82F6")));
 
                     if (success)
                     {
                         await HandleCookieImportSuccessAsync(msg);
                     }
+                    else if (expired)
+                    {
+                        // Phiên hết hạn → mở popup nhập cookies
+                        Log($"[COOKIE-IMPORT] ⚠️ Phiên đã hết hạn: {msg}");
+                        SetGeminiStatus("⚠️", "Phiên cũ đã hết hạn — vui lòng dán cookies mới.", "#F59E0B");
+                        ShowGeminiNotification("⚠️ Cookies đã hết hạn. Vui lòng dán cookies mới.", "#F59E0B");
+                        await PromptAndImportCookiesAsync();
+                    }
                     else
                     {
-                        // Fallback: Open interactive browser for user to login
-                        await HandleCookieImportFallbackAsync(msg);
+                        Log($"[COOKIE-IMPORT] ❌ {msg}");
+                        SetGeminiStatus("❌", msg, "#EF4444");
+                        ShowGeminiNotification($"❌ {msg}", "#EF4444");
                     }
                 }
-                else if (choice == MessageBoxResult.No)
+                else
                 {
-                    // ── Manual file import ──
-                    await HandleManualCookieImportAsync();
+                    // ── Chưa có profile: mở popup nhập cookies lần đầu ──
+                    Log("[COOKIE-IMPORT] 🆕 Chưa có Chrome profile — yêu cầu nhập cookies lần đầu.");
+                    await PromptAndImportCookiesAsync();
                 }
             }
             catch (Exception ex)
@@ -349,6 +368,42 @@ namespace AssetAutomator.UI
             {
                 ResetButtonNormal(BtnImportCookies, "🔑 Nạp Cookies Gemini");
                 _isGeminiOperationBusy = false;
+            }
+        }
+
+        /// <summary>
+        /// Shows the cookie-input popup, then forwards the raw text to the service for
+        /// import + persistent profile creation. Shared by the first-time setup and the
+        /// expired-session flow.
+        /// </summary>
+        private async Task PromptAndImportCookiesAsync()
+        {
+            var popup = new AssetAutomator.UI.Windows.CookieInputWindow();
+            bool? dialogResult = popup.ShowDialog();
+
+            if (dialogResult != true || !popup.IsConfirmed)
+            {
+                Log("[COOKIE-IMPORT] ⏹️ User hủy nhập cookies.");
+                return;
+            }
+
+            SetButtonLoading(BtnImportCookies, "⏳ Đang nạp Cookies...");
+            SetGeminiStatus("🔑", "Đang nạp cookies & tạo Chrome profile...", "#3B82F6");
+
+            var (success, msg) = await _geminiCreatorService!.ImportCookiesFromTextAsync(
+                popup.CookieInput,
+                parentWindow: this,
+                onStatus: status => Dispatcher.Invoke(() => SetGeminiStatus("🔑", status, "#3B82F6")));
+
+            if (success)
+            {
+                await HandleCookieImportSuccessAsync(msg);
+            }
+            else
+            {
+                Log($"[COOKIE-IMPORT] ❌ {msg}");
+                SetGeminiStatus("❌", msg, "#EF4444");
+                ShowGeminiNotification($"❌ {msg}", "#EF4444");
             }
         }
 
@@ -365,98 +420,6 @@ namespace AssetAutomator.UI
             SetGeminiStatus("🔄", "Đang làm mới danh sách Gems...", "#3B82F6");
             await LoadGeminiGemsToComboboxesAsync();
             SetGeminiStatus("✅", "Tất cả đã sẵn sàng! Cookies + Gems đã được cập nhật.", "#10B981");
-        }
-
-        /// <summary>
-        /// Fallback when auto cookie detection fails — offers Playwright interactive login.
-        /// </summary>
-        private async Task HandleCookieImportFallbackAsync(string msg)
-        {
-            Log($"[COOKIE-IMPORT] ⚠️ {msg}");
-
-            var confirmLogin = MessageBox.Show(
-                "Chưa tìm thấy phiên đăng nhập Gemini sẵn có trong các Profile Chrome.\n\n" +
-                "Bạn có muốn mở Chrome để đăng nhập https://gemini.google.com ngay bây giờ không?",
-                "Yêu cầu Đăng nhập Gemini",
-                MessageBoxButton.YesNo,
-                MessageBoxImage.Information
-            );
-
-            if (confirmLogin != MessageBoxResult.Yes) return;
-
-            Log("[COOKIE-IMPORT] 🌐 Đang mở Chrome để bạn hoàn tất đăng nhập Gemini...");
-            SetGeminiStatus("🌐", "Đang mở Chrome — vui lòng đăng nhập Gemini trên trình duyệt...", "#3B82F6");
-
-            var (loginOk, loginMsg, profilePath) = await _geminiCreatorService!.LoginViaPlaywrightAsync(
-                _browserService,
-                onStatus: status => Dispatcher.Invoke(() => SetGeminiStatus("🌐", status, "#3B82F6"))
-            );
-
-            if (loginOk)
-            {
-                if (profilePath != null)
-                    Log($"[COOKIE-IMPORT] 💾 Đã lưu Chrome profile Gemini vào: {profilePath}");
-
-                Dispatcher.Invoke(() => LoadProfiles());
-
-                var (restartOk, restartMsg) = await _pythonServerManager!.RestartServerAsync();
-                if (restartOk)
-                {
-                    await HandleCookieImportSuccessAsync(loginMsg);
-                }
-                else
-                {
-                    SetGeminiStatus("⚠️", $"Cookies saved but server restart failed: {restartMsg}", "#F59E0B");
-                    ShowGeminiNotification("⚠️ Đã lưu cookies. Vui lòng kiểm tra lại Python Server.", "#F59E0B");
-                }
-            }
-            else
-            {
-                Log($"[COOKIE-IMPORT] ❌ {loginMsg}");
-                SetGeminiStatus("❌", loginMsg, "#EF4444");
-            }
-        }
-
-        /// <summary>
-        /// Handles manual cookie file import via OpenFileDialog.
-        /// </summary>
-        private async Task HandleManualCookieImportAsync()
-        {
-            var openFileDialog = new Microsoft.Win32.OpenFileDialog
-            {
-                Filter = "JSON Files (*.json)|*.json|All Files (*.*)|*.*",
-                Title = "Chọn file cookies.json Gemini"
-            };
-
-            if (openFileDialog.ShowDialog() == true)
-            {
-                SetGeminiStatus("📂", "Đang đọc file cookies.json...", "#3B82F6");
-
-                try
-                {
-                    string content = await File.ReadAllTextAsync(openFileDialog.FileName);
-                    var (success, msg) = await _geminiCreatorService!.SaveCustomCookiesAsync(
-                        content,
-                        _browserService,
-                        onStatus: status => Dispatcher.Invoke(() => SetGeminiStatus("📂", status, "#3B82F6"))
-                    );
-
-                    if (success)
-                    {
-                        await HandleCookieImportSuccessAsync(msg);
-                    }
-                    else
-                    {
-                        SetGeminiStatus("⚠️", msg, "#F59E0B");
-                        ShowGeminiNotification($"⚠️ {msg}", "#F59E0B");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Log($"[COOKIE-IMPORT] ❌ Lỗi khi đọc file cookies: {ex.Message}");
-                    MessageBox.Show($"Lỗi khi đọc file cookies: {ex.Message}", "Lỗi", MessageBoxButton.OK, MessageBoxImage.Error);
-                }
-            }
         }
 
         /// <summary>

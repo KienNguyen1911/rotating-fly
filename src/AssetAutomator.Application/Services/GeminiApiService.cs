@@ -88,7 +88,13 @@ namespace AssetAutomator.Application.Services
         /// </summary>
         public async Task<List<GemModel>> GetGemsAsync(bool includeHidden = true)
         {
-            await EnsureConnectedAsync();
+            bool connected = await EnsureConnectedAsync();
+            if (!connected)
+            {
+                throw new InvalidOperationException(
+                    "Python Gemini Server is not running and could not be started automatically. " +
+                    "Open the Python Server log for diagnostics (check PythonServerManager.Default & port 8000).");
+            }
             string url = $"{_baseUrl}/api/gems{(includeHidden ? "?include_hidden=true" : "")}";
             var response = await _httpClient.GetAsync(url);
             string content = await response.Content.ReadAsStringAsync();

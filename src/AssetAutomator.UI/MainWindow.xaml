@@ -1536,7 +1536,7 @@
 
                             <TextBlock Grid.Row="0" Text="📋 Danh Sách Gemini Automation Tasks" Style="{StaticResource SectionTitle}" Margin="0,0,0,12"/>
 
-                            <DataGrid Grid.Row="1" x:Name="DgridGeminiTasks" ItemsSource="{Binding GeminiTasks}" AutoGenerateColumns="False" CanUserAddRows="False" 
+                            <DataGrid Grid.Row="1" x:Name="DgridGeminiTasks" AutoGenerateColumns="False" CanUserAddRows="False"
                                       Background="Transparent" BorderThickness="0" HeadersVisibility="Column" GridLinesVisibility="Horizontal"
                                       RowHeaderWidth="0" IsReadOnly="False" RowHeight="48" FontSize="12"
                                       RowDetailsVisibilityMode="VisibleWhenSelected"

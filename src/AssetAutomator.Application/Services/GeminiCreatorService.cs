@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
@@ -16,7 +15,7 @@ namespace AssetAutomator.Application.Services
     /// <summary>
     /// Centralized business logic for the Gemini AI Creator tab.
     /// Extracted from MainWindow.GeminiCreator.cs to follow Single Responsibility Principle.
-    /// Handles: gem loading, cookie import, server lifecycle, task management orchestration.
+    /// Handles: gem loading, cookie import (text paste + persistent profile refresh), server lifecycle.
     /// All UI concerns (MessageBox, button states, status bar) remain in the code-behind
     /// via callback delegates — this service is pure logic, testable without WPF.
     /// </summary>
@@ -60,7 +59,6 @@ namespace AssetAutomator.Application.Services
 
                 var gems = await _geminiApiService.GetGemsAsync(includeHidden: true);
 
-                // Snapshot existing selections
                 var existingSelections = taskCollection.Select(t => new
                 {
                     Task = t,
@@ -68,7 +66,6 @@ namespace AssetAutomator.Application.Services
                     SceneCreatorId = t.SelectedSceneCreatorGem?.Id ?? string.Empty
                 }).ToList();
 
-                // Ensure default options exist
                 EnsureDefaultGemOption(scriptwriterCollection, "-- Gemini Mặc Định --");
                 EnsureDefaultGemOption(sceneCreatorCollection, "-- Gemini Mặc Định --");
 
@@ -77,7 +74,6 @@ namespace AssetAutomator.Application.Services
                 GemOptionItem? configScriptwriter = defaultScriptwriter;
                 GemOptionItem? configSceneCreator = defaultSceneCreator;
 
-                // Filter only Custom Gems (predefined == false)
                 var customGems = gems.Where(g => !g.predefined).ToList();
 
                 foreach (var gem in customGems)
@@ -85,7 +81,6 @@ namespace AssetAutomator.Application.Services
                     AddOrUpdateGemOption(scriptwriterCollection, gem.id, gem.name);
                     AddOrUpdateGemOption(sceneCreatorCollection, gem.id, gem.name);
 
-                    // Auto-select based on config or naming convention
                     if (gem.id.Equals(_configService.CurrentSettings.ScriptwriterGemId, StringComparison.OrdinalIgnoreCase) ||
                         (configScriptwriter == defaultScriptwriter &&
                          (gem.name.Contains("psychology", StringComparison.OrdinalIgnoreCase) ||
@@ -104,7 +99,6 @@ namespace AssetAutomator.Application.Services
                     }
                 }
 
-                // Restore selections for existing tasks
                 foreach (var sel in existingSelections)
                 {
                     if (!string.IsNullOrEmpty(sel.ScriptwriterId))
@@ -132,178 +126,110 @@ namespace AssetAutomator.Application.Services
         }
 
         // ─────────────────────────────────────────────────────
-        //  Cookie Import
+        //  Cookie Import — 2-phase flow
         // ─────────────────────────────────────────────────────
 
         /// <summary>
-        /// Cookie import modes: Auto (scan Chrome profiles) or Manual (pick cookies.json file).
+        /// True if a Chrome profile has been saved (i.e. user has already imported cookies at least once).
+        /// Used by the UI to decide whether to auto-refresh or to open the input popup.
         /// </summary>
-        public enum CookieImportMode { Auto, Manual }
+        public bool HasSavedChromeProfile()
+        {
+            var syncService = new GeminiCookieSyncService(
+                msg => _log.Info(LogCategory.CookieSync, msg),
+                _configService);
+            return syncService.HasSavedProfile();
+        }
 
         /// <summary>
-        /// Imports Gemini cookies via the specified mode.
-        /// Returns (success, statusMessage) for UI feedback.
+        /// Phase 1 — User pastes cookies (any of the supported formats). Saves cookies.json,
+        /// opens the persisted Chrome profile at the configured path, injects cookies,
+        /// navigates to gemini.google.com, then waits for the user to confirm in a WPF dialog.
+        /// The user can complete manual login (2FA/CAPTCHA) in the open Chrome window if Google
+        /// rejects the pasted cookies.
         /// </summary>
-        public async Task<(bool Success, string Message)> ImportCookiesAsync(
-            CookieImportMode mode,
-            IBrowserService browserService,
+        public async Task<(bool Success, string Message)> ImportCookiesFromTextAsync(
+            string rawCookieText,
+            System.Windows.Window? parentWindow = null,
             Action<string>? onStatus = null)
         {
-            var syncService = new GeminiCookieSyncService(msg => _log.Info(LogCategory.CookieSync, msg), _configService, browserService);
-            bool imported = false;
+            var syncService = new GeminiCookieSyncService(
+                msg => _log.Info(LogCategory.CookieSync, msg),
+                _configService);
 
             try
             {
-                if (mode == CookieImportMode.Auto)
+                var (ok, msg, _) = await syncService.ImportCookiesFromTextAsync(
+                    rawCookieText,
+                    awaitUserConfirmation: true,
+                    parentWindow: parentWindow);
+                if (!ok)
                 {
-                    onStatus?.Invoke("[COOKIE] 🔍 Đang quét Chrome Profiles...");
-                    _log.Info(LogCategory.CookieSync, "Auto-syncing cookies from system Chrome profiles...");
-
-                    imported = await syncService.AutoSyncFromSystemChromeAsync();
-
-                    if (!imported)
-                    {
-                        return (false, "No active Gemini session found in Chrome profiles. Please login manually.");
-                    }
-                }
-                else
-                {
-                    // Manual mode — file path is resolved by the UI code-behind via OpenFileDialog
-                    // This is handled by the caller passing the path through SaveCustomCookiesJsonAsync
-                    return (false, "Manual import requires a file path — use SaveCustomCookiesJsonAsync directly.");
+                    return (false, msg);
                 }
 
-                if (imported)
+                onStatus?.Invoke("[COOKIE] 🔄 Đang khởi động lại Python Server...");
+                _log.Info(LogCategory.CookieSync, "Cookies imported. Restarting Python server...");
+
+                var (restarted, restartDiag) = await _pythonServerManager.RestartServerAsync();
+                if (restarted)
                 {
-                    onStatus?.Invoke("[COOKIE] 🔄 Đang khởi động lại Python Server...");
-                    _log.Info(LogCategory.CookieSync, "Cookies imported. Restarting Python server...");
-
-                    var (restarted, restartDiag) = await _pythonServerManager.RestartServerAsync();
-
-                    if (restarted)
-                    {
-                        _log.Success(LogCategory.CookieSync, "Server restarted with new cookies successfully.");
-                        return (true, "Cookies imported & server restarted successfully.");
-                    }
-                    else
-                    {
-                        _log.Warning(LogCategory.CookieSync, $"Cookies saved but server restart failed: {restartDiag}");
-                        return (false, $"Cookies saved but server restart failed: {restartDiag}");
-                    }
+                    _log.Success(LogCategory.CookieSync, "Server restarted with new cookies successfully.");
+                    return (true, $"{msg} Server đã khởi động lại.");
                 }
 
-                return (false, "No cookies were imported.");
+                _log.Warning(LogCategory.CookieSync, $"Cookies saved but server restart failed: {restartDiag}");
+                return (false, $"{msg} Nhưng server restart thất bại: {restartDiag}");
             }
             catch (Exception ex)
             {
                 _log.Error(LogCategory.CookieSync, $"Cookie import failed: {ex.Message}");
-                return (false, $"Cookie import error: {ex.Message}");
+                return (false, $"Lỗi: {ex.Message}");
             }
         }
 
         /// <summary>
-        /// Saves manually-provided cookies JSON content and restarts the server.
+        /// Phase 2 — Open the saved Chrome profile, extract cookies via Playwright,
+        /// write cookies.json, restart the Python server. No user input required.
+        /// If the saved profile's session is expired, returns a friendly hint to re-import.
         /// </summary>
-        public async Task<(bool Success, string Message)> SaveCustomCookiesAsync(
-            string cookiesJsonContent,
-            IBrowserService browserService,
+        public async Task<(bool Success, string Message, bool SessionExpired)> RefreshCookiesFromSavedProfileAsync(
             Action<string>? onStatus = null)
         {
-            var syncService = new GeminiCookieSyncService(msg => _log.Info(LogCategory.CookieSync, msg), _configService, browserService);
+            var syncService = new GeminiCookieSyncService(
+                msg => _log.Info(LogCategory.CookieSync, msg),
+                _configService);
 
             try
             {
-                bool saved = await syncService.SaveCustomCookiesJsonAsync(cookiesJsonContent);
-
-                if (!saved)
+                if (!syncService.HasSavedProfile())
                 {
-                    return (false, "Failed to save cookies.json file.");
+                    return (false, "Chưa có Chrome profile được lưu. Vui lòng bấm 'Nhập Cookies' để tạo profile trước.", false);
+                }
+
+                var (ok, msg, expired) = await syncService.RefreshCookiesFromSavedProfileAsync();
+                if (!ok)
+                {
+                    return (false, msg, expired);
                 }
 
                 onStatus?.Invoke("[COOKIE] 🔄 Đang khởi động lại Python Server...");
-                _log.Info(LogCategory.CookieSync, "Manual cookies saved. Restarting Python server...");
+                _log.Info(LogCategory.CookieSync, "Cookies refreshed. Restarting Python server...");
 
                 var (restarted, restartDiag) = await _pythonServerManager.RestartServerAsync();
-
                 if (restarted)
                 {
-                    return (true, "Cookies saved & server restarted successfully.");
+                    _log.Success(LogCategory.CookieSync, "Server restarted with refreshed cookies.");
+                    return (true, $"{msg} Server đã khởi động lại.", false);
                 }
-                else
-                {
-                    return (false, $"Cookies saved but server restart failed: {restartDiag}");
-                }
+
+                _log.Warning(LogCategory.CookieSync, $"Cookies refreshed but server restart failed: {restartDiag}");
+                return (false, $"{msg} Server restart thất bại: {restartDiag}", false);
             }
             catch (Exception ex)
             {
-                _log.Error(LogCategory.CookieSync, $"Manual cookie save failed: {ex.Message}");
-                return (false, $"Error: {ex.Message}");
-            }
-        }
-
-        // ─────────────────────────────────────────────────────
-        //  Playwright Interactive Login
-        // ─────────────────────────────────────────────────────
-
-        /// <summary>
-        /// Opens Chrome via Playwright for interactive Gemini login, then syncs cookies.
-        /// Returns (success, message, profilePath).
-        /// </summary>
-        public async Task<(bool Success, string Message, string? ProfilePath)> LoginViaPlaywrightAsync(
-            IBrowserService browserService,
-            Action<string>? onStatus = null)
-        {
-            try
-            {
-                string profilesDir = _configService.CurrentSettings.ChromeProfilesDir;
-                if (string.IsNullOrEmpty(profilesDir))
-                    profilesDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ChromeProfiles");
-
-                Directory.CreateDirectory(profilesDir);
-                string profileName = "GeminiProfile";
-                string persistentProfilePath = Path.Combine(profilesDir, profileName);
-
-                onStatus?.Invoke("[LOGIN] 🌐 Đang mở Chrome để đăng nhập Gemini...");
-                _log.Info(LogCategory.CookieSync, $"Launching Playwright Chrome with profile: {persistentProfilePath}");
-
-                using var playwright = await Microsoft.Playwright.Playwright.CreateAsync();
-                var context = await playwright.Chromium.LaunchPersistentContextAsync(
-                    persistentProfilePath,
-                    new Microsoft.Playwright.BrowserTypeLaunchPersistentContextOptions
-                    {
-                        Headless = false,
-                        Channel = "chrome",
-                        Args = new[] { "--disable-blink-features=AutomationControlled", "--no-sandbox" }
-                    });
-
-                var page = await context.NewPageAsync();
-                await page.GotoAsync("https://gemini.google.com");
-
-                // NOTE: The caller (UI code-behind) is responsible for showing a MessageBox
-                // and waiting for user confirmation before calling SyncCookiesFromBrowserContextAsync.
-                // We return the context for the caller to manage.
-                _log.Info(LogCategory.CookieSync, "Chrome opened — waiting for user to complete login.");
-
-                // The caller must handle the interactive wait and call SyncCookiesFromBrowserContext
-                // We'll provide a helper:
-                var syncService = new GeminiCookieSyncService(msg => _log.Info(LogCategory.CookieSync, msg), _configService, browserService);
-                bool syncOk = await syncService.SyncCookiesFromBrowserContextAsync(context);
-                await context.CloseAsync();
-
-                if (syncOk)
-                {
-                    _log.Success(LogCategory.CookieSync, $"Cookies synced from Playwright. Profile: {persistentProfilePath}");
-                    return (true, "Login successful! Cookies imported.", persistentProfilePath);
-                }
-                else
-                {
-                    return (false, "Failed to extract cookies from browser session.", persistentProfilePath);
-                }
-            }
-            catch (Exception ex)
-            {
-                _log.Error(LogCategory.CookieSync, $"Playwright login failed: {ex.Message}");
-                return (false, $"Login error: {ex.Message}", null);
+                _log.Error(LogCategory.CookieSync, $"Cookie refresh failed: {ex.Message}");
+                return (false, $"Lỗi: {ex.Message}", false);
             }
         }
 
@@ -311,9 +237,6 @@ namespace AssetAutomator.Application.Services
         //  Server Health & Diagnostics
         // ─────────────────────────────────────────────────────
 
-        /// <summary>
-        /// Checks server health and provides a diagnostic summary for UI display.
-        /// </summary>
         public async Task<(bool IsRunning, string Summary, string? PythonPath, string? ScriptPath)> GetServerDiagnosticsAsync()
         {
             var (isRunning, diag) = await _pythonServerManager.IsServerRunningAsync();
@@ -328,9 +251,6 @@ namespace AssetAutomator.Application.Services
             return (isRunning, summary, pythonPath, scriptPath);
         }
 
-        /// <summary>
-        /// Resolves language for a Gemini task using the VoiceId to query AI84 API.
-        /// </summary>
         public async Task ResolveTaskLanguageAsync(GeminiTaskModel taskItem, string apiKey)
         {
             if (string.IsNullOrEmpty(taskItem.VoiceId) || !string.IsNullOrEmpty(taskItem.TargetLanguage))

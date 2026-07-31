@@ -811,9 +811,21 @@ namespace AssetAutomator.UI
 
         private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
         {
+            // Bind DataGrid to GeminiTasks collection BEFORE loading services so the UI is ready.
+            if (DgridGeminiTasks != null && DgridGeminiTasks.ItemsSource == null)
+            {
+                DgridGeminiTasks.ItemsSource = GeminiTasks;
+            }
+
             await RunSystemCheckAsync(showIfAllOk: false);
             await CheckLicenseOnStartupAsync();
             InitializeGeminiCreatorServices();
+
+            // Re-bind in case it was reset
+            if (DgridGeminiTasks != null && DgridGeminiTasks.ItemsSource == null)
+            {
+                DgridGeminiTasks.ItemsSource = GeminiTasks;
+            }
         }
 
         private async Task CheckLicenseOnStartupAsync()
