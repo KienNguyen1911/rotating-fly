@@ -2,9 +2,9 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
-using System.Windows;
 using Microsoft.Playwright;
 using AssetAutomator.Core.Constants;
 using AssetAutomator.Core.Interfaces;
@@ -30,6 +30,12 @@ namespace AssetAutomator.Application.Services
         {
             _log = log;
         }
+
+        [DllImport("user32.dll")]
+        private static extern int GetSystemMetrics(int nIndex);
+
+        private static double GetScreenWidth() => GetSystemMetrics(0);  // SM_CXSCREEN = 0
+        private static double GetScreenHeight() => GetSystemMetrics(1);  // SM_CYSCREEN = 1
 
         /// <summary>
         /// <summary>
@@ -144,8 +150,8 @@ namespace AssetAutomator.Application.Services
                     }
                 }
 
-                double screenWidth = SystemParameters.PrimaryScreenWidth;
-                double screenHeight = SystemParameters.PrimaryScreenHeight;
+                double screenWidth = GetScreenWidth();
+                double screenHeight = GetScreenHeight();
                 int cols = 2;
                 int rows = 2;
                 int w = (int)(screenWidth / cols);
