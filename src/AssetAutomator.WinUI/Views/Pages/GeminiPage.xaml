@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page x:Class="AssetAutomator.WinUI.Views.Pages.GeminiPage"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <Grid Padding="24">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <StackPanel Grid.Row="0" Spacing="4" Margin="0,0,0,16">
+            <TextBlock Text="Gemini AI Creator"
+                       Style="{ThemeResource TitleTextBlockStyle}" />
+            <TextBlock Text="Tạo kịch bản và sinh nội dung video tự động bằng Gemini AI."
+                       Style="{ThemeResource BodyTextBlockStyle}"
+                       Opacity="0.7" />
+        </StackPanel>
+
+        <!-- Main content: 2 columns -->
+        <Grid Grid.Row="1" ColumnSpacing="16">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="380" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <!-- LEFT: Inputs & Controls -->
+            <ScrollViewer Grid.Column="0" VerticalScrollBarVisibility="Auto">
+                <StackPanel Spacing="14">
+
+                    <InfoBar IsOpen="True" IsClosable="False" Severity="Informational" Title="Trạng thái Gemini:" Message="{Binding StatusLog}" />
+
+                    <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                            BorderThickness="1"
+                            CornerRadius="8"
+                            Padding="16">
+                        <StackPanel Spacing="12">
+                            <TextBlock Text="Chủ đề / Prompt Kịch bản" Style="{ThemeResource SubtitleTextBlockStyle}" />
+                            <TextBox Text="{Binding TopicPrompt, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                     PlaceholderText="Nhập chủ đề video (vd: 5 bí ẩn vũ trụ chưa có lời giải)..."
+                                     AcceptsReturn="True" TextWrapping="Wrap" MinHeight="100" />
+                        </StackPanel>
+                    </Border>
+
+                    <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                            BorderThickness="1"
+                            CornerRadius="8"
+                            Padding="16">
+                        <StackPanel Spacing="12">
+                            <TextBlock Text="Cấu hình Phong cách &amp; Giọng đọc" Style="{ThemeResource SubtitleTextBlockStyle}" />
+
+                            <TextBlock Text="Phong cách hình ảnh:" Style="{ThemeResource CaptionTextBlockStyle}" Opacity="0.7" />
+                            <TextBox Text="{Binding SelectedStyle, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="Ví dụ: Cinematic / Realistic" />
+
+                            <TextBlock Text="Giọng đọc (Voice ID):" Style="{ThemeResource CaptionTextBlockStyle}" Opacity="0.7" />
+                            <TextBox Text="{Binding SelectedVoice, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="Ví dụ: en-US-Standard-A" />
+                        </StackPanel>
+                    </Border>
+
+                    <Button Style="{ThemeResource AccentButtonStyle}"
+                            HorizontalAlignment="Stretch"
+                            Height="44"
+                            Command="{Binding GenerateScriptCommand}">
+                        <Button.Content>
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <FontIcon Glyph="&#xE768;" FontSize="14" />
+                                <TextBlock Text="Sinh kịch bản bằng Gemini AI" FontWeight="SemiBold" />
+                            </StackPanel>
+                        </Button.Content>
+                    </Button>
+                </StackPanel>
+            </ScrollViewer>
+
+            <!-- RIGHT: Output Generated Script -->
+            <Border Grid.Column="1"
+                    Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                    BorderThickness="1"
+                    CornerRadius="8"
+                    Padding="16">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <TextBlock Grid.Row="0" Text="Kịch bản Đã Sinh (Generated Script)" Style="{ThemeResource SubtitleTextBlockStyle}" Margin="0,0,0,12" />
+                    <TextBox Grid.Row="1"
+                             Text="{Binding GeneratedScript}"
+                             IsReadOnly="True"
+                             AcceptsReturn="True"
+                             TextWrapping="Wrap"
+                             FontFamily="Consolas"
+                             FontSize="13"
+                             Background="Transparent"
+                             BorderThickness="0" />
+                </Grid>
+            </Border>
+        </Grid>
+    </Grid>
+</Page>

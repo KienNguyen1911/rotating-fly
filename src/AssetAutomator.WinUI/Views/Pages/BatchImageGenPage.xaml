@@ -1,0 +1,508 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page x:Class="AssetAutomator.WinUI.Views.Pages.BatchImageGenPage"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+      xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+      xmlns:models="using:AssetAutomator.Core.Models"
+      mc:Ignorable="d">
+
+    <Grid Padding="24">
+
+        <!-- LEVEL 1: PROJECTS DASHBOARD PANEL -->
+        <Grid x:Name="PanelProjectsDashboard"
+              Visibility="{x:Bind ViewModel.DashboardVisibility, Mode=OneWay}">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+
+            <!-- Dashboard Header Card -->
+            <Border Grid.Row="0"
+                    Background="{ThemeResource LayerFillColorDefaultBrush}"
+                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                    BorderThickness="1"
+                    CornerRadius="12"
+                    Padding="20"
+                    Margin="0,0,0,20">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <StackPanel Grid.Column="0" Spacing="10">
+                        <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                            <FontIcon Glyph="&#xE8B7;" FontSize="22" Foreground="{ThemeResource AccentFillColorDefaultBrush}" />
+                            <TextBlock Text="QUẢN LÝ DỰ ÁN (PROJECTS DASHBOARD)"
+                                       FontSize="20"
+                                       FontWeight="Bold" />
+                        </StackPanel>
+
+                        <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                            <TextBlock Text="⚙️ Thư mục lưu trữ dự án:"
+                                       FontSize="12"
+                                       VerticalAlignment="Center"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                            <TextBox x:Name="TxtProjectsStoragePath"
+                                     Text="{x:Bind ViewModel.ProjectsStoragePath, Mode=OneWay}"
+                                     Width="380"
+                                     Height="32"
+                                     FontSize="12"
+                                     IsReadOnly="True"
+                                     VerticalContentAlignment="Center" />
+                            <Button Content="Browse..."
+                                    Height="32"
+                                    Click="BtnBrowseProjectsDir_Click" />
+                        </StackPanel>
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                        <Button Content="➕ Tạo dự án mới"
+                                Style="{StaticResource AccentButtonStyle}"
+                                Height="40"
+                                Padding="20,0"
+                                FontWeight="Bold"
+                                Click="BtnNewProject_Click" />
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <!-- Projects Cards Grid -->
+            <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                <ItemsControl ItemsSource="{x:Bind ViewModel.Projects, Mode=OneWay}">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <ItemsWrapGrid Orientation="Horizontal" ItemWidth="360" />
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="models:BatchProjectModel">
+                            <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="12"
+                                    Padding="16"
+                                    Margin="0,0,16,16">
+                                <Grid RowSpacing="12">
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                    </Grid.RowDefinitions>
+
+                                    <!-- Folder Icon & Project Title -->
+                                    <Grid Grid.Row="0">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+
+                                        <Border Grid.Column="0"
+                                                Background="{ThemeResource SystemControlBackgroundAccentBrush}"
+                                                CornerRadius="10"
+                                                Width="44"
+                                                Height="44"
+                                                Margin="0,0,12,0">
+                                            <FontIcon Glyph="&#xE8B7;"
+                                                      FontSize="20"
+                                                      Foreground="White"
+                                                      HorizontalAlignment="Center"
+                                                      VerticalAlignment="Center" />
+                                        </Border>
+
+                                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                            <TextBlock Text="{x:Bind ProjectName}"
+                                                       FontSize="16"
+                                                       FontWeight="Bold"
+                                                       TextTrimming="CharacterEllipsis" />
+                                            <TextBlock Text="{x:Bind CreatedAt.ToString()}"
+                                                       FontSize="11"
+                                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                        </StackPanel>
+                                    </Grid>
+
+                                    <!-- Output Path Snippet -->
+                                    <Border Grid.Row="1"
+                                            Background="{ThemeResource LayerOnThicknessCardBackgroundFillColorDefaultBrush}"
+                                            CornerRadius="6"
+                                            Padding="8,6">
+                                        <TextBlock Text="{x:Bind OutputDir}"
+                                                   FontSize="11"
+                                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                   TextTrimming="CharacterEllipsis" />
+                                    </Border>
+
+                                    <!-- Settings Badges -->
+                                    <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="8">
+                                        <Border Background="{ThemeResource SystemControlBackgroundListLowBrush}"
+                                                CornerRadius="4"
+                                                Padding="8,4">
+                                            <TextBlock FontSize="11">
+                                                <Run Text="Tỷ lệ: " Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                                <Run Text="{x:Bind AspectRatio}" FontWeight="SemiBold" />
+                                            </TextBlock>
+                                        </Border>
+                                        <Border Background="{ThemeResource SystemControlBackgroundListLowBrush}"
+                                                CornerRadius="4"
+                                                Padding="8,4">
+                                            <TextBlock FontSize="11">
+                                                <Run Text="Engine: " Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                                <Run Text="{x:Bind Engine}" FontWeight="SemiBold" />
+                                            </TextBlock>
+                                        </Border>
+                                    </StackPanel>
+
+                                    <!-- Action Buttons -->
+                                    <Grid Grid.Row="3" ColumnSpacing="8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+
+                                        <Button Grid.Column="0"
+                                                Content="📂 Mở Dự Án"
+                                                HorizontalAlignment="Stretch"
+                                                Style="{StaticResource AccentButtonStyle}"
+                                                FontWeight="Bold"
+                                                Tag="{Binding}"
+                                                Click="BtnOpenProject_Click" />
+
+                                        <Button Grid.Column="1"
+                                                Content="🗑️ Xóa"
+                                                Width="70"
+                                                Tag="{Binding}"
+                                                Click="BtnDeleteProject_Click" />
+                                    </Grid>
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+        </Grid>
+
+        <!-- LEVEL 2: PROJECT EDITOR PANEL -->
+        <Grid x:Name="PanelProjectEditor"
+              Visibility="{x:Bind ViewModel.EditorVisibility, Mode=OneWay}">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+
+            <!-- Editor Header Bar -->
+            <Border Grid.Row="0"
+                    Background="{ThemeResource LayerFillColorDefaultBrush}"
+                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                    BorderThickness="1"
+                    CornerRadius="12"
+                    Padding="16,12"
+                    Margin="0,0,0,16">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                        <Button Content="⬅️ Danh sách Dự án"
+                                Click="BtnBackToProjects_Click" />
+                        <TextBlock Text="{x:Bind ViewModel.ProjectTitle, Mode=OneWay}"
+                                   FontSize="18"
+                                   FontWeight="Bold"
+                                   VerticalAlignment="Center" />
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="1"
+                                Orientation="Horizontal"
+                                Spacing="12"
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center">
+                        <ProgressBar Value="{x:Bind ViewModel.TotalDoneCount, Mode=OneWay}"
+                                     Maximum="{x:Bind ViewModel.TotalCount, Mode=OneWay}"
+                                     Width="180"
+                                     Height="10" />
+                        <TextBlock Text="{x:Bind ViewModel.ProgressText, Mode=OneWay}"
+                                   FontSize="12"
+                                   VerticalAlignment="Center" />
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                        <Button Content="💾 Lưu dự án"
+                                Click="BtnSaveProject_Click" />
+                        <Button Content="📁 Open Folder"
+                                Click="BtnOpenFolder_Click" />
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <!-- Editor Main Body -->
+            <Grid Grid.Row="1">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="340" />
+                    <ColumnDefinition Width="16" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+
+                <!-- Left Sidebar Panel (Sprint 4) -->
+                <ScrollViewer Grid.Column="0" VerticalScrollBarVisibility="Auto">
+                    <StackPanel Spacing="16">
+
+                        <!-- SECTION 1: NHÂN VẬT GỐC -->
+                        <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                BorderThickness="1"
+                                CornerRadius="12"
+                                Padding="16">
+                            <StackPanel Spacing="10">
+                                <TextBlock Text="👤 NHÂN VẬT GỐC"
+                                           FontSize="13"
+                                           FontWeight="Bold"
+                                           Foreground="{ThemeResource TextFillColorPrimaryBrush}" />
+
+                                <!-- Select Button / Dropzone -->
+                                <Button HorizontalAlignment="Stretch"
+                                        HorizontalContentAlignment="Stretch"
+                                        Padding="12"
+                                        Click="BtnSelectRefImage_Click">
+                                    <Grid>
+                                        <!-- Empty State -->
+                                        <StackPanel Visibility="{x:Bind ViewModel.EmptyRefImageVisibility, Mode=OneWay}"
+                                                    Spacing="6"
+                                                    HorizontalAlignment="Center"
+                                                    VerticalAlignment="Center">
+                                            <FontIcon Glyph="&#xE8B9;" FontSize="24" Foreground="{ThemeResource TextFillColorSecondaryBrush}" HorizontalAlignment="Center" />
+                                            <TextBlock Text="Nhấp để chọn ảnh nhân vật gốc"
+                                                       FontSize="11"
+                                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                       HorizontalAlignment="Center" />
+                                        </StackPanel>
+
+                                        <!-- Has Image Preview State -->
+                                        <Grid Visibility="{x:Bind ViewModel.HasRefImageVisibility, Mode=OneWay}">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="60" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+
+                                            <Image x:Name="ImgRefPreview"
+                                                   Width="60"
+                                                   Height="60"
+                                                   Stretch="UniformToFill" />
+
+                                            <StackPanel Grid.Column="1" Margin="10,0,0,0" VerticalAlignment="Center">
+                                                <TextBlock Text="{x:Bind ViewModel.RefImageInfo, Mode=OneWay}"
+                                                           FontSize="11"
+                                                           TextTrimming="CharacterEllipsis" />
+                                                <TextBlock Text="{x:Bind ViewModel.RefImageTag, Mode=OneWay}"
+                                                           FontSize="10"
+                                                           Foreground="{ThemeResource SystemControlBackgroundAccentBrush}"
+                                                           FontWeight="SemiBold" />
+                                            </StackPanel>
+
+                                            <Button Grid.Column="2"
+                                                    Content="✕"
+                                                    Width="28"
+                                                    Height="28"
+                                                    Padding="0"
+                                                    Click="BtnClearRefImage_Click" />
+                                        </Grid>
+                                    </Grid>
+                                </Button>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- SECTION 2: KỊCH BẢN (JSON OBJECT/ARRAY) -->
+                        <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                BorderThickness="1"
+                                CornerRadius="12"
+                                Padding="16">
+                            <StackPanel Spacing="10">
+                                <TextBlock Text="📝 KỊCH BẢN (JSON OBJECT/ARRAY)"
+                                           FontSize="13"
+                                           FontWeight="Bold" />
+
+                                <TextBox Text="{x:Bind ViewModel.ScriptJson, Mode=TwoWay}"
+                                         Height="160"
+                                         AcceptsReturn="True"
+                                         TextWrapping="Wrap"
+                                         FontFamily="Consolas"
+                                         FontSize="11" />
+
+                                <Grid ColumnSpacing="8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+
+                                    <Button Grid.Column="0"
+                                            Content="📄 Chọn file JSON"
+                                            HorizontalAlignment="Stretch"
+                                            Click="BtnImportJson_Click" />
+
+                                    <Button Grid.Column="1"
+                                            Content="⚙️ Cập nhật Kịch bản"
+                                            HorizontalAlignment="Stretch"
+                                            Click="BtnUpdateScriptJson_Click" />
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- SECTION 3: CẤU HÌNH & ENGINE EXPANDER -->
+                        <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                BorderThickness="1"
+                                CornerRadius="12"
+                                Padding="16">
+                            <StackPanel Spacing="12">
+                                <TextBlock Text="⚙️ CẤU HÌNH DỰ ÁN"
+                                           FontSize="13"
+                                           FontWeight="Bold" />
+
+                                <!-- Aspect Ratio -->
+                                <StackPanel Spacing="4">
+                                    <TextBlock Text="Tỷ lệ khung hình:" FontSize="11" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                    <ComboBox x:Name="CboxAspect"
+                                              SelectedIndex="0"
+                                              SelectionChanged="CboxAspect_SelectionChanged"
+                                              HorizontalAlignment="Stretch">
+                                        <ComboBoxItem Content="16:9 (Ngang)" Tag="16:9" />
+                                        <ComboBoxItem Content="9:16 (Dọc Shorts/Reels)" Tag="9:16" />
+                                        <ComboBoxItem Content="1:1 (Vuông)" Tag="1:1" />
+                                        <ComboBoxItem Content="4:3" Tag="4:3" />
+                                        <ComboBoxItem Content="3:4" Tag="3:4" />
+                                    </ComboBox>
+                                </StackPanel>
+
+                                <!-- Output Directory -->
+                                <StackPanel Spacing="4">
+                                    <TextBlock Text="Thư mục xuất ảnh:" FontSize="11" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                    <Grid ColumnSpacing="8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBox Text="{x:Bind ViewModel.OutputDir, Mode=TwoWay}" FontSize="11" />
+                                        <Button Grid.Column="1" Content="Browse..." Click="BtnBrowseOutputDir_Click" />
+                                    </Grid>
+                                </StackPanel>
+
+                                <!-- Expander: Cấu hình Engine / Model AI -->
+                                <Expander Header="Cấu hình Engine / Model AI"
+                                          HorizontalAlignment="Stretch"
+                                          IsExpanded="True"
+                                          Margin="0,4,0,0">
+                                    <StackPanel Spacing="10" Padding="0,8">
+
+                                        <!-- Provider Radio Buttons -->
+                                        <TextBlock Text="API Provider:" FontSize="11" FontWeight="SemiBold" />
+                                        <RadioButton Content="G-Labs Webhook API (:8765)"
+                                                     GroupName="ProviderGroup"
+                                                     IsChecked="True"
+                                                     Tag="glabs"
+                                                     Checked="RadProvider_Checked" />
+                                        <RadioButton Content="Flow Image Local API (:8787)"
+                                                     GroupName="ProviderGroup"
+                                                     Tag="flow_local"
+                                                     Checked="RadProvider_Checked" />
+
+                                        <!-- Engine ComboBox -->
+                                        <TextBlock Text="Engine:" FontSize="11" FontWeight="SemiBold" Margin="0,4,0,0" />
+                                        <ComboBox x:Name="CboxEngine"
+                                                  SelectedIndex="0"
+                                                  SelectionChanged="CboxEngine_SelectionChanged"
+                                                  HorizontalAlignment="Stretch">
+                                            <ComboBoxItem Content="Flow" Tag="flow" />
+                                            <ComboBoxItem Content="Meta" Tag="meta" />
+                                            <ComboBoxItem Content="Grok" Tag="grok" />
+                                        </ComboBox>
+
+                                        <!-- Models Panel -->
+                                        <StackPanel Visibility="{x:Bind ViewModel.FlowOptionsVisibility, Mode=OneWay}" Spacing="8">
+                                            <!-- G-Labs Models -->
+                                            <StackPanel Visibility="{x:Bind ViewModel.GlabsModelsVisibility, Mode=OneWay}" Spacing="4">
+                                                <TextBlock Text="Model (G-Labs):" FontSize="11" FontWeight="SemiBold" />
+                                                <RadioButton Content="Nano Banana 2" GroupName="GlabsModelGroup" Tag="nano_banana_2" Checked="RadModel_Checked" IsChecked="True" />
+                                                <RadioButton Content="Nano Banana Pro" GroupName="GlabsModelGroup" Tag="nano_banana_pro" Checked="RadModel_Checked" />
+                                                <RadioButton Content="Nano Banana 2 Lite" GroupName="GlabsModelGroup" Tag="nano_banana_2_lite" Checked="RadModel_Checked" />
+                                            </StackPanel>
+
+                                            <!-- Flow Local Models -->
+                                            <StackPanel Visibility="{x:Bind ViewModel.FlowLocalModelsVisibility, Mode=OneWay}" Spacing="4">
+                                                <TextBlock Text="Model (Flow Local):" FontSize="11" FontWeight="SemiBold" />
+                                                <RadioButton Content="Gemini 3.1 Flash" GroupName="FlowLocalModelGroup" Tag="gemini-3.1-flash-image" Checked="RadModel_Checked" />
+                                                <RadioButton Content="Gemini 3.0 Pro" GroupName="FlowLocalModelGroup" Tag="gemini-3.0-pro-image" Checked="RadModel_Checked" />
+                                                <RadioButton Content="Imagen 4 Preview" GroupName="FlowLocalModelGroup" Tag="imagen-4.0-generate-preview" Checked="RadModel_Checked" />
+                                                <RadioButton Content="Nano Banana 2 Flow" GroupName="FlowLocalModelGroup" Tag="nano-banana-2" Checked="RadModel_Checked" />
+                                                <RadioButton Content="Nano Banana Pro Flow" GroupName="FlowLocalModelGroup" Tag="nano-banana-pro" Checked="RadModel_Checked" />
+                                            </StackPanel>
+
+                                            <!-- Upscale options -->
+                                            <TextBlock Text="Upscale:" FontSize="11" FontWeight="SemiBold" Margin="0,4,0,0" />
+                                            <StackPanel Orientation="Horizontal" Spacing="12">
+                                                <RadioButton Content="None" GroupName="UpscaleGroup" Tag="none" Checked="RadUpscale_Checked" IsChecked="True" />
+                                                <RadioButton Content="2K" GroupName="UpscaleGroup" Tag="2K" Checked="RadUpscale_Checked" />
+                                                <RadioButton Content="4K" GroupName="UpscaleGroup" Tag="4K" Checked="RadUpscale_Checked" />
+                                            </StackPanel>
+                                        </StackPanel>
+
+                                        <!-- Concurrency -->
+                                        <TextBlock Text="Số ảnh chạy song song:" FontSize="11" FontWeight="SemiBold" Margin="0,4,0,0" />
+                                        <ComboBox x:Name="CboxConcurrency"
+                                                  SelectedIndex="2"
+                                                  SelectionChanged="CboxConcurrency_SelectionChanged"
+                                                  HorizontalAlignment="Stretch">
+                                            <ComboBoxItem Content="1 ảnh" Tag="1" />
+                                            <ComboBoxItem Content="2 ảnh" Tag="2" />
+                                            <ComboBoxItem Content="4 ảnh" Tag="4" />
+                                            <ComboBoxItem Content="6 ảnh" Tag="6" />
+                                            <ComboBoxItem Content="8 ảnh" Tag="8" />
+                                        </ComboBox>
+
+                                    </StackPanel>
+                                </Expander>
+
+                                <!-- Bottom Batch Generate Button -->
+                                <Button Content="{x:Bind ViewModel.GenerateButtonText, Mode=OneWay}"
+                                        Style="{StaticResource AccentButtonStyle}"
+                                        Height="44"
+                                        FontWeight="Bold"
+                                        HorizontalAlignment="Stretch"
+                                        Margin="0,8,0,0"
+                                        Click="BtnBatchGenerate_Click" />
+                            </StackPanel>
+                        </Border>
+
+                    </StackPanel>
+                </ScrollViewer>
+
+                <!-- Right Main Panel Shell (Sprint 5) -->
+                <Border Grid.Column="2"
+                        Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                        BorderThickness="1"
+                        CornerRadius="12"
+                        Padding="16">
+                    <StackPanel Spacing="12" VerticalAlignment="Center" HorizontalAlignment="Center">
+                        <FontIcon Glyph="&#xE7F4;" FontSize="32" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                        <TextBlock Text="Danh sách Cảnh (Cards Grid / Table Queue)"
+                                   FontSize="14"
+                                   FontWeight="SemiBold"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                   HorizontalAlignment="Center" />
+                        <TextBlock Text="(Lưới hiển thị card ảnh chi tiết sẽ triển khai ở Sprint 5)"
+                                   FontSize="11"
+                                   Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                                   TextWrapping="Wrap"
+                                   TextAlignment="Center" />
+                    </StackPanel>
+                </Border>
+            </Grid>
+        </Grid>
+    </Grid>
+</Page>

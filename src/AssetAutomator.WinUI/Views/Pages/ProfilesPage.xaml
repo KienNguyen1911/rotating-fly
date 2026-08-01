@@ -1,0 +1,212 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page x:Class="AssetAutomator.WinUI.Views.Pages.ProfilesPage"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <ScrollViewer Padding="24" VerticalScrollBarVisibility="Auto">
+        <StackPanel Spacing="16">
+
+            <!-- Header & Loading Indicator -->
+            <Grid ColumnSpacing="16">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <StackPanel Grid.Column="0" Spacing="4">
+                    <TextBlock Text="Chrome Profiles &amp; Proxy Management" Style="{ThemeResource TitleTextBlockStyle}" />
+                    <TextBlock Text="Quản lý trình duyệt Chrome cách ly, hồ sơ người dùng và cấu hình Proxy." Style="{ThemeResource BodyTextBlockStyle}" Opacity="0.7" />
+                </StackPanel>
+
+                <!-- ProgressRing IsBusy (A9) -->
+                <ProgressRing Grid.Column="1" IsActive="{Binding IsBusy}" Width="28" Height="28" VerticalAlignment="Center" />
+            </Grid>
+
+            <!-- Status message -->
+            <InfoBar IsOpen="True" IsClosable="False" Severity="Informational" Title="Trạng thái:" Message="{Binding StatusMessage}" />
+
+            <!-- Main 2 Columns Layout -->
+            <Grid ColumnSpacing="16">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="280" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+
+                <!-- LEFT COLUMN: Profile List -->
+                <Border Grid.Column="0"
+                        Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                        BorderThickness="1"
+                        CornerRadius="8"
+                        Padding="12">
+                    <Grid RowSpacing="10">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+
+                        <StackPanel Grid.Row="0" Spacing="2">
+                            <TextBlock Text="Danh Sách Profiles" Style="{ThemeResource SubtitleTextBlockStyle}" />
+                            <TextBlock Text="Chọn profile để làm việc" Style="{ThemeResource CaptionTextBlockStyle}" Opacity="0.6" />
+                        </StackPanel>
+
+                        <ListView Grid.Row="1"
+                                  ItemsSource="{Binding Profiles}"
+                                  SelectedItem="{Binding SelectedProfile, Mode=TwoWay}"
+                                  SelectionMode="Single"
+                                  MinHeight="360">
+                            <ListView.ItemTemplate>
+                                <DataTemplate>
+                                    <StackPanel Orientation="Horizontal" Spacing="8" Padding="4">
+                                        <FontIcon Glyph="&#xE77B;" FontSize="14" Opacity="0.7" />
+                                        <TextBlock Text="{Binding}" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ListView.ItemTemplate>
+                        </ListView>
+                    </Grid>
+                </Border>
+
+                <!-- RIGHT COLUMN: Selected Profile Detail & Sections -->
+                <StackPanel Grid.Column="1" Spacing="16">
+
+                    <!-- SECTION 1: Selected Profile Actions (A7) -->
+                    <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                            BorderThickness="1"
+                            CornerRadius="8"
+                            Padding="16">
+                        <StackPanel Spacing="12">
+                            <TextBlock Text="Hồ Sơ Được Chọn (Active Profile)" Style="{ThemeResource SubtitleTextBlockStyle}" />
+                            
+                            <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                <TextBlock Text="Profile hiện tại:" Style="{ThemeResource CaptionTextBlockStyle}" Opacity="0.7" VerticalAlignment="Center" />
+                                <TextBlock Text="{Binding SelectedProfile}" FontWeight="Bold" FontSize="16" Foreground="{ThemeResource SystemAccentColor}" VerticalAlignment="Center" />
+                            </StackPanel>
+
+                            <!-- 4 Buttons (Open Browser, Open Folder, Set Default, Delete Profile) -->
+                            <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,4,0,0">
+                                <Button Style="{ThemeResource AccentButtonStyle}" Command="{Binding LaunchProfileCommand}">
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <FontIcon Glyph="&#xE774;" FontSize="14" />
+                                        <TextBlock Text="Open Browser" FontWeight="SemiBold" />
+                                    </StackPanel>
+                                </Button>
+
+                                <Button Command="{Binding OpenProfileFolderCommand}">
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <FontIcon Glyph="&#xE8B7;" FontSize="14" />
+                                        <TextBlock Text="Open Folder" />
+                                    </StackPanel>
+                                </Button>
+
+                                <Button Command="{Binding SetDefaultProfileCommand}">
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <FontIcon Glyph="&#xE734;" FontSize="14" />
+                                        <TextBlock Text="Set Default" />
+                                    </StackPanel>
+                                </Button>
+
+                                <Button Command="{Binding DeleteProfileCommand}">
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <FontIcon Glyph="&#xE74D;" FontSize="14" Foreground="LightCoral" />
+                                        <TextBlock Text="Delete Profile" Foreground="LightCoral" />
+                                    </StackPanel>
+                                </Button>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- SECTION 2: Create New Profile (A8) -->
+                    <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                            BorderThickness="1"
+                            CornerRadius="8"
+                            Padding="16">
+                        <StackPanel Spacing="12">
+                            <TextBlock Text="Tạo Hồ Sơ Mới (Create Profile)" Style="{ThemeResource SubtitleTextBlockStyle}" />
+                            <TextBlock Text="Nhập tên profile mới để khởi tạo thư mục user-data riêng biệt." Style="{ThemeResource CaptionTextBlockStyle}" Opacity="0.6" />
+
+                            <Grid ColumnSpacing="12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+
+                                <TextBox Text="{Binding NewProfileName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                         PlaceholderText="Nhập tên Profile (để trống sẽ tự động sinh tên)..." />
+
+                                <Button Grid.Column="1" Command="{Binding CreateProfileCommand}">
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <FontIcon Glyph="&#xE710;" FontSize="14" />
+                                        <TextBlock Text="Tạo &amp; Khởi Tạo" FontWeight="SemiBold" />
+                                    </StackPanel>
+                                </Button>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- SECTION 3: Custom GPT URL (A8) -->
+                    <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                            BorderThickness="1"
+                            CornerRadius="8"
+                            Padding="16">
+                        <StackPanel Spacing="12">
+                            <TextBlock Text="Cấu Hình Custom GPT URL" Style="{ThemeResource SubtitleTextBlockStyle}" />
+                            <TextBlock Text="Đường dẫn Custom GPT chuyên dụng được sử dụng khi mở trình duyệt AI." Style="{ThemeResource CaptionTextBlockStyle}" Opacity="0.6" />
+
+                            <Grid ColumnSpacing="12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+
+                                <TextBox Text="{Binding CustomGptUrl, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                         PlaceholderText="https://chatgpt.com/g/g-..." />
+
+                                <Button Grid.Column="1" Command="{Binding SaveCustomGptUrlCommand}">
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <FontIcon Glyph="&#xE74E;" FontSize="14" />
+                                        <TextBlock Text="Lưu Custom GPT URL" />
+                                    </StackPanel>
+                                </Button>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- SECTION 4: Proxy Connection Tester -->
+                    <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                            BorderThickness="1"
+                            CornerRadius="8"
+                            Padding="16">
+                        <StackPanel Spacing="12">
+                            <TextBlock Text="Kiểm Tra Kết Nối Proxy (Proxy Tester)" Style="{ThemeResource SubtitleTextBlockStyle}" />
+                            <TextBlock Text="Kiểm tra địa chỉ Proxy HTTP / HTTPS trước khi gán vào tự động hóa." Style="{ThemeResource CaptionTextBlockStyle}" Opacity="0.6" />
+
+                            <Grid ColumnSpacing="12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+
+                                <TextBox Text="{Binding ProxyAddress, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                         PlaceholderText="http://192.168.1.1:8080 hoặc http://user:pass@ip:port" />
+
+                                <Button Grid.Column="1" Command="{Binding TestProxyCommand}">
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <FontIcon Glyph="&#xEB55;" FontSize="14" />
+                                        <TextBlock Text="Test Proxy Async" />
+                                    </StackPanel>
+                                </Button>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                </StackPanel>
+            </Grid>
+
+        </StackPanel>
+    </ScrollViewer>
+</Page>

@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "AssetAutomator.WinUI (Package)": {
+      "commandName": "MsixPackage"
+    },
+    "AssetAutomator.WinUI (Unpackaged)": {
+      "commandName": "Project"
+    }
+  }
+}

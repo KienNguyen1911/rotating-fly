@@ -1,0 +1,117 @@
+<ContentDialog x:Class="AssetAutomator.WinUI.Views.Dialogs.VoiceSelectorDialog"
+               xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+               xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+               xmlns:dialogs="using:AssetAutomator.WinUI.Views.Dialogs"
+               Title="Chọn Giọng Đọc (ElevenLabs)"
+               PrimaryButtonText="Chọn Giọng Này"
+               CloseButtonText="Hủy"
+               DefaultButton="Primary"
+               PrimaryButtonClick="ContentDialog_PrimaryButtonClick">
+
+    <Grid MinWidth="680" MinHeight="480" RowSpacing="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- Top Filters Bar -->
+        <Grid Grid.Row="0" ColumnSpacing="8">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="140" />
+                <ColumnDefinition Width="120" />
+            </Grid.ColumnDefinitions>
+            <TextBox x:Name="TxtSearch"
+                     Grid.Column="0"
+                     PlaceholderText="Tìm theo tên hoặc ID..."
+                     TextChanged="TxtSearch_TextChanged" />
+            <ComboBox x:Name="ComboSort"
+                      Grid.Column="1"
+                      SelectedIndex="0"
+                      HorizontalAlignment="Stretch"
+                      SelectionChanged="Filter_Changed">
+                <ComboBoxItem Content="Nổi bật (Trending)" />
+                <ComboBoxItem Content="Mới nhất" />
+                <ComboBoxItem Content="Lượt dùng nhiều" />
+            </ComboBox>
+            <ComboBox x:Name="ComboGender"
+                      Grid.Column="2"
+                      SelectedIndex="0"
+                      HorizontalAlignment="Stretch"
+                      SelectionChanged="Filter_Changed">
+                <ComboBoxItem Content="Tất cả giới tính" />
+                <ComboBoxItem Content="Nữ (Female)" />
+                <ComboBoxItem Content="Nam (Male)" />
+            </ComboBox>
+        </Grid>
+
+        <TextBlock Grid.Row="1" Text="Danh sách Giọng đọc ElevenLabs khả dụng:" Style="{ThemeResource CaptionTextBlockStyle}" Opacity="0.7" />
+
+        <!-- Voices ListView -->
+        <Border Grid.Row="2"
+                Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                BorderThickness="1"
+                CornerRadius="8"
+                Padding="8">
+            <ListView x:Name="LstVoices" SelectionMode="Single" SelectionChanged="LstVoices_SelectionChanged">
+                <ListView.ItemTemplate>
+                    <DataTemplate x:DataType="dialogs:VoiceModel">
+                        <Grid Padding="8,6" RowSpacing="2">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="140" />
+                                <ColumnDefinition Width="200" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+
+                            <TextBlock Grid.Column="0" Grid.Row="0" Text="{x:Bind Name}" FontWeight="SemiBold" VerticalAlignment="Center" />
+                            <TextBlock Grid.Column="1" Grid.Row="0" Text="{x:Bind VoiceId}" FontFamily="Consolas" FontSize="12" Opacity="0.8" VerticalAlignment="Center" />
+                            <Border Grid.Column="2" Grid.Row="0" HorizontalAlignment="Right" Background="{ThemeResource SystemAccentColorDark2}" CornerRadius="4" Padding="6,2">
+                                <TextBlock Text="{x:Bind Category}" FontSize="11" Foreground="White" />
+                            </Border>
+                            <TextBlock Grid.Column="0" Grid.Row="1" Grid.ColumnSpan="3" Text="{x:Bind Description}" FontSize="12" Opacity="0.6" TextTrimming="CharacterEllipsis" Margin="0,2,0,0" />
+                        </Grid>
+                    </DataTemplate>
+                </ListView.ItemTemplate>
+            </ListView>
+        </Border>
+
+        <!-- Pagination Controls -->
+        <Grid Grid.Row="3" ColumnSpacing="8">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                <TextBlock Text="Hiển thị:" VerticalAlignment="Center" FontSize="12" Opacity="0.7" />
+                <ComboBox x:Name="ComboPageSize" SelectedIndex="1" SelectionChanged="ComboPageSize_SelectionChanged" Width="80">
+                    <ComboBoxItem Content="15" />
+                    <ComboBoxItem Content="30" />
+                    <ComboBoxItem Content="50" />
+                </ComboBox>
+            </StackPanel>
+
+            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                <Button x:Name="BtnPrevPage" Content="◄ Trụơc" Click="BtnPrevPage_Click" IsEnabled="False" />
+                <TextBlock x:Name="TxtPageIndex" Text="Trang 1 / 1" VerticalAlignment="Center" FontWeight="SemiBold" />
+                <Button x:Name="BtnNextPage" Content="Sau ►" Click="BtnNextPage_Click" IsEnabled="False" />
+            </StackPanel>
+        </Grid>
+
+        <!-- Footer status -->
+        <Grid Grid.Row="4" Margin="0,4,0,0">
+            <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                <TextBlock Text="Voice ID đã chọn:" Style="{ThemeResource CaptionTextBlockStyle}" Opacity="0.7" VerticalAlignment="Center" />
+                <TextBlock x:Name="TxtSelectedVoiceId" Text="Chưa chọn" FontWeight="Bold" Foreground="{ThemeResource SystemAccentColor}" VerticalAlignment="Center" />
+            </StackPanel>
+        </Grid>
+    </Grid>
+</ContentDialog>
