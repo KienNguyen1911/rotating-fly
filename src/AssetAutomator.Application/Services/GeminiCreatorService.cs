@@ -251,6 +251,7 @@ namespace AssetAutomator.Application.Services
         /// </summary>
         public async Task<(bool Success, string Message, string? ProfilePath)> LoginViaPlaywrightAsync(
             IBrowserService browserService,
+            string? targetProfilePath = null,
             Action<string>? onStatus = null)
         {
             try
@@ -260,10 +261,23 @@ namespace AssetAutomator.Application.Services
                     profilesDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ChromeProfiles");
 
                 Directory.CreateDirectory(profilesDir);
-                string profileName = "GeminiProfile";
-                string persistentProfilePath = Path.Combine(profilesDir, profileName);
 
-                onStatus?.Invoke("[LOGIN] 🌐 Đang mở Chrome để đăng nhập Gemini...");
+                string persistentProfilePath;
+                if (!string.IsNullOrWhiteSpace(targetProfilePath))
+                {
+                    persistentProfilePath = Path.IsPathRooted(targetProfilePath)
+                        ? targetProfilePath
+                        : Path.Combine(profilesDir, targetProfilePath);
+                }
+                else
+                {
+                    persistentProfilePath = Path.Combine(profilesDir, "GeminiProfile");
+                }
+
+                Directory.CreateDirectory(persistentProfilePath);
+
+                string profileDisplayName = Path.GetFileName(persistentProfilePath);
+                onStatus?.Invoke($"[LOGIN] 🌐 Đang mở Chrome (Profile: {profileDisplayName}) để đăng nhập Gemini...");
                 _log.Info(LogCategory.CookieSync, $"Launching Playwright Chrome with profile: {persistentProfilePath}");
 
                 using var playwright = await Microsoft.Playwright.Playwright.CreateAsync();
@@ -293,7 +307,19 @@ namespace AssetAutomator.Application.Services
                 if (syncOk)
                 {
                     _log.Success(LogCategory.CookieSync, $"Cookies synced from Playwright. Profile: {persistentProfilePath}");
-                    return (true, "Login successful! Cookies imported.", persistentProfilePath);
+                    onStatus?.Invoke("[COOKIE] 🔄 Đang khởi động lại Python Server...");
+                    var (restarted, restartDiag) = await _pythonServerManager.RestartServerAsync();
+
+                    if (restarted)
+                    {
+                        _log.Success(LogCategory.CookieSync, "Server restarted with new cookies successfully.");
+                        return (true, "Login successful! Cookies imported & server restarted.", persistentProfilePath);
+                    }
+                    else
+                    {
+                        _log.Warning(LogCategory.CookieSync, $"Cookies saved but server restart failed: {restartDiag}");
+                        return (false, $"Cookies saved but server restart failed: {restartDiag}", persistentProfilePath);
+                    }
                 }
                 else
                 {

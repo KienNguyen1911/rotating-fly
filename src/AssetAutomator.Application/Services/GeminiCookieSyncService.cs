@@ -154,7 +154,7 @@ namespace AssetAutomator.Application.Services
                 };
 
                 string jsonContent = JsonSerializer.Serialize(rootObj, new JsonSerializerOptions { WriteIndented = true });
-                await File.WriteAllTextAsync(savePath, jsonContent);
+                await SaveCookiesJsonContentAsync(savePath, jsonContent);
 
                 // Invalidate Python temp cookie cache
                 ClearTempCookieCache();
@@ -261,7 +261,7 @@ namespace AssetAutomator.Application.Services
                 };
 
                 string jsonContent = JsonSerializer.Serialize(rootObj, new JsonSerializerOptions { WriteIndented = true });
-                await File.WriteAllTextAsync(savePath, jsonContent);
+                await SaveCookiesJsonContentAsync(savePath, jsonContent);
 
                 ClearTempCookieCache();
 
@@ -273,6 +273,28 @@ namespace AssetAutomator.Application.Services
                 _log($"[COOKIE-SYNC] ❌ Lỗi khi nhập Cookie: {ex.Message}");
                 return false;
             }
+        }
+
+        private async Task SaveCookiesJsonContentAsync(string savePath, string jsonContent)
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(savePath)!);
+            await File.WriteAllTextAsync(savePath, jsonContent);
+
+            try
+            {
+                string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+                string rootModulesDir = Path.GetFullPath(Path.Combine(baseDir, "..", "..", "..", "..", "..", "Modules", "Gemini-API-2.0.0"));
+                if (Directory.Exists(rootModulesDir))
+                {
+                    string rootSavePath = Path.Combine(rootModulesDir, "cookies.json");
+                    if (!string.Equals(Path.GetFullPath(savePath), Path.GetFullPath(rootSavePath), StringComparison.OrdinalIgnoreCase))
+                    {
+                        await File.WriteAllTextAsync(rootSavePath, jsonContent);
+                        _log($"[COOKIE-SYNC] 📁 Đã đồng bộ thêm vào file nguồn gốc: {rootSavePath}");
+                    }
+                }
+            }
+            catch { }
         }
 
         /// <summary>

@@ -14,7 +14,11 @@ using AssetAutomator.Core.Models;
 using AssetAutomator.Application.Services;
 using AssetAutomator.Application.Steps;
 using AssetAutomator.Infrastructure.Helpers;
+using AssetAutomator.Infrastructure.Logging;
 using Microsoft.UI.Dispatching;
+using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Controls;
+using WinRT.Interop;
 
 namespace AssetAutomator.WinUI.ViewModels;
 
@@ -78,50 +82,38 @@ public partial class GeminiViewModel : ObservableObject
     private int _videoDurationMinutes = 1;
 
     // ─────────────────────────────────────────────────────
-    //  C6 — Python Server Log panel
+    //  Task Live Logs Drawer & Console Log Control
     // ─────────────────────────────────────────────────────
 
     [ObservableProperty]
-    private string _pythonServerLog = string.Empty;
+    private bool _isTaskLogsDrawerOpen;
 
     [ObservableProperty]
-    private string _pythonServerStatus = "⚪ Unknown";
+    private double _taskLogsDrawerWidth = 450;
 
     [ObservableProperty]
-    private bool _isPythonLogPanelCollapsed;
+    private bool _isRowDetailsDrawerOpen;
 
-    public bool IsPythonLogPanelVisible => !IsPythonLogPanelCollapsed;
-
-    partial void OnIsPythonLogPanelCollapsedChanged(bool value)
+    [RelayCommand]
+    private void CloseRowDetailsDrawer()
     {
-        OnPropertyChanged(nameof(IsPythonLogPanelVisible));
+        IsRowDetailsDrawerOpen = false;
     }
 
     [RelayCommand]
-    private void TogglePythonLogPanel()
+    private void OpenTaskLogs(GeminiTaskModel? task)
     {
-        IsPythonLogPanelCollapsed = !IsPythonLogPanelCollapsed;
+        if (task != null)
+        {
+            SelectedTask = task;
+        }
+        IsTaskLogsDrawerOpen = true;
     }
 
     [RelayCommand]
-    private void ClearPythonServerLog()
+    private void CloseTaskLogs()
     {
-        PythonServerLog = string.Empty;
-        StatusLog = "ℹ️ Đã xóa Python Server log panel.";
-    }
-
-    // ─────────────────────────────────────────────────────
-    //  Layout toggles — D8 (drawer-style sidebar to free up space)
-    // ─────────────────────────────────────────────────────
-
-    /// <summary>True = right sidebar (Python log + 5-step accordion) is shown.</summary>
-    [ObservableProperty]
-    private bool _isRightSidebarVisible = true;
-
-    [RelayCommand]
-    private void ToggleRightSidebar()
-    {
-        IsRightSidebarVisible = !IsRightSidebarVisible;
+        IsTaskLogsDrawerOpen = false;
     }
 
     /// <summary>True = bottom Console Logs panel is shown. Default false to keep page compact.</summary>
@@ -206,23 +198,19 @@ public partial class GeminiViewModel : ObservableObject
 
     private void OnLogServiceEntry(LogEntry entry)
     {
-        // Route by category: PythonServer → Python log panel, everything else → console.
-        if (entry.Category == LogCategory.PythonServer)
-        {
-            AppendToPythonServerLog(entry);
-            return;
-        }
-
         if (entry.Category is not (LogCategory.GeminiCreator
             or LogCategory.GeminiApi
             or LogCategory.Pipeline
             or LogCategory.CookieSync
+            or LogCategory.PythonServer
             or LogCategory.General))
         {
             return;
         }
 
-        string line = $"[{entry.FormattedTimestamp}] [{entry.Level}] {entry.Message}\n";
+        string line = entry.Category == LogCategory.PythonServer
+            ? $"[{entry.FormattedTimestamp}] [Python] {entry.Message}\n"
+            : $"[{entry.FormattedTimestamp}] [{entry.Level}] {entry.Message}\n";
 
         if (_dispatcherQueue != null)
         {
@@ -231,42 +219,6 @@ public partial class GeminiViewModel : ObservableObject
         else
         {
             ConsoleLogs += line;
-        }
-    }
-
-    private void AppendToPythonServerLog(LogEntry entry)
-    {
-        string line = $"[{entry.FormattedTimestamp}] {entry.LevelIcon} {entry.CategoryLabel} {entry.Message}";
-
-        void Apply()
-        {
-            PythonServerLog += line + Environment.NewLine;
-            UpdatePythonServerStatusIndicator(entry);
-        }
-
-        if (_dispatcherQueue != null)
-        {
-            _dispatcherQueue.TryEnqueue(Apply);
-        }
-        else
-        {
-            Apply();
-        }
-    }
-
-    private void UpdatePythonServerStatusIndicator(LogEntry entry)
-    {
-        if (entry.Message.Contains("successfully launched", StringComparison.OrdinalIgnoreCase) ||
-            entry.Message.Contains("Health check OK", StringComparison.OrdinalIgnoreCase) ||
-            entry.Message.Contains("responding", StringComparison.OrdinalIgnoreCase))
-        {
-            PythonServerStatus = "✅ Running";
-        }
-        else if (entry.Level == LogLevel.Error &&
-                 (entry.Message.Contains("exited prematurely", StringComparison.OrdinalIgnoreCase) ||
-                  entry.Message.Contains("not found", StringComparison.OrdinalIgnoreCase)))
-        {
-            PythonServerStatus = "❌ Crashed";
         }
     }
 
@@ -286,9 +238,12 @@ public partial class GeminiViewModel : ObservableObject
     public string CurrentStep4Log => string.IsNullOrWhiteSpace(SelectedTask?.Step4Logs) ? "Chưa có log cho bước này." : SelectedTask.Step4Logs;
     public string CurrentStep5Log => string.IsNullOrWhiteSpace(SelectedTask?.Step5Logs) ? "Chưa có log cho bước này." : SelectedTask.Step5Logs;
 
+    public string SelectedTaskTopic => SelectedTask?.Topic ?? "Chưa chọn task";
+
     partial void OnSelectedTaskChanged(GeminiTaskModel? value)
     {
         OnPropertyChanged(nameof(HasSelectedTask));
+        OnPropertyChanged(nameof(SelectedTaskTopic));
         OnPropertyChanged(nameof(CurrentStep1Status));
         OnPropertyChanged(nameof(CurrentStep2Status));
         OnPropertyChanged(nameof(CurrentStep3Status));
@@ -416,25 +371,187 @@ public partial class GeminiViewModel : ObservableObject
         }
     }
 
+    public class ChromeProfileItem
+    {
+        public string DisplayName { get; set; } = string.Empty;
+        public string FullPath { get; set; } = string.Empty;
+        public override string ToString() => DisplayName;
+    }
+
+    private List<ChromeProfileItem> GetAvailableChromeProfiles()
+    {
+        var list = new List<ChromeProfileItem>();
+        var addedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        void AddProfile(string name, string fullPath)
+        {
+            if (string.IsNullOrWhiteSpace(name) || !Directory.Exists(fullPath)) return;
+            if (addedNames.Add(name))
+            {
+                list.Add(new ChromeProfileItem { DisplayName = name, FullPath = Path.GetFullPath(fullPath) });
+            }
+        }
+
+        // Primary: Configured ChromeProfilesDir (matches Chrome Profiles tab in UI)
+        string profilesDir = string.Empty;
+        if (_configService != null)
+        {
+            profilesDir = _configService.LoadSettings().ChromeProfilesDir;
+        }
+
+        if (string.IsNullOrWhiteSpace(profilesDir) || !Directory.Exists(profilesDir))
+        {
+            profilesDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ChromeProfiles");
+        }
+
+        if (Directory.Exists(profilesDir))
+        {
+            foreach (var dir in Directory.GetDirectories(profilesDir))
+            {
+                AddProfile(Path.GetFileName(dir), dir);
+            }
+        }
+
+        // Fallback: Default GeminiProfile if list is empty
+        if (list.Count == 0)
+        {
+            string fallbackPath = Path.Combine(profilesDir, "GeminiProfile");
+            Directory.CreateDirectory(fallbackPath);
+            AddProfile("GeminiProfile", fallbackPath);
+        }
+
+        return list;
+    }
+
     [RelayCommand]
     private async Task ImportCookiesAsync()
     {
         if (_geminiCreatorService == null || _browserService == null)
         {
-            StatusLog = "⚠️ Cookie import chưa sẵn sàng (thiếu BrowserService).";
+            StatusLog = "⚠️ Cookie import chưa sẵn sàng (thiếu GeminiCreatorService hoặc BrowserService).";
+            _logService?.Error(LogCategory.CookieSync, "⚠️ Cookie import chưa sẵn sàng (thiếu GeminiCreatorService hoặc BrowserService).");
+            IsConsoleLogVisible = true;
             return;
         }
 
         IsImportingCookies = true;
-        StatusLog = "[COOKIE] 🔄 Đang nạp cookies từ Chrome profiles...";
+        IsConsoleLogVisible = true;
 
         try
         {
-            var (success, message) = await _geminiCreatorService.ImportCookiesAsync(
-                GeminiCreatorService.CookieImportMode.Auto,
-                _browserService,
-                onStatus: msg => _dispatcherQueue.TryEnqueue(() => StatusLog = msg));
-            StatusLog = $"[COOKIE] {(success ? "✅" : "❌")} {message}";
+            if (App.MainWindowInstance?.Content?.XamlRoot != null)
+            {
+                var profiles = GetAvailableChromeProfiles();
+
+                var profileCombo = new ComboBox
+                {
+                    Header = "Chọn Hồ Sơ Trình Duyệt (Chrome Profile):",
+                    HorizontalAlignment = HorizontalAlignment.Stretch,
+                    Margin = new Thickness(0, 4, 0, 8)
+                };
+
+                foreach (var p in profiles)
+                {
+                    profileCombo.Items.Add(p);
+                }
+                profileCombo.SelectedIndex = 0;
+
+                var modeRadioProfile = new RadioButton
+                {
+                    Content = "🌐 Đăng nhập Chrome với Profile được chọn (Khuyên dùng)",
+                    IsChecked = true,
+                    Margin = new Thickness(0, 4, 0, 2)
+                };
+                var modeRadioAuto = new RadioButton
+                {
+                    Content = "⚡ Tự động quét tất cả Chrome Profiles (Không mở trình duyệt)",
+                    Margin = new Thickness(0, 2, 0, 2)
+                };
+                var modeRadioFile = new RadioButton
+                {
+                    Content = "📁 Chọn file cookies.json thủ công từ máy tính",
+                    Margin = new Thickness(0, 2, 0, 4)
+                };
+
+                var stack = new StackPanel { Spacing = 8, Width = 400 };
+                stack.Children.Add(new TextBlock
+                {
+                    Text = "Vui lòng chọn Chrome Profile để mở trình duyệt & nạp Cookies Gemini:",
+                    TextWrapping = TextWrapping.Wrap,
+                    FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                    Margin = new Thickness(0, 0, 0, 4)
+                });
+                stack.Children.Add(modeRadioProfile);
+                stack.Children.Add(profileCombo);
+                stack.Children.Add(modeRadioAuto);
+                stack.Children.Add(modeRadioFile);
+
+                var dialog = new ContentDialog
+                {
+                    Title = "🔑 Nạp / Import Cookies Gemini",
+                    Content = stack,
+                    PrimaryButtonText = "Bắt đầu nạp",
+                    CloseButtonText = "Hủy",
+                    DefaultButton = ContentDialogButton.Primary,
+                    XamlRoot = App.MainWindowInstance.Content.XamlRoot
+                };
+
+                var dialogResult = await dialog.ShowAsync();
+                if (dialogResult != ContentDialogResult.Primary)
+                {
+                    return;
+                }
+
+                if (modeRadioProfile.IsChecked == true)
+                {
+                    var selectedProfile = profileCombo.SelectedItem as ChromeProfileItem;
+                    await RunPlaywrightLoginAsync(selectedProfile?.FullPath);
+                }
+                else if (modeRadioAuto.IsChecked == true)
+                {
+                    _logService?.Info(LogCategory.CookieSync, "⏳ Đang tự động quét & trích xuất Cookies Gemini từ các Chrome Profiles...");
+                    var (success, message) = await _geminiCreatorService.ImportCookiesAsync(
+                        GeminiCreatorService.CookieImportMode.Auto,
+                        _browserService,
+                        onStatus: msg => _logService?.Info(LogCategory.CookieSync, msg));
+
+                    if (success)
+                    {
+                        _logService?.Success(LogCategory.CookieSync, $"🎉 {message}");
+                        StatusLog = $"[COOKIE] ✅ {message}";
+                        await LoadGemsAsync();
+                    }
+                    else
+                    {
+                        _logService?.Warning(LogCategory.CookieSync, $"⚠️ Quét tự động thất bại: {message}");
+                        StatusLog = $"[COOKIE] ⚠️ Quét tự động thất bại.";
+
+                        var selectedProfile = profileCombo.SelectedItem as ChromeProfileItem;
+                        var fallbackDialog = new ContentDialog
+                        {
+                            Title = "🌐 Mở Chrome Đăng Nhập Gemini",
+                            Content = $"Tự động quét không tìm thấy session Gemini hợp lệ.\n({message})\n\nBạn có muốn mở Chrome với Profile '{selectedProfile?.DisplayName ?? "GeminiProfile"}' để đăng nhập Gemini không?",
+                            PrimaryButtonText = "🌐 Mở Chrome ngay",
+                            CloseButtonText = "Bỏ qua",
+                            DefaultButton = ContentDialogButton.Primary,
+                            XamlRoot = App.MainWindowInstance.Content.XamlRoot
+                        };
+
+                        if (await fallbackDialog.ShowAsync() == ContentDialogResult.Primary)
+                        {
+                            await RunPlaywrightLoginAsync(selectedProfile?.FullPath);
+                        }
+                    }
+                }
+                else if (modeRadioFile.IsChecked == true)
+                {
+                    await RunManualFileImportAsync();
+                }
+            }
+            else
+            {
+                await RunPlaywrightLoginAsync(null);
+            }
         }
         catch (Exception ex)
         {
@@ -444,6 +561,80 @@ public partial class GeminiViewModel : ObservableObject
         finally
         {
             IsImportingCookies = false;
+        }
+    }
+
+    private async Task RunPlaywrightLoginAsync(string? targetProfilePath = null)
+    {
+        if (_geminiCreatorService == null || _browserService == null) return;
+
+        string profileDisplayName = !string.IsNullOrEmpty(targetProfilePath)
+            ? Path.GetFileName(targetProfilePath)
+            : "GeminiProfile";
+
+        _logService?.Info(LogCategory.CookieSync, $"🌐 Đang mở Chrome (Profile: {profileDisplayName}) để đăng nhập Gemini...");
+        var (success, msg, profilePath) = await _geminiCreatorService.LoginViaPlaywrightAsync(
+            _browserService,
+            targetProfilePath,
+            onStatus: s => _logService?.Info(LogCategory.CookieSync, s));
+
+        if (success)
+        {
+            _logService?.Success(LogCategory.CookieSync, $"🎉 {msg}");
+            StatusLog = $"[COOKIE] ✅ {msg}";
+            await LoadGemsAsync();
+        }
+        else
+        {
+            _logService?.Error(LogCategory.CookieSync, $"❌ Đăng nhập Playwright thất bại: {msg}");
+            StatusLog = $"[COOKIE] ❌ {msg}";
+        }
+    }
+
+    private async Task RunManualFileImportAsync()
+    {
+        if (_geminiCreatorService == null || _browserService == null) return;
+
+        try
+        {
+            var picker = new Windows.Storage.Pickers.FileOpenPicker();
+            picker.FileTypeFilter.Add(".json");
+            picker.FileTypeFilter.Add(".txt");
+            picker.FileTypeFilter.Add("*");
+
+            if (App.MainWindowInstance != null)
+            {
+                var hwnd = WindowNative.GetWindowHandle(App.MainWindowInstance);
+                InitializeWithWindow.Initialize(picker, hwnd);
+            }
+
+            var file = await picker.PickSingleFileAsync();
+            if (file != null)
+            {
+                string content = await Windows.Storage.FileIO.ReadTextAsync(file);
+                _logService?.Info(LogCategory.CookieSync, $"📁 Đang đọc file cookies: {file.Path}...");
+                var (success, msg) = await _geminiCreatorService.SaveCustomCookiesAsync(
+                    content,
+                    _browserService,
+                    onStatus: s => _logService?.Info(LogCategory.CookieSync, s));
+
+                if (success)
+                {
+                    _logService?.Success(LogCategory.CookieSync, $"🎉 {msg}");
+                    StatusLog = $"[COOKIE] ✅ {msg}";
+                    await LoadGemsAsync();
+                }
+                else
+                {
+                    _logService?.Error(LogCategory.CookieSync, $"❌ Nạp file cookies thất bại: {msg}");
+                    StatusLog = $"[COOKIE] ❌ {msg}";
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logService?.Error(LogCategory.CookieSync, $"❌ Lỗi đọc file cookies: {ex.Message}");
+            StatusLog = $"[COOKIE] ❌ Lỗi: {ex.Message}";
         }
     }
 
@@ -585,19 +776,27 @@ public partial class GeminiViewModel : ObservableObject
     //  C3 — Row details Flyout actions
     // ─────────────────────────────────────────────────────
 
+    public string GetTaskOutputDir(GeminiTaskModel task)
+    {
+        string folderKey = !string.IsNullOrWhiteSpace(task.OutputFolderName)
+            ? task.OutputFolderName
+            : (!string.IsNullOrWhiteSpace(task.Topic) ? AssetAutomator.Core.Constants.YoutubeHelper.ToSafeTopicSlug(task.Topic.Trim()) : task.Id);
+
+        string? baseDir = _configService?.CurrentSettings?.OutputsDir;
+        if (string.IsNullOrWhiteSpace(baseDir))
+        {
+            baseDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Outputs");
+        }
+
+        return Path.Combine(baseDir, "Gemini", folderKey);
+    }
+
     [RelayCommand]
     private void OpenTaskFolder(GeminiTaskModel? task)
     {
         if (task == null) return;
 
-        string folderKey = !string.IsNullOrWhiteSpace(task.OutputFolderName)
-            ? task.OutputFolderName
-            : (!string.IsNullOrWhiteSpace(task.Topic) ? task.Topic.Trim() : Guid.NewGuid().ToString("N"));
-        string outputDir = Path.Combine(
-            AppDomain.CurrentDomain.BaseDirectory,
-            "Output",
-            "Gemini",
-            string.IsNullOrWhiteSpace(folderKey) ? "task" : folderKey);
+        string outputDir = GetTaskOutputDir(task);
 
         try
         {
@@ -620,8 +819,7 @@ public partial class GeminiViewModel : ObservableObject
     {
         if (task == null) return;
 
-        string folderKey = task.OutputFolderName ?? task.Topic.Trim();
-        string outputDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Output", "Gemini", folderKey);
+        string outputDir = GetTaskOutputDir(task);
         string scenesPath = Path.Combine(outputDir, "scenes.json");
 
         if (!File.Exists(scenesPath))

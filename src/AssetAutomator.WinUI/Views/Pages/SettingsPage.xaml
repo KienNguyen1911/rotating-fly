@@ -87,7 +87,6 @@
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
                                 <PasswordBox x:Name="PbApiKey"
-                                             Password="{Binding ApiKey, Mode=TwoWay}"
                                              PlaceholderText="sk-..." />
                             </Grid>
                         </StackPanel>
@@ -101,7 +100,6 @@
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
                                 <PasswordBox x:Name="PbAi84ApiKey"
-                                             Password="{Binding Ai84ApiKey, Mode=TwoWay}"
                                              PlaceholderText="Nhập AI84 API Key..." />
                                 <Button Grid.Column="1"
                                         Content="Kiểm tra Key"
@@ -113,7 +111,6 @@
                         <StackPanel Spacing="6">
                             <TextBlock Text="Supabase DB URL" Style="{ThemeResource CaptionTextBlockStyle}" Opacity="0.7" />
                             <PasswordBox x:Name="PbSupabaseDbUrl"
-                                         Password="{Binding SupabaseDbUrl, Mode=TwoWay}"
                                          PlaceholderText="https://xyz.supabase.co..." />
                         </StackPanel>
 
@@ -135,7 +132,6 @@
                         <StackPanel Spacing="6">
                             <TextBlock Text="Image API Key" Style="{ThemeResource CaptionTextBlockStyle}" Opacity="0.7" />
                             <PasswordBox x:Name="PbImageApiKey"
-                                         Password="{Binding ImageApiKey, Mode=TwoWay}"
                                          PlaceholderText="Nhập API Key cho Image API..." />
                         </StackPanel>
                     </StackPanel>

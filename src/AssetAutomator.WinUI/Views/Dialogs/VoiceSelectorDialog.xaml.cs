@@ -1,7 +1,15 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net.Http;
+using System.Text.Json;
+using System.Threading.Tasks;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Input;
+using AssetAutomator.Core.Interfaces;
+using AssetAutomator.Core.Models;
 
 namespace AssetAutomator.WinUI.Views.Dialogs;
 
@@ -12,110 +20,281 @@ public class VoiceModel
     public string Category { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
     public string Gender { get; set; } = "Female";
+    public string Language { get; set; } = "en-US";
 }
 
 public sealed partial class VoiceSelectorDialog : ContentDialog
 {
-    public string SelectedVoiceId { get; private set; } = string.Empty;
-    private List<VoiceModel> _allVoices = new();
-    private List<VoiceModel> _filteredVoices = new();
-    private int _currentPage = 1;
-    private int _pageSize = 30;
+    private readonly string _apiKey = string.Empty;
+    private readonly HttpClient _httpClient;
+    private int _currentPage = 0;
+    private bool _hasMore = false;
+    private bool _isLoading = false;
 
-    public VoiceSelectorDialog(string currentVoiceId = "")
+    public string SelectedVoiceId { get; private set; } = string.Empty;
+    public SharedVoiceInfo? SelectedVoice { get; private set; }
+
+    public VoiceSelectorDialog(string apiKey, string currentVoiceId)
     {
         InitializeComponent();
+        _apiKey = apiKey;
+        if (string.IsNullOrEmpty(_apiKey))
+        {
+            var configService = App.Services.GetService<IConfigService>();
+            _apiKey = configService?.CurrentSettings.Ai84ApiKey ?? string.Empty;
+        }
+
+        _httpClient = new HttpClient();
         SelectedVoiceId = currentVoiceId;
         if (!string.IsNullOrEmpty(currentVoiceId))
         {
             TxtSelectedVoiceId.Text = currentVoiceId;
         }
-        LoadVoicesMock();
-        ApplyFilterAndPagination();
-    }
 
-    private void LoadVoicesMock()
-    {
-        _allVoices = new List<VoiceModel>
+        AdjustDialogWidthToScreen();
+        Loaded += async (s, e) =>
         {
-            new VoiceModel { VoiceId = "21m00Tcm4TlvDq8ikWAM", Name = "Rachel", Category = "conversational", Gender = "Female", Description = "Calm and professional female voice for narration" },
-            new VoiceModel { VoiceId = "AZnzlk1XvdvUeBnXmlld", Name = "Domi", Category = "emotive", Gender = "Female", Description = "Strong and engaging female voice for commercials" },
-            new VoiceModel { VoiceId = "EXAVITQu4vr4xnSDxMaL", Name = "Bella", Category = "conversational", Gender = "Female", Description = "Soft and friendly young female voice" },
-            new VoiceModel { VoiceId = "ErXwobaYiN019PkySvjV", Name = "Antoni", Category = "conversational", Gender = "Male", Description = "Well-rounded male voice for stories and audiobooks" },
-            new VoiceModel { VoiceId = "MF3mGyEYCl7XYWbV9V6O", Name = "Elli", Category = "conversational", Gender = "Female", Description = "Emotional and expressive young female voice" },
-            new VoiceModel { VoiceId = "TxGEqnHWrfWFTfGW9XjX", Name = "Josh", Category = "conversational", Gender = "Male", Description = "Deep and confident male voice for video narration" },
-            new VoiceModel { VoiceId = "VR6AewLTigWG4xSOukaG", Name = "Arnold", Category = "narration", Gender = "Male", Description = "Crisp and authoritative male voice" },
-            new VoiceModel { VoiceId = "pNInz6obpgDQGcFmaJgB", Name = "Adam", Category = "conversational", Gender = "Male", Description = "Deep and smooth male voice" }
+            AdjustDialogWidthToScreen();
+            await LoadVoicesAsync();
         };
     }
 
-    private void ApplyFilterAndPagination()
+    private void AdjustDialogWidthToScreen()
     {
-        string query = TxtSearch?.Text?.Trim().ToLowerInvariant() ?? string.Empty;
-        int genderIndex = ComboGender?.SelectedIndex ?? 0;
-
-        _filteredVoices = _allVoices.Where(v =>
+        try
         {
-            bool matchesQuery = string.IsNullOrEmpty(query) ||
-                                 v.Name.ToLowerInvariant().Contains(query) ||
-                                 v.VoiceId.ToLowerInvariant().Contains(query) ||
-                                 v.Description.ToLowerInvariant().Contains(query);
+            this.HorizontalAlignment = HorizontalAlignment.Center;
+            this.VerticalAlignment = VerticalAlignment.Center;
+            this.HorizontalContentAlignment = HorizontalAlignment.Stretch;
+            this.VerticalContentAlignment = VerticalAlignment.Stretch;
 
-            bool matchesGender = genderIndex == 0 ||
-                                 (genderIndex == 1 && v.Gender.Equals("Female", StringComparison.OrdinalIgnoreCase)) ||
-                                 (genderIndex == 2 && v.Gender.Equals("Male", StringComparison.OrdinalIgnoreCase));
+            if (RootGrid != null)
+            {
+                RootGrid.HorizontalAlignment = HorizontalAlignment.Stretch;
+                RootGrid.VerticalAlignment = VerticalAlignment.Stretch;
+                RootGrid.Width = double.NaN;
+            }
 
-            return matchesQuery && matchesGender;
-        }).ToList();
+            if (App.MainWindowInstance != null)
+            {
+                IntPtr hwnd = WinRT.Interop.WindowNative.GetWindowHandle(App.MainWindowInstance);
+                var windowId = Microsoft.UI.Win32Interop.GetWindowIdFromWindow(hwnd);
+                var displayArea = Microsoft.UI.Windowing.DisplayArea.GetFromWindowId(windowId, Microsoft.UI.Windowing.DisplayAreaFallback.Primary);
+                if (displayArea != null)
+                {
+                    double targetWidth = Math.Max(800, displayArea.WorkArea.Width * 0.50);
+                    this.Resources["ContentDialogMaxWidth"] = targetWidth;
+                    this.Resources["ContentDialogMinWidth"] = targetWidth;
+                }
+            }
 
-        int totalItems = _filteredVoices.Count;
-        int totalPages = (int)Math.Ceiling((double)totalItems / _pageSize);
-        if (totalPages < 1) totalPages = 1;
-        if (_currentPage > totalPages) _currentPage = totalPages;
-
-        var pageItems = _filteredVoices.Skip((_currentPage - 1) * _pageSize).Take(_pageSize).ToList();
-        if (LstVoices != null) LstVoices.ItemsSource = pageItems;
-
-        if (TxtPageIndex != null) TxtPageIndex.Text = $"Trang {_currentPage} / {totalPages}";
-        if (BtnPrevPage != null) BtnPrevPage.IsEnabled = _currentPage > 1;
-        if (BtnNextPage != null) BtnNextPage.IsEnabled = _currentPage < totalPages;
-    }
-
-    private void TxtSearch_TextChanged(object sender, TextChangedEventArgs e)
-    {
-        _currentPage = 1;
-        ApplyFilterAndPagination();
-    }
-
-    private void Filter_Changed(object sender, SelectionChangedEventArgs e)
-    {
-        _currentPage = 1;
-        ApplyFilterAndPagination();
-    }
-
-    private void ComboPageSize_SelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (ComboPageSize.SelectedItem is ComboBoxItem item && int.TryParse(item.Content.ToString(), out int size))
+            TopFilterGrid?.InvalidateMeasure();
+            TopFilterGrid?.InvalidateArrange();
+            RootGrid?.InvalidateMeasure();
+            RootGrid?.InvalidateArrange();
+            this.UpdateLayout();
+        }
+        catch
         {
-            _pageSize = size;
-            _currentPage = 1;
-            ApplyFilterAndPagination();
+            double fallbackWidth = 960;
+            this.Resources["ContentDialogMaxWidth"] = fallbackWidth;
+            this.Resources["ContentDialogMinWidth"] = fallbackWidth;
         }
     }
 
-    private void BtnPrevPage_Click(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
+    public VoiceSelectorDialog(string currentVoiceId = "")
+        : this(App.Services.GetService<IConfigService>()?.CurrentSettings.Ai84ApiKey ?? string.Empty, currentVoiceId)
     {
-        if (_currentPage > 1)
+    }
+
+    private async Task LoadVoicesAsync()
+    {
+        if (_isLoading) return;
+        _isLoading = true;
+
+        if (string.IsNullOrWhiteSpace(_apiKey))
+        {
+            OverlayStatus.Visibility = Visibility.Visible;
+            ProgressLoading.IsActive = false;
+            ProgressLoading.Visibility = Visibility.Collapsed;
+            TxtStatusText.Text = "⚠️ Chưa có AI84 API Key!\nVui lòng vào Cài đặt (Settings) và nhập AI84 API Key trước khi sử dụng.";
+            _isLoading = false;
+            return;
+        }
+
+        OverlayStatus.Visibility = Visibility.Visible;
+        ProgressLoading.IsActive = true;
+        ProgressLoading.Visibility = Visibility.Visible;
+        TxtStatusText.Text = "Đang tải danh sách giọng đọc từ AI84...";
+
+        try
+        {
+            var queryParams = new List<string>();
+
+            int pageSize = 30;
+            if (ComboPageSize.SelectedItem is ComboBoxItem selectedPageSizeItem &&
+                int.TryParse(selectedPageSizeItem.Content?.ToString(), out int parsedSize))
+            {
+                pageSize = parsedSize;
+            }
+            queryParams.Add($"page_size={pageSize}");
+            queryParams.Add($"page={_currentPage}");
+
+            if (ComboSort.SelectedItem is ComboBoxItem selectedSortItem && selectedSortItem.Tag != null)
+            {
+                string sortVal = selectedSortItem.Tag.ToString()!;
+                if (!string.IsNullOrEmpty(sortVal))
+                {
+                    queryParams.Add($"sort={sortVal}");
+                }
+            }
+
+            if (ComboGender.SelectedItem is ComboBoxItem selectedGenderItem && selectedGenderItem.Tag != null)
+            {
+                string genderVal = selectedGenderItem.Tag.ToString()!;
+                if (!string.IsNullOrEmpty(genderVal))
+                {
+                    queryParams.Add($"gender={genderVal}");
+                }
+            }
+
+            string search = TxtSearch.Text.Trim();
+            if (!string.IsNullOrEmpty(search))
+            {
+                queryParams.Add($"search={Uri.EscapeDataString(search)}");
+            }
+
+            string lang = TxtLanguage.Text.Trim();
+            if (!string.IsNullOrEmpty(lang))
+            {
+                queryParams.Add($"language={Uri.EscapeDataString(lang)}");
+            }
+
+            string url = $"https://api.ai84.pro/v1/shared-voices?{string.Join("&", queryParams)}";
+
+            using var request = new HttpRequestMessage(HttpMethod.Get, url);
+            request.Headers.Add("xi-api-key", _apiKey);
+
+            var response = await _httpClient.SendAsync(request);
+            if (response.IsSuccessStatusCode)
+            {
+                string json = await response.Content.ReadAsStringAsync();
+                var result = JsonSerializer.Deserialize<SharedVoicesResponse>(json, new JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true
+                });
+
+                if (result != null && result.voices != null)
+                {
+                    _hasMore = result.has_more;
+                    TxtPageIndex.Text = $"Trang {_currentPage + 1}";
+                    BtnPrevPage.IsEnabled = _currentPage > 0;
+                    BtnNextPage.IsEnabled = _hasMore;
+
+                    var voiceModels = result.voices.Select(v => new VoiceModel
+                    {
+                        VoiceId = v.voice_id,
+                        Name = v.name,
+                        Category = string.IsNullOrWhiteSpace(v.category) ? "ElevenLabs" : v.category,
+                        Gender = string.IsNullOrWhiteSpace(v.gender) ? "Unspecified" : v.gender,
+                        Language = string.IsNullOrWhiteSpace(v.language) ? "Global" : v.language,
+                        Description = string.IsNullOrWhiteSpace(v.description) ? $"Voice ID: {v.voice_id}" : v.description
+                    }).ToList();
+
+                    // If user searched a custom ID not in list, add it as fallback
+                    if (voiceModels.Count == 0 && !string.IsNullOrWhiteSpace(search))
+                    {
+                        voiceModels.Add(new VoiceModel
+                        {
+                            VoiceId = search,
+                            Name = search,
+                            Category = "Tùy chọn",
+                            Gender = "Auto",
+                            Language = "Custom",
+                            Description = $"Giọng đọc tùy chỉnh nhập theo tên/ID '{search}'"
+                        });
+                    }
+
+                    LstVoices.ItemsSource = voiceModels;
+
+                    if (voiceModels.Count == 0)
+                    {
+                        OverlayStatus.Visibility = Visibility.Visible;
+                        ProgressLoading.IsActive = false;
+                        ProgressLoading.Visibility = Visibility.Collapsed;
+                        TxtStatusText.Text = "Không tìm thấy giọng đọc nào phù hợp với bộ lọc.";
+                    }
+                    else
+                    {
+                        OverlayStatus.Visibility = Visibility.Collapsed;
+                    }
+                }
+            }
+            else
+            {
+                string errorMsg = await response.Content.ReadAsStringAsync();
+                OverlayStatus.Visibility = Visibility.Visible;
+                ProgressLoading.IsActive = false;
+                ProgressLoading.Visibility = Visibility.Collapsed;
+                TxtStatusText.Text = $"⚠️ Lỗi kết nối AI84 (Mã {(int)response.StatusCode}):\n{errorMsg}";
+            }
+        }
+        catch (Exception ex)
+        {
+            OverlayStatus.Visibility = Visibility.Visible;
+            ProgressLoading.IsActive = false;
+            ProgressLoading.Visibility = Visibility.Collapsed;
+            TxtStatusText.Text = $"⚠️ Lỗi phát sinh khi tải giọng đọc:\n{ex.Message}";
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async void Filter_Changed(object sender, SelectionChangedEventArgs e)
+    {
+        if (IsLoaded)
+        {
+            _currentPage = 0;
+            await LoadVoicesAsync();
+        }
+    }
+
+    private async void ComboPageSize_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (IsLoaded)
+        {
+            _currentPage = 0;
+            await LoadVoicesAsync();
+        }
+    }
+
+    private async void BtnPrevPage_Click(object sender, RoutedEventArgs e)
+    {
+        if (_currentPage > 0)
         {
             _currentPage--;
-            ApplyFilterAndPagination();
+            await LoadVoicesAsync();
         }
     }
 
-    private void BtnNextPage_Click(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
+    private async void BtnNextPage_Click(object sender, RoutedEventArgs e)
     {
-        _currentPage++;
-        ApplyFilterAndPagination();
+        if (_hasMore)
+        {
+            _currentPage++;
+            await LoadVoicesAsync();
+        }
+    }
+
+    private async void FilterInput_KeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        if (e.Key == Windows.System.VirtualKey.Enter)
+        {
+            _currentPage = 0;
+            await LoadVoicesAsync();
+        }
     }
 
     private void LstVoices_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -123,6 +302,15 @@ public sealed partial class VoiceSelectorDialog : ContentDialog
         if (LstVoices.SelectedItem is VoiceModel voice)
         {
             SelectedVoiceId = voice.VoiceId;
+            SelectedVoice = new SharedVoiceInfo
+            {
+                voice_id = voice.VoiceId,
+                name = voice.Name,
+                category = voice.Category,
+                gender = voice.Gender,
+                language = voice.Language,
+                description = voice.Description
+            };
             if (TxtSelectedVoiceId != null) TxtSelectedVoiceId.Text = $"{voice.Name} ({voice.VoiceId})";
         }
     }

@@ -58,6 +58,7 @@ public partial class App : Microsoft.UI.Xaml.Application
                     var logger = sp.GetRequiredService<ILogService>();
                     return new BrowserService(msg => logger.Info(LogCategory.Pipeline, msg));
                 });
+                services.AddSingleton<IBrowserService>(sp => sp.GetRequiredService<BrowserService>());
 
                 services.AddSingleton<LicenseService>();
                 services.AddSingleton<ChatGptService>();

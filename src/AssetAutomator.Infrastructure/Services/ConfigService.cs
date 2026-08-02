@@ -82,6 +82,7 @@ namespace AssetAutomator.Infrastructure.Services
                 settings.ImageApiKey = envImageKey.Trim();
 
             _currentSettings = settings;
+            AutomationTask.BaseOutputsDirProvider = () => _currentSettings.OutputsDir;
             SaveSettingsImpl(settings);
 
             return settings;

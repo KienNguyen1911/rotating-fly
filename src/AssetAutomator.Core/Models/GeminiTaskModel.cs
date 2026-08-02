@@ -73,11 +73,37 @@ namespace AssetAutomator.Core.Models
             set { if (_step5Status != value) { _step5Status = value; OnPropertyChanged(); OnPropertyChanged(nameof(ProgressPercent)); OnPropertyChanged(nameof(ProgressText)); OnPropertyChanged(nameof(ActiveStep)); } }
         }
 
-        public string Step1Logs { get; set; } = "";
-        public string Step2Logs { get; set; } = "";
-        public string Step3Logs { get; set; } = "";
-        public string Step4Logs { get; set; } = "";
-        public string Step5Logs { get; set; } = "";
+        private string _step1Logs = "";
+        private string _step2Logs = "";
+        private string _step3Logs = "";
+        private string _step4Logs = "";
+        private string _step5Logs = "";
+
+        public string Step1Logs
+        {
+            get => _step1Logs;
+            set { if (_step1Logs != value) { _step1Logs = value; OnPropertyChanged(); } }
+        }
+        public string Step2Logs
+        {
+            get => _step2Logs;
+            set { if (_step2Logs != value) { _step2Logs = value; OnPropertyChanged(); } }
+        }
+        public string Step3Logs
+        {
+            get => _step3Logs;
+            set { if (_step3Logs != value) { _step3Logs = value; OnPropertyChanged(); } }
+        }
+        public string Step4Logs
+        {
+            get => _step4Logs;
+            set { if (_step4Logs != value) { _step4Logs = value; OnPropertyChanged(); } }
+        }
+        public string Step5Logs
+        {
+            get => _step5Logs;
+            set { if (_step5Logs != value) { _step5Logs = value; OnPropertyChanged(); } }
+        }
 
         public bool IsSelected
         {

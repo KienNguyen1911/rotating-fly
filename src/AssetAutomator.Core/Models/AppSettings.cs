@@ -6,6 +6,7 @@ namespace AssetAutomator.Core.Models
     /// </summary>
     public class AppSettings
     {
+        public string ApiKey { get; set; } = string.Empty;
         public string Ai84ApiKey { get; set; } = string.Empty;
         public string ImageApiUrl { get; set; } = "http://localhost:8765";
         public string ImageApiKey { get; set; } = "chatgpt2api";

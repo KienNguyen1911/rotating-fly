@@ -1,11 +1,15 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Text.Json;
+using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using AssetAutomator.Core.Interfaces;
 using AssetAutomator.Core.Models;
 using Microsoft.UI.Xaml.Controls;
+using Windows.Storage;
 using Windows.Storage.Pickers;
 using WinRT.Interop;
 
@@ -14,6 +18,7 @@ namespace AssetAutomator.WinUI.ViewModels;
 public partial class SettingsViewModel : ObservableObject
 {
     private readonly IConfigService? _configService;
+    public event EventHandler? SettingsImported;
 
     [ObservableProperty]
     private string _apiKey = string.Empty;
@@ -64,7 +69,7 @@ public partial class SettingsViewModel : ObservableObject
         if (_configService != null)
         {
             var settings = _configService.LoadSettings();
-            ApiKey = settings.Ai84ApiKey ?? string.Empty;
+            ApiKey = settings.ApiKey ?? string.Empty;
             Ai84ApiKey = settings.Ai84ApiKey ?? string.Empty;
             ImageApiUrl = settings.ImageApiUrl ?? string.Empty;
             ImageApiKey = settings.ImageApiKey ?? string.Empty;
@@ -82,7 +87,8 @@ public partial class SettingsViewModel : ObservableObject
         if (_configService != null)
         {
             var settings = _configService.LoadSettings();
-            settings.Ai84ApiKey = ApiKey;
+            settings.ApiKey = ApiKey;
+            settings.Ai84ApiKey = Ai84ApiKey;
             settings.OutputsDir = OutputPath;
             settings.MaxConcurrentTasks = MaxConcurrentThreads;
             settings.ImageApiUrl = ImageApiUrl;
@@ -148,15 +154,72 @@ public partial class SettingsViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private void ExportSettings()
+    private async Task ExportSettingsAsync()
     {
-        StatusMessage = "Chức năng Xuất Cấu Hình (đang phát triển).";
+        try
+        {
+            SaveSettings();
+
+            var savePicker = new FileSavePicker();
+            savePicker.SuggestedStartLocation = PickerLocationId.DocumentsLibrary;
+            savePicker.FileTypeChoices.Add("JSON File", new List<string> { ".json" });
+            savePicker.SuggestedFileName = "appsettings_backup.json";
+
+            var hwnd = WindowNative.GetWindowHandle(App.MainWindowInstance);
+            InitializeWithWindow.Initialize(savePicker, hwnd);
+
+            var file = await savePicker.PickSaveFileAsync();
+            if (file != null)
+            {
+                if (_configService != null)
+                {
+                    var options = new JsonSerializerOptions { WriteIndented = true };
+                    string json = JsonSerializer.Serialize(_configService.CurrentSettings, options);
+                    await FileIO.WriteTextAsync(file, json);
+                    StatusMessage = $"Đã xuất cấu hình hệ thống thành công ra tệp: {file.Name} ✅";
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Lỗi khi xuất cấu hình: {ex.Message} ❌";
+        }
     }
 
     [RelayCommand]
-    private void ImportSettings()
+    private async Task ImportSettingsAsync()
     {
-        StatusMessage = "Chức năng Nhập Cấu Hình (đang phát triển).";
+        try
+        {
+            var openPicker = new FileOpenPicker();
+            openPicker.SuggestedStartLocation = PickerLocationId.DocumentsLibrary;
+            openPicker.FileTypeFilter.Add(".json");
+
+            var hwnd = WindowNative.GetWindowHandle(App.MainWindowInstance);
+            InitializeWithWindow.Initialize(openPicker, hwnd);
+
+            var file = await openPicker.PickSingleFileAsync();
+            if (file != null)
+            {
+                string json = await FileIO.ReadTextAsync(file);
+                var imported = JsonSerializer.Deserialize<AppSettings>(json);
+                if (imported != null && _configService != null)
+                {
+                    _configService.SaveSettings(imported);
+                    LoadSettings();
+                    SettingsImported?.Invoke(this, EventArgs.Empty);
+                    StatusMessage = $"Đã nhập cấu hình từ tệp {file.Name} thành công! ✅";
+                }
+                else
+                {
+                    StatusMessage = "Tệp cấu hình không hợp lệ hoặc rỗng. ❌";
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Lỗi khi nhập cấu hình: {ex.Message} ❌";
+        }
     }
 
     [RelayCommand]
@@ -166,8 +229,35 @@ public partial class SettingsViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private void CheckAi84Key()
+    private async Task CheckAi84KeyAsync()
     {
-        StatusMessage = $"Kiểm tra AI84 Key: {(string.IsNullOrEmpty(Ai84ApiKey) ? "(chưa nhập key)" : $"Key dài {Ai84ApiKey.Length} ký tự ✓")}";
+        string key = Ai84ApiKey.Trim();
+        if (string.IsNullOrEmpty(key))
+        {
+            StatusMessage = "Vui lòng nhập AI84 API Key trước khi kiểm tra.";
+            return;
+        }
+
+        StatusMessage = "Đang kiểm tra AI84 API Key...";
+        try
+        {
+            using var client = new System.Net.Http.HttpClient();
+            using var request = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Get, "https://api.ai84.pro/v1/shared-voices?page_size=1");
+            request.Headers.Add("xi-api-key", key);
+
+            var response = await client.SendAsync(request);
+            if (response.IsSuccessStatusCode)
+            {
+                StatusMessage = "AI84 API Key hợp lệ và hoạt động chính xác! ✅";
+            }
+            else
+            {
+                StatusMessage = $"AI84 API Key không hợp lệ (Mã: {(int)response.StatusCode} {response.ReasonPhrase}) ❌";
+            }
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Lỗi kết nối tới AI84 API: {ex.Message} ❌";
+        }
     }
 }

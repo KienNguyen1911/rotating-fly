@@ -38,19 +38,6 @@
                        VerticalAlignment="Center"
                        FontSize="14"
                        FontWeight="SemiBold" />
-            <StackPanel Grid.Column="2"
-                        Orientation="Horizontal"
-                        Spacing="6"
-                        VerticalAlignment="Center"
-                        Margin="0,0,160,0">
-                <!-- D2: Compact icon-only Logs drawer toggle (tooltip explains full label) -->
-                <Button x:Name="BtnToggleSidebar" Click="BtnToggleSidebar_Click"
-                        ToolTipService.ToolTip="Mở / đóng thanh Log"
-                        Width="32" Height="32" Padding="0"
-                        Style="{StaticResource HeaderPillButton}">
-                    <FontIcon Glyph="&#xE9D9;" FontSize="13" />
-                </Button>
-            </StackPanel>
         </Grid>
 
         <!-- NavigationView layout (WinUI 3 Gallery style) -->
@@ -103,72 +90,5 @@
 
             <Frame x:Name="ContentFrame" />
         </NavigationView>
-
-        <!--
-          D2 — Sidebar drawer overlay (slides from the right, draggable resize handle).
-          Sits in Row 1 alongside NavigationView. When closed, the entire panel is
-          Collapsed + translated off-screen so it does not interact with input.
-        -->
-        <Grid x:Name="SidebarDrawerOverlay"
-              Grid.Row="1"
-              HorizontalAlignment="Stretch"
-              VerticalAlignment="Stretch"
-              Visibility="Collapsed">
-            <Grid x:Name="SidebarDrawer"
-                  HorizontalAlignment="Right"
-                  Width="{x:Bind Sidebar.DrawerWidth, Mode=OneWay}"
-                  Background="{ThemeResource LayerFillColorDefaultBrush}"
-                  BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                  BorderThickness="1,0,0,0">
-                <Grid.RenderTransform>
-                    <TranslateTransform x:Name="SidebarTranslate" />
-                </Grid.RenderTransform>
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="*" />
-                </Grid.RowDefinitions>
-
-                <!-- Header: title + close button -->
-                <Grid Grid.Row="0" Padding="16,12" ColumnSpacing="8">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-                    <TextBlock Grid.Column="0"
-                               Text="{x:Bind Sidebar.Title, Mode=OneWay}"
-                               FontWeight="SemiBold"
-                               FontSize="14"
-                               VerticalAlignment="Center" />
-                    <Button Grid.Column="1"
-                            x:Name="BtnCloseSidebar"
-                            Click="BtnCloseSidebar_Click"
-                            Style="{StaticResource RoundCloseButton}"
-                            Content="✕"
-                            ToolTipService.ToolTip="Đóng thanh log" />
-                </Grid>
-
-                <!-- Body: log viewer wrapped in a scrollable container -->
-                <ScrollViewer Grid.Row="1"
-                              Margin="8,0,8,8"
-                              VerticalScrollBarVisibility="Auto"
-                              HorizontalScrollBarVisibility="Auto">
-                    <TextBlock Text="{x:Bind Sidebar.Logs, Mode=OneWay}"
-                               FontFamily="Consolas"
-                               FontSize="11"
-                               TextWrapping="NoWrap" />
-                </ScrollViewer>
-
-                <!-- Drag handle (resizer) — overlaid on the left edge of the drawer -->
-                <controls:ResizableDragHandle x:Name="SidebarDragHandle"
-                        Width="6"
-                        HorizontalAlignment="Left"
-                        Background="{ThemeResource CardStrokeColorDefaultBrush}"
-                        PointerPressed="SidebarDragHandle_PointerPressed"
-                        PointerMoved="SidebarDragHandle_PointerMoved"
-                        PointerReleased="SidebarDragHandle_PointerReleased"
-                        PointerEntered="SidebarDragHandle_PointerEntered"
-                        PointerExited="SidebarDragHandle_PointerExited" />
-            </Grid>
-        </Grid>
     </Grid>
 </Window>

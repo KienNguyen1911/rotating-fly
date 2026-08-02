@@ -19,29 +19,14 @@ namespace AssetAutomator.WinUI;
 
 public sealed partial class MainWindow : Window
 {
-    public SidebarViewModel Sidebar { get; }
-
-    private bool _isDraggingSidebar;
-    private double _dragStartX;
-    private double _dragStartWidth;
-
     public MainWindow()
     {
-        Sidebar = App.Services.GetRequiredService<SidebarViewModel>();
         InitializeComponent();
         SetSize();
         ExtendIntoTitleBar();
 
         NavView.SelectedItem = NavView.MenuItems[0];
         ContentFrame.Navigate(typeof(TasksPage));
-
-        Sidebar.PropertyChanged += (_, e) =>
-        {
-            if (e.PropertyName == nameof(SidebarViewModel.IsOpen))
-            {
-                UpdateSidebarVisibility();
-            }
-        };
     }
 
     private void SetSize()
@@ -183,109 +168,6 @@ public sealed partial class MainWindow : Window
             // network failures, etc.
         }
         return null;
-    }
-
-    // ─────────────────────────────────────────────────────
-    //  D2 — Sidebar drawer (drag-handle, slide animation)
-    // ─────────────────────────────────────────────────────
-
-    private void BtnToggleSidebar_Click(object sender, RoutedEventArgs e)
-    {
-        Sidebar.Toggle();
-    }
-
-    private void BtnCloseSidebar_Click(object sender, RoutedEventArgs e)
-    {
-        Sidebar.Close();
-    }
-
-    private void UpdateSidebarVisibility()
-    {
-        if (Sidebar.IsOpen)
-        {
-            // Slide in: bring visibility on, then animate X from +DrawerWidth to 0.
-            SidebarDrawerOverlay.Visibility = Visibility.Visible;
-            SidebarTranslate.X = Sidebar.DrawerWidth;
-            var storyboard = new Storyboard();
-            var animation = new DoubleAnimation
-            {
-                From = Sidebar.DrawerWidth,
-                To = 0,
-                Duration = new Duration(TimeSpan.FromMilliseconds(220)),
-                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
-            };
-            Storyboard.SetTarget(animation, SidebarTranslate);
-            Storyboard.SetTargetProperty(animation, "X");
-            storyboard.Children.Add(animation);
-            storyboard.Begin();
-        }
-        else
-        {
-            // Slide out: animate X from 0 to +DrawerWidth, then hide.
-            var storyboard = new Storyboard();
-            double currentDrawerWidth = Sidebar.DrawerWidth;
-            var animation = new DoubleAnimation
-            {
-                From = 0,
-                To = currentDrawerWidth,
-                Duration = new Duration(TimeSpan.FromMilliseconds(180)),
-                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseIn }
-            };
-            Storyboard.SetTarget(animation, SidebarTranslate);
-            Storyboard.SetTargetProperty(animation, "X");
-            storyboard.Children.Add(animation);
-            storyboard.Completed += (_, _) => SidebarDrawerOverlay.Visibility = Visibility.Collapsed;
-            storyboard.Begin();
-        }
-    }
-
-    private void SidebarDragHandle_PointerPressed(object sender, PointerRoutedEventArgs e)
-    {
-        var pp = e.GetCurrentPoint(SidebarDrawer);
-        if (!pp.Properties.IsLeftButtonPressed) return;
-        _isDraggingSidebar = true;
-        _dragStartX = e.GetCurrentPoint(RootGrid).Position.X;
-        _dragStartWidth = Sidebar.DrawerWidth;
-        SidebarDragHandle.CapturePointer(e.Pointer);
-        e.Handled = true;
-    }
-
-    private void SidebarDragHandle_PointerMoved(object sender, PointerRoutedEventArgs e)
-    {
-        if (!_isDraggingSidebar) return;
-
-        double currentX = e.GetCurrentPoint(RootGrid).Position.X;
-        double delta = _dragStartX - currentX; // dragging left → width grows
-        double newWidth = _dragStartWidth + delta;
-
-        double maxWidth = RootGrid.ActualWidth * SidebarViewModel.MaxWidthRatio;
-        if (maxWidth < SidebarViewModel.MinWidth) maxWidth = SidebarViewModel.MinWidth;
-        newWidth = Math.Max(SidebarViewModel.MinWidth, Math.Min(newWidth, maxWidth));
-
-        Sidebar.DrawerWidth = newWidth;
-    }
-
-    private void SidebarDragHandle_PointerReleased(object sender, PointerRoutedEventArgs e)
-    {
-        if (!_isDraggingSidebar) return;
-        _isDraggingSidebar = false;
-        SidebarDragHandle.ReleasePointerCapture(e.Pointer);
-        e.Handled = true;
-    }
-
-    private void SidebarDragHandle_PointerEntered(object sender, PointerRoutedEventArgs e)
-    {
-        // The ResizableDragHandle subclass sets the resize cursor via ProtectedCursor.
-        // Nothing to do here; the handler exists so the XAML can hook PointerEntered.
-    }
-
-    private void SidebarDragHandle_PointerExited(object sender, PointerRoutedEventArgs e)
-    {
-        // Reset cursor when the pointer leaves the handle (and we're not currently dragging).
-        if (!_isDraggingSidebar && sender is Controls.ResizableDragHandle handle)
-        {
-            handle.ResetCursor();
-        }
     }
 
     private void NavView_SelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
