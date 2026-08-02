@@ -15,6 +15,7 @@ public sealed partial class MainWindow : Window
         InitializeComponent();
         SetSize();
         ExtendIntoTitleBar();
+
         NavView.SelectedItem = NavView.MenuItems[0];
         ContentFrame.Navigate(typeof(TasksPage));
     }

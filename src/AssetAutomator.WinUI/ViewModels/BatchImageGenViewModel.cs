@@ -53,6 +53,20 @@ public partial class BatchImageGenViewModel : ObservableObject
         OnPropertyChanged(nameof(EditorVisibility));
     }
 
+    [ObservableProperty]
+    private bool _isTableViewVisible = false;
+
+    public Microsoft.UI.Xaml.Visibility CardGridVisibility => IsTableViewVisible ? Microsoft.UI.Xaml.Visibility.Collapsed : Microsoft.UI.Xaml.Visibility.Visible;
+    public Microsoft.UI.Xaml.Visibility TableViewVisibility => IsTableViewVisible ? Microsoft.UI.Xaml.Visibility.Visible : Microsoft.UI.Xaml.Visibility.Collapsed;
+    public string ViewToggleText => IsTableViewVisible ? "🖼️ Cards Grid View" : "📋 Table Queue View";
+
+    partial void OnIsTableViewVisibleChanged(bool value)
+    {
+        OnPropertyChanged(nameof(CardGridVisibility));
+        OnPropertyChanged(nameof(TableViewVisibility));
+        OnPropertyChanged(nameof(ViewToggleText));
+    }
+
     // Editor View properties
     [ObservableProperty]
     private string _projectTitle = "Bedtime Psychology";
@@ -166,15 +180,22 @@ public partial class BatchImageGenViewModel : ObservableObject
     [RelayCommand]
     public async Task LoadProjectsListAsync()
     {
-        if (_batchProjectService != null)
+        if (_batchProjectService == null) return;
+
+        try
         {
             ProjectsStoragePath = _batchProjectService.GetProjectsBaseDirectory();
             var list = await _batchProjectService.GetAllProjectsAsync();
+
             Projects.Clear();
             foreach (var proj in list)
             {
                 Projects.Add(proj);
             }
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[LoadProjectsListAsync] Failed: {ex.Message}");
         }
     }
 
@@ -248,6 +269,81 @@ public partial class BatchImageGenViewModel : ObservableObject
         IsEditorVisible = true;
 
         await SaveCurrentProjectStateAsync();
+    }
+
+    [RelayCommand]
+    public void ToggleView()
+    {
+        IsTableViewVisible = !IsTableViewVisible;
+    }
+
+    [RelayCommand]
+    public void OpenFlowProjectUrl()
+    {
+        string? url = ActiveProject?.FlowProjectUrl;
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            var item = BatchImageItems.FirstOrDefault(i => !string.IsNullOrWhiteSpace(i.FlowProjectUrl));
+            url = item?.FlowProjectUrl;
+        }
+
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            url = "https://labs.google/fx/tools/flow";
+        }
+
+        try
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = url,
+                UseShellExecute = true
+            });
+        }
+        catch { }
+    }
+
+    [RelayCommand]
+    public async Task RegenerateSingleItemAsync(BatchImageItem? item)
+    {
+        if (item == null || IsGenerating) return;
+
+        item.Status = "Waiting";
+        item.ErrorMessage = string.Empty;
+        item.ImagePath = string.Empty;
+
+        string provider = SelectedProvider;
+        string serverUrl = provider == "flow_local"
+            ? "http://127.0.0.1:8787/v1"
+            : (_configService?.CurrentSettings.ImageApiUrl ?? "http://127.0.0.1:8765");
+        string apiKey = provider == "flow_local"
+            ? "flow-local-key"
+            : (_configService?.CurrentSettings.ImageApiKey ?? string.Empty);
+
+        string outputDir = OutputDir;
+        if (string.IsNullOrWhiteSpace(outputDir))
+        {
+            outputDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Output", "BatchImages");
+            OutputDir = outputDir;
+        }
+        Directory.CreateDirectory(outputDir);
+
+        if (_batchImageGenService != null)
+        {
+            await _batchImageGenService.ProcessSingleImageItemAsync(
+                item,
+                serverUrl,
+                apiKey,
+                _batchRefImages,
+                outputDir
+            );
+        }
+
+        UpdateProgressUI();
+        if (ActiveProject != null)
+        {
+            await SaveCurrentProjectStateAsync();
+        }
     }
 
     [RelayCommand]

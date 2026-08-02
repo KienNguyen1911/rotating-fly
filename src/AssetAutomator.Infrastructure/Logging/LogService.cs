@@ -42,8 +42,15 @@ namespace AssetAutomator.Infrastructure.Logging
             // 2. Write to Trace for DebugView / VS Output
             Trace.WriteLine(entry.ToString());
 
-            // 3. Fire UI event
-            OnLogEntry?.Invoke(entry);
+            // 3. Fire UI event (defensive: don't let handler exceptions crash the producer)
+            try
+            {
+                OnLogEntry?.Invoke(entry);
+            }
+            catch (Exception ex)
+            {
+                Trace.WriteLine($"[LogService] OnLogEntry handler threw: {ex.Message}");
+            }
         }
 
         public void Info(LogCategory category, string message, string? source = null)

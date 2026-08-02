@@ -1,6 +1,6 @@
 # WinUI 3 Port — Phân tích khoảng trống & Kế hoạch bổ sung
 
-> **Trạng thái:** ✅ **Phase A (Sprint 1 & 2) & Phase B Start (Sprint 3) Hoàn thành 100%**. Projects Dashboard, BatchImageGenViewModel, routing & responsive card grid đã được tích hợp và build 0 lỗi.
+> **Trạng thái:** ✅ **Phase A (Sprint 1 & 2)**, **Phase B (Sprint 3, 4, 5)** hoàn thành 100%. Sprint 5 vừa hoàn thành: Card Grid với overlay glass + aspect-ratio-driven height (`AspectRatioHeightConverter`), Fallback Table View 9-cột, Progress bar + 4 header buttons (Save / Google Flow Web / View Toggle / Open Folder), full set của Converters (`YoutubeUrlConverter`, `HexToBrushConverter`, `NodeStatusToBrushConverter`, `AspectRatioHeightConverter`, `StringToImageSourceConverter`, `StepStatusToBrushConverter`, `BoolToVisibilityConverter`). Build 0 errors.
 > **Mục đích:** So sánh chi tiết UI giữa WPF (production, đầy đủ) và WinUI 3 (skeleton, đang port) cho từng tab/dialog, đánh dấu các control/feature còn thiếu, và đề xuất thứ tự bổ sung.
 
 ---

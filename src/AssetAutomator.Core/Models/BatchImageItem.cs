@@ -153,6 +153,7 @@ namespace AssetAutomator.Core.Models
             set { _finishedAt = value; OnPropertyChanged(); }
         }
 
+        public string IndexFormatted => Index.ToString();
         public string CreatedTimeFormatted => EnqueuedAt.ToString("HH:mm:ss");
         public string FinishedTimeFormatted => FinishedAt?.ToString("HH:mm:ss") ?? string.Empty;
 

@@ -93,32 +93,30 @@ After Phase A+B+C (~6 sprints), WinUI 3 reaches ~95% feature parity with WPF and
 
 ---
 
-## Sprint 5 (40h) — Phase B finish + Phase C start
+## Sprint 5 (40h) — Phase B finish + Phase C start — ✅ COMPLETED
 
-| ID | Task | Tab | Effort |
-|---|---|---|---|
-| B8 | Build Card Grid view (ItemsControl + UniformGrid 2 cols + DataTemplate with overlay) | Batch | 16h |
-| B9 | Build Fallback Table View (DataGrid 9 columns) | Batch | 4h |
-| B10 | Add Progress bar + status text + 4 header buttons | Batch | 2h |
-| B11 | Port Converters (YoutubeUrlConverter, HexToBrushConverter, NodeStatusToBrushConverter, AspectRatioHeightConverter) | Global | 4.5h |
-| **Total** | | | **26.5h** |
+| ID | Task | Tab | Effort | Status | Owner |
+|---|---|---|---|---|---|
+| B8 | Build Card Grid view (ItemsControl + ItemsWrapGrid 360px + DataTemplate with overlay, aspect-ratio-driven height via `AspectRatioHeightConverter`) | Batch | 16h | ✅ Done | AI Assistant |
+| B9 | Build Fallback Table View (ListView 9 columns) | Batch | 4h | ✅ Done | AI Assistant |
+| B10 | Add Progress bar + status text + 4 header buttons (Save, Google Flow Web, View Toggle, Open Folder) | Batch | 2h | ✅ Done | AI Assistant |
+| B11 | Port Converters (YoutubeUrlConverter, HexToBrushConverter, NodeStatusToBrushConverter, AspectRatioHeightConverter, StringToImageSourceConverter, StepStatusToBrushConverter, BoolToVisibilityConverter) | Global | 4.5h | ✅ Done | AI Assistant |
+| **Total** | | | **26.5h** | **100%** | |
 
 **Buffer:** 13.5h slack.
 
 ---
 
-## Sprint 6 (40h) — Phase C (Gemini AI Creator)
+## Sprint 6 (40h) — Phase C (Gemini AI Creator) — ✅ COMPLETED
 
-| ID | Task | Tab | Effort |
-|---|---|---|---|
-| C1 | Add 6 toolbar buttons | Gemini | 4h |
-| C2 | Build DataGrid 7 columns (Select / Topic / Progress / Scriptwriter badge / Scene Creator badge / Status badge / Actions) | Gemini | 12h |
-| C3 | Build RowDetails popup (4 inner panels, 5 ComboBoxes, 2 TextBoxes, 3 buttons) | Gemini | 16h |
-| C4 | Bind VM properties (VideoDurationMinutes, IsGenerating, ConsoleLogs) | Gemini | 2h |
-| C5 | Add Cancel + ClearLogs buttons | Gemini | 2h |
-| **Total** | | | **36h** |
-
-**Buffer:** 4h slack.
+| ID | Task | Tab | Effort | Status | Owner |
+|---|---|---|---|---|---|
+| C1 | Add 6 toolbar buttons (Add, Delete, Suggest, Refresh Gems, Import Cookies, Run Selected) + VideoDuration NumberBox | Gemini | 4h | ✅ Done | AI Assistant |
+| C2 | Build ListView queue with 7 columns (Select / Topic / Progress / Scriptwriter badge / Scene Creator badge / Status badge / Actions) using shared header Grid + DataTemplate row | Gemini | 12h | ✅ Done | AI Assistant |
+| C3 | Build RowDetails Flyout with 4 inner panels (Scriptwriter gem+model+deep-research / Scene Creator gem+model / Voice+Provider+CharacterRef / Topic suggestion + Run/Save/Open/Delete actions) | Gemini | 16h | ✅ Done | AI Assistant |
+| C4 | Bind VM properties (VideoDurationMinutes NumberBox, IsGenerating ProgressRing, ConsoleLogs ScrollViewer+TextBlock) | Gemini | 2h | ✅ Done | AI Assistant |
+| C5 | Add Cancel (cancels CancellationTokenSource) + ClearLogs buttons | Gemini | 2h | ✅ Done | AI Assistant |
+| **Total** | | | **36h** | **100%** | |
 
 ---
 

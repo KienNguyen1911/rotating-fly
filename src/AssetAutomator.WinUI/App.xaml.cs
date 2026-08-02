@@ -22,6 +22,19 @@ public partial class App : Microsoft.UI.Xaml.Application
     public App()
     {
         InitializeComponent();
+
+        // Defense-in-depth: prevent stray async exceptions from crashing the process.
+        TaskScheduler.UnobservedTaskException += (s, e) =>
+        {
+            System.Diagnostics.Debug.WriteLine($"[UnobservedTaskException] {e.Exception?.Message}");
+            e.SetObserved();
+        };
+
+        AppDomain.CurrentDomain.UnhandledException += (s, e) =>
+        {
+            var ex = e.ExceptionObject as Exception;
+            System.Diagnostics.Debug.WriteLine($"[UnhandledException] {ex?.Message}");
+        };
     }
 
     protected override async void OnLaunched(LaunchActivatedEventArgs args)
@@ -52,6 +65,17 @@ public partial class App : Microsoft.UI.Xaml.Application
                 services.AddSingleton<BatchProjectService>();
                 services.AddSingleton<GeminiApiService>();
                 services.AddSingleton<BatchImageGenService>();
+                services.AddSingleton<Infrastructure.Helpers.PythonServerManager>();
+                services.AddSingleton<YoutubeTopicSuggestionStep>();
+
+                services.AddSingleton<GeminiCreatorService>(sp =>
+                {
+                    var logger = sp.GetRequiredService<ILogService>();
+                    var config = sp.GetRequiredService<IConfigService>();
+                    var geminiApi = sp.GetRequiredService<GeminiApiService>();
+                    var pythonServer = sp.GetRequiredService<Infrastructure.Helpers.PythonServerManager>();
+                    return new GeminiCreatorService(logger, config, geminiApi, pythonServer);
+                });
 
                 // Pipeline Steps
                 services.AddSingleton<VoiceoverGenerationStep>();

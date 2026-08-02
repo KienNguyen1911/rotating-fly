@@ -422,18 +422,21 @@ This is the **largest** piece of work in the entire port.
 
 ---
 
-## Global — Converters
+## Global — Converters ✅ COMPLETED (Sprint 5)
 
-WPF has 4 custom converters that don't exist in WinUI 3 yet:
+WPF had 4 custom converters; **all have been ported to WinUI 3** in Sprint 5 and additionally expanded with 3 helpers for the Batch Image Gen card view:
 
-| Converter | Used for | Effort |
+| Converter | Used for | Status |
 |---|---|---|
-| `YoutubeUrlConverter` | Convert YouTube URL → video ID for display | 1 hour |
-| `HexToBrushConverter` | Convert hex string → Brush | 0.5 hour |
-| `NodeStatusToBrushConverter` | Map pipeline status → color Brush | 1 hour |
-| `AspectRatioHeightConverter` | Multi-binding ActualWidth × AspectRatio → Border.Height | 2 hours |
+| `YoutubeUrlConverter` | Convert YouTube URL → video ID for display | ✅ Done (`Converters/YoutubeUrlConverter.cs`) |
+| `HexToBrushConverter` | Convert hex string → Brush | ✅ Done (in `NodeStatusToBrushConverter.cs`) |
+| `NodeStatusToBrushConverter` | Map pipeline status (`NodeStatus` enum + string) → color Brush | ✅ Done (`Converters/NodeStatusToBrushConverter.cs`) |
+| `AspectRatioHeightConverter` | Aspect-ratio string + width parameter → calculated height | ✅ Done (`Converters/AspectRatioHeightConverter.cs`) |
+| `StringToImageSourceConverter` | String file path → `BitmapImage` for `Image.Source` (WinUI 3 lacks implicit coercion) | ✅ Done (`Converters/StringToImageSourceConverter.cs`) |
+| `StepStatusToBrushConverter` | Step status string (Pending/Running/Done/Failed) → semantic Brush | ✅ Done (`Converters/StepStatusToBrushConverter.cs`) |
+| `BoolToVisibilityConverter` | Bool → `Visibility` for cards/empty-state toggling | ✅ Done (`Converters/BoolToVisibilityConverter.cs`) |
 
-**Total converters: ~4.5 hours**
+Wired into `BatchImageGenPage.xaml`: Card Grid uses `AspectRatioHeightConverter` to compute height from the card's aspect ratio, `StringToImageSourceConverter` to load generated images, `NodeStatusToBrushConverter` to color the status badge.
 
 ---
 

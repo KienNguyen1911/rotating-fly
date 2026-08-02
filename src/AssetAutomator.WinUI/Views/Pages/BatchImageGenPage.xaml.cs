@@ -323,6 +323,67 @@ public sealed partial class BatchImageGenPage : Page
         );
     }
 
+    public void BtnOpenFlowProjectUrl_Click(object sender, RoutedEventArgs e)
+    {
+        ViewModel.OpenFlowProjectUrl();
+    }
+
+    public void BtnBatchViewToggle_Click(object sender, RoutedEventArgs e)
+    {
+        ViewModel.ToggleView();
+    }
+
+    public async void BtnCardRegenerate_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement elem && elem.Tag is BatchImageItem item)
+        {
+            await ViewModel.RegenerateSingleItemAsync(item);
+        }
+    }
+
+    public void BtnCardOpenImage_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement elem && elem.Tag is BatchImageItem item && !string.IsNullOrWhiteSpace(item.ImagePath) && File.Exists(item.ImagePath))
+        {
+            try
+            {
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = item.ImagePath,
+                    UseShellExecute = true
+                });
+            }
+            catch { }
+        }
+    }
+
+    public void BtnCardCopyPrompt_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement elem && elem.Tag is BatchImageItem item && !string.IsNullOrWhiteSpace(item.Prompt))
+        {
+            var package = new Windows.ApplicationModel.DataTransfer.DataPackage();
+            package.SetText(item.Prompt);
+            Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(package);
+            _ = ShowNotificationAsync("Đã sao chép", "Đã sao chép prompt vào Clipboard!");
+        }
+    }
+
+    public void CardImage_PointerPressed(object sender, PointerRoutedEventArgs e)
+    {
+        if (sender is FrameworkElement elem && elem.Tag is BatchImageItem item && !string.IsNullOrWhiteSpace(item.ImagePath) && File.Exists(item.ImagePath))
+        {
+            try
+            {
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = item.ImagePath,
+                    UseShellExecute = true
+                });
+            }
+            catch { }
+        }
+    }
+
     private async Task ShowNotificationAsync(string title, string message)
     {
         var dialog = new ContentDialog

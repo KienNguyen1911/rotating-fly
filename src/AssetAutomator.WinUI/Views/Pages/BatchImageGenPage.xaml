@@ -5,7 +5,16 @@
       xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
       xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
       xmlns:models="using:AssetAutomator.Core.Models"
+      xmlns:converters="using:AssetAutomator.WinUI.Converters"
       mc:Ignorable="d">
+
+    <Page.Resources>
+        <converters:AspectRatioHeightConverter x:Key="AspectRatioHeightConverter" />
+        <converters:NodeStatusToBrushConverter x:Key="NodeStatusToBrushConverter" />
+        <converters:HexToBrushConverter x:Key="HexToBrushConverter" />
+        <converters:BoolToVisibilityConverter x:Key="BoolToVisibilityConverter" />
+        <converters:StringToImageSourceConverter x:Key="StringToImageSourceConverter" />
+    </Page.Resources>
 
     <Grid Padding="24">
 
@@ -68,15 +77,14 @@
                 </Grid>
             </Border>
 
-            <!-- Projects Cards Grid -->
+            <!-- Projects Cards Grid (DEBUG: full Grid layout) -->
             <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
                 <ItemsControl ItemsSource="{x:Bind ViewModel.Projects, Mode=OneWay}">
                     <ItemsControl.ItemsPanel>
                         <ItemsPanelTemplate>
-                            <ItemsWrapGrid Orientation="Horizontal" ItemWidth="360" />
+                            <ItemsWrapGrid Orientation="Horizontal" ItemWidth="360" MaximumRowsOrColumns="3" />
                         </ItemsPanelTemplate>
                     </ItemsControl.ItemsPanel>
-
                     <ItemsControl.ItemTemplate>
                         <DataTemplate x:DataType="models:BatchProjectModel">
                             <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
@@ -93,7 +101,6 @@
                                         <RowDefinition Height="Auto" />
                                     </Grid.RowDefinitions>
 
-                                    <!-- Folder Icon & Project Title -->
                                     <Grid Grid.Row="0">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="Auto" />
@@ -118,15 +125,14 @@
                                                        FontSize="16"
                                                        FontWeight="Bold"
                                                        TextTrimming="CharacterEllipsis" />
-                                            <TextBlock Text="{x:Bind CreatedAt.ToString()}"
+                                            <TextBlock Text="{x:Bind CreatedAt, Mode=OneWay}"
                                                        FontSize="11"
                                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                                         </StackPanel>
                                     </Grid>
 
-                                    <!-- Output Path Snippet -->
                                     <Border Grid.Row="1"
-                                            Background="{ThemeResource LayerOnThicknessCardBackgroundFillColorDefaultBrush}"
+                                            Background="#1A1F2A"
                                             CornerRadius="6"
                                             Padding="8,6">
                                         <TextBlock Text="{x:Bind OutputDir}"
@@ -135,27 +141,25 @@
                                                    TextTrimming="CharacterEllipsis" />
                                     </Border>
 
-                                    <!-- Settings Badges -->
                                     <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="8">
-                                        <Border Background="{ThemeResource SystemControlBackgroundListLowBrush}"
+                                        <Border Background="{ThemeResource LayerFillColorDefaultBrush}"
                                                 CornerRadius="4"
                                                 Padding="8,4">
-                                            <TextBlock FontSize="11">
-                                                <Run Text="Tỷ lệ: " Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                                                <Run Text="{x:Bind AspectRatio}" FontWeight="SemiBold" />
-                                            </TextBlock>
+                                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                                <TextBlock Text="Tỷ lệ: " FontSize="11" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                                <TextBlock Text="{x:Bind AspectRatio}" FontSize="11" FontWeight="SemiBold" />
+                                            </StackPanel>
                                         </Border>
-                                        <Border Background="{ThemeResource SystemControlBackgroundListLowBrush}"
+                                        <Border Background="{ThemeResource LayerFillColorDefaultBrush}"
                                                 CornerRadius="4"
                                                 Padding="8,4">
-                                            <TextBlock FontSize="11">
-                                                <Run Text="Engine: " Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                                                <Run Text="{x:Bind Engine}" FontWeight="SemiBold" />
-                                            </TextBlock>
+                                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                                <TextBlock Text="Engine: " FontSize="11" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                                <TextBlock Text="{x:Bind Engine}" FontSize="11" FontWeight="SemiBold" />
+                                            </StackPanel>
                                         </Border>
                                     </StackPanel>
 
-                                    <!-- Action Buttons -->
                                     <Grid Grid.Row="3" ColumnSpacing="8">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
@@ -167,13 +171,13 @@
                                                 HorizontalAlignment="Stretch"
                                                 Style="{StaticResource AccentButtonStyle}"
                                                 FontWeight="Bold"
-                                                Tag="{Binding}"
+                                                Tag="{x:Bind}"
                                                 Click="BtnOpenProject_Click" />
 
                                         <Button Grid.Column="1"
                                                 Content="🗑️ Xóa"
                                                 Width="70"
-                                                Tag="{Binding}"
+                                                Tag="{x:Bind}"
                                                 Click="BtnDeleteProject_Click" />
                                     </Grid>
                                 </Grid>
@@ -232,7 +236,13 @@
 
                     <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
                         <Button Content="💾 Lưu dự án"
+                                Style="{StaticResource AccentButtonStyle}"
                                 Click="BtnSaveProject_Click" />
+                        <Button Content="🌐 Google Flow Web"
+                                Click="BtnOpenFlowProjectUrl_Click"
+                                ToolTipService.ToolTip="Mở dự án này trực tiếp trên Web Google Flow (labs.google)" />
+                        <Button Content="{x:Bind ViewModel.ViewToggleText, Mode=OneWay}"
+                                Click="BtnBatchViewToggle_Click" />
                         <Button Content="📁 Open Folder"
                                 Click="BtnOpenFolder_Click" />
                     </StackPanel>
@@ -481,27 +491,198 @@
                     </StackPanel>
                 </ScrollViewer>
 
-                <!-- Right Main Panel Shell (Sprint 5) -->
-                <Border Grid.Column="2"
-                        Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                        BorderThickness="1"
-                        CornerRadius="12"
-                        Padding="16">
-                    <StackPanel Spacing="12" VerticalAlignment="Center" HorizontalAlignment="Center">
-                        <FontIcon Glyph="&#xE7F4;" FontSize="32" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                        <TextBlock Text="Danh sách Cảnh (Cards Grid / Table Queue)"
-                                   FontSize="14"
-                                   FontWeight="SemiBold"
-                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                   HorizontalAlignment="Center" />
-                        <TextBlock Text="(Lưới hiển thị card ảnh chi tiết sẽ triển khai ở Sprint 5)"
-                                   FontSize="11"
-                                   Foreground="{ThemeResource TextFillColorTertiaryBrush}"
-                                   TextWrapping="Wrap"
-                                   TextAlignment="Center" />
-                    </StackPanel>
-                </Border>
+                <!-- Right Main Panel (Sprint 5: Card Grid View B8 & Fallback Table View B9) -->
+                <Grid Grid.Column="2">
+
+                    <!-- Card Grid View (Main View B8) -->
+                    <ScrollViewer x:Name="ScrollCardGrid"
+                                  Visibility="{x:Bind ViewModel.CardGridVisibility, Mode=OneWay}"
+                                  VerticalScrollBarVisibility="Auto">
+                        <ItemsControl x:Name="ItemsControlBatchCards"
+                                      ItemsSource="{x:Bind ViewModel.BatchImageItems, Mode=OneWay}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <ItemsWrapGrid Orientation="Horizontal" ItemWidth="360" />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="models:BatchImageItem">
+                                    <Border Background="#12141A"
+                                            CornerRadius="12"
+                                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                            BorderThickness="1"
+                                            Margin="0,0,16,16">
+                                        <Grid Height="{x:Bind AspectRatio, Mode=OneWay, Converter={StaticResource AspectRatioHeightConverter}, ConverterParameter=320}">
+                                            <!-- Waiting/Status Placeholder -->
+                                            <Grid Background="#12141A">
+                                                <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="6">
+                                                    <FontIcon Glyph="&#xE8B9;" FontSize="28" Foreground="{ThemeResource TextFillColorSecondaryBrush}" HorizontalAlignment="Center" />
+                                                    <TextBlock Text="{x:Bind Status, Mode=OneWay}"
+                                                               FontSize="12"
+                                                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                               HorizontalAlignment="Center"
+                                                               FontWeight="SemiBold" />
+                                                </StackPanel>
+                                            </Grid>
+
+                                            <!-- Clear Generated Image -->
+                                            <Image Source="{x:Bind ImagePath, Mode=OneWay, Converter={StaticResource StringToImageSourceConverter}}"
+                                                   Stretch="UniformToFill"
+                                                   Tag="{x:Bind}" />
+
+                                            <!-- Glass Overlay Container -->
+                                            <Grid Background="Transparent">
+                                                <Grid.RowDefinitions>
+                                                    <RowDefinition Height="Auto" />
+                                                    <RowDefinition Height="*" />
+                                                    <RowDefinition Height="Auto" />
+                                                </Grid.RowDefinitions>
+
+                                                <!-- Top Bar: Scene Title, Status Badge & Action Buttons -->
+                                                <Grid Grid.Row="0" Margin="10">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="Auto" />
+                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                    </Grid.ColumnDefinitions>
+
+                                                    <!-- Left: Scene Badge & Status Badge -->
+                                                    <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                                        <Border Background="#CC0F172A" CornerRadius="6" Padding="8,4" BorderBrush="#40FFFFFF" BorderThickness="1">
+                                                            <TextBlock Text="{x:Bind SceneTitle, Mode=OneWay}" FontSize="11" FontWeight="Bold" Foreground="#FFFFFF" />
+                                                        </Border>
+                                                        <Border Background="{x:Bind Status, Mode=OneWay, Converter={StaticResource NodeStatusToBrushConverter}}"
+                                                                CornerRadius="6"
+                                                                Padding="7,4"
+                                                                BorderBrush="#30FFFFFF"
+                                                                BorderThickness="1">
+                                                            <TextBlock Text="{x:Bind Status, Mode=OneWay}" FontSize="10" FontWeight="SemiBold" Foreground="#E2E8F0" />
+                                                        </Border>
+                                                    </StackPanel>
+
+                                                    <!-- Right: Quick Action Buttons (Regenerate 🔄, Open 📁, Copy 📋) -->
+                                                    <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                                        <Button Content="🔄"
+                                                                Width="30" Height="30" Padding="0"
+                                                                CornerRadius="15"
+                                                                Tag="{x:Bind}"
+                                                                Click="BtnCardRegenerate_Click"
+                                                                ToolTipService.ToolTip="Tạo lại ảnh cảnh này" />
+                                                        <Button Content="📁"
+                                                                Width="30" Height="30" Padding="0"
+                                                                CornerRadius="15"
+                                                                Tag="{x:Bind}"
+                                                                Click="BtnCardOpenImage_Click"
+                                                                ToolTipService.ToolTip="Mở file ảnh" />
+                                                        <Button Content="📋"
+                                                                Width="30" Height="30" Padding="0"
+                                                                CornerRadius="15"
+                                                                Tag="{x:Bind}"
+                                                                Click="BtnCardCopyPrompt_Click"
+                                                                ToolTipService.ToolTip="Sao chép prompt" />
+                                                    </StackPanel>
+                                                </Grid>
+
+                                                <!-- Bottom Glass Bar: Transcript & Prompt Snippet -->
+                                                <Border Grid.Row="2"
+                                                        Margin="10"
+                                                        Background="#D9090D16"
+                                                        CornerRadius="8"
+                                                        Padding="10,8"
+                                                        BorderBrush="#30FFFFFF"
+                                                        BorderThickness="1">
+                                                    <StackPanel Spacing="3">
+                                                        <TextBlock Text="{x:Bind Transcript, Mode=OneWay}"
+                                                                   FontSize="11"
+                                                                   FontWeight="SemiBold"
+                                                                   Foreground="#FFFFFF"
+                                                                   MaxLines="2"
+                                                                   TextTrimming="CharacterEllipsis" />
+                                                        <TextBlock Text="{x:Bind Prompt, Mode=OneWay}"
+                                                                   FontSize="10"
+                                                                   FontStyle="Italic"
+                                                                   Foreground="#CBD5E1"
+                                                                   MaxLines="2"
+                                                                   TextTrimming="CharacterEllipsis" />
+                                                    </StackPanel>
+                                                </Border>
+                                            </Grid>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+
+                    <!-- Fallback Table Queue View (B9) -->
+                    <Border x:Name="BorderTableView"
+                            Visibility="{x:Bind ViewModel.TableViewVisibility, Mode=OneWay}"
+                            Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                            BorderThickness="1"
+                            CornerRadius="12"
+                            Padding="12">
+                        <ListView x:Name="LviewBatchImageItems"
+                                  ItemsSource="{x:Bind ViewModel.BatchImageItems, Mode=OneWay}"
+                                  SelectionMode="Single">
+                            <ListView.HeaderTemplate>
+                                <DataTemplate>
+                                    <Grid Padding="12,8" Background="{ThemeResource LayerFillColorDefaultBrush}">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="40" />
+                                            <ColumnDefinition Width="80" />
+                                            <ColumnDefinition Width="3*" />
+                                            <ColumnDefinition Width="90" />
+                                            <ColumnDefinition Width="70" />
+                                            <ColumnDefinition Width="65" />
+                                            <ColumnDefinition Width="90" />
+                                            <ColumnDefinition Width="2*" />
+                                            <ColumnDefinition Width="100" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="#" FontWeight="Bold" FontSize="12" />
+                                        <TextBlock Grid.Column="1" Text="Scene" FontWeight="Bold" FontSize="12" />
+                                        <TextBlock Grid.Column="2" Text="Prompt" FontWeight="Bold" FontSize="12" />
+                                        <TextBlock Grid.Column="3" Text="Status" FontWeight="Bold" FontSize="12" />
+                                        <TextBlock Grid.Column="4" Text="Engine" FontWeight="Bold" FontSize="12" />
+                                        <TextBlock Grid.Column="5" Text="Aspect" FontWeight="Bold" FontSize="12" />
+                                        <TextBlock Grid.Column="6" Text="Finished" FontWeight="Bold" FontSize="12" />
+                                        <TextBlock Grid.Column="7" Text="Error / Info" FontWeight="Bold" FontSize="12" />
+                                        <TextBlock Grid.Column="8" Text="Action" FontWeight="Bold" FontSize="12" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ListView.HeaderTemplate>
+                            <ListView.ItemTemplate>
+                                <DataTemplate x:DataType="models:BatchImageItem">
+                                    <Grid Padding="12,8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="40" />
+                                            <ColumnDefinition Width="80" />
+                                            <ColumnDefinition Width="3*" />
+                                            <ColumnDefinition Width="90" />
+                                            <ColumnDefinition Width="70" />
+                                            <ColumnDefinition Width="65" />
+                                            <ColumnDefinition Width="90" />
+                                            <ColumnDefinition Width="2*" />
+                                            <ColumnDefinition Width="100" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="{x:Bind IndexFormatted, Mode=OneWay}" FontSize="12" VerticalAlignment="Center" />
+                                        <TextBlock Grid.Column="1" Text="{x:Bind SceneTitle, Mode=OneWay}" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                        <TextBlock Grid.Column="2" Text="{x:Bind Prompt, Mode=OneWay}" FontSize="11" TextTrimming="CharacterEllipsis" MaxLines="1" VerticalAlignment="Center" />
+                                        <Border Grid.Column="3" Background="{x:Bind Status, Mode=OneWay, Converter={StaticResource NodeStatusToBrushConverter}}" CornerRadius="4" Padding="6,2" HorizontalAlignment="Left" VerticalAlignment="Center">
+                                            <TextBlock Text="{x:Bind Status, Mode=OneWay}" FontSize="11" FontWeight="SemiBold" />
+                                        </Border>
+                                        <TextBlock Grid.Column="4" Text="{x:Bind Engine, Mode=OneWay}" FontSize="11" VerticalAlignment="Center" />
+                                        <TextBlock Grid.Column="5" Text="{x:Bind AspectRatio, Mode=OneWay}" FontSize="11" VerticalAlignment="Center" />
+                                        <TextBlock Grid.Column="6" Text="{x:Bind FinishedTimeFormatted, Mode=OneWay}" FontSize="11" VerticalAlignment="Center" />
+                                        <TextBlock Grid.Column="7" Text="{x:Bind ErrorMessage, Mode=OneWay}" FontSize="11" Foreground="{ThemeResource SystemFillColorCriticalBrush}" TextTrimming="CharacterEllipsis" MaxLines="1" VerticalAlignment="Center" />
+                                        <Button Grid.Column="8" Content="Open Image" FontSize="11" Padding="8,4" Tag="{x:Bind}" Click="BtnCardOpenImage_Click" VerticalAlignment="Center" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ListView.ItemTemplate>
+                        </ListView>
+                    </Border>
+                </Grid>
             </Grid>
         </Grid>
     </Grid>
