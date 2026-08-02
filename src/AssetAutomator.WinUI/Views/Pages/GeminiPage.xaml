@@ -22,6 +22,18 @@
             <Setter Property="CornerRadius" Value="4" />
             <Setter Property="Padding" Value="8,3" />
         </Style>
+
+        <!-- ReadOnly console log style so users can select + Ctrl+C / right-click copy -->
+        <Style x:Key="StepLogTextBoxStyle" TargetType="TextBox">
+            <Setter Property="FontFamily" Value="Consolas" />
+            <Setter Property="FontSize" Value="10" />
+            <Setter Property="TextWrapping" Value="NoWrap" />
+            <Setter Property="IsReadOnly" Value="True" />
+            <Setter Property="AcceptsReturn" Value="True" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Foreground" Value="{ThemeResource TextFillColorPrimaryBrush}" />
+        </Style>
     </Page.Resources>
 
     <Grid Padding="24">
@@ -44,6 +56,20 @@
                 <TextBlock Text="Hàng đợi tác vụ Gemini: chạy nhiều task kịch bản &amp; video song song."
                            Style="{ThemeResource BodyTextBlockStyle}"
                            Opacity="0.7" />
+                <!-- Status bar — mirrors WPF TxtGeminiStatusIcon + TxtGeminiStatus so the
+                     user can see lifecycle messages that only update ViewModel.StatusLog
+                     (not ConsoleLogs, which only receives entries from ILogService). -->
+                <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                    <TextBlock x:Name="TxtGeminiStatusIcon"
+                               Text="💡"
+                               FontSize="13"
+                               VerticalAlignment="Center" />
+                    <TextBlock x:Name="TxtGeminiStatus"
+                               Text="{x:Bind ViewModel.StatusLog, Mode=OneWay}"
+                               FontSize="12"
+                               VerticalAlignment="Center"
+                               TextWrapping="Wrap" />
+                </StackPanel>
             </StackPanel>
 
             <!-- View toggles: bottom console log -->
@@ -262,10 +288,11 @@
 
                                     <!-- 7. Actions -->
                                     <StackPanel Grid.Column="6" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
-                                        <Button Command="{Binding ViewModel.RunSingleTaskCommand, ElementName=LstGeminiTasks}"
-                                                CommandParameter="{x:Bind}"
+                                        <Button Click="BtnRunSingleTask_Click"
+                                                Tag="{x:Bind}"
                                                 ToolTipService.ToolTip="Chạy task này"
-                                                Padding="6,4">
+                                                Padding="6,4"
+                                                IsEnabled="{x:Bind IsRunning, Mode=OneWay, Converter={StaticResource InvertBoolConverter}}">
                                             <FontIcon Glyph="&#xE768;" FontSize="11" />
                                         </Button>
                                         <Button Click="BtnShowRowDetails_Click"
@@ -448,10 +475,8 @@
                                         </Grid>
                                     </Expander.Header>
                                     <ScrollViewer MaxHeight="200" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" Margin="0,4,0,0">
-                                        <TextBlock Text="{x:Bind ViewModel.CurrentStep1Log, Mode=OneWay}"
-                                                   FontFamily="Consolas"
-                                                   FontSize="10"
-                                                   TextWrapping="NoWrap" />
+                                        <TextBox Style="{StaticResource StepLogTextBoxStyle}"
+                                                 Text="{x:Bind ViewModel.CurrentStep1Log, Mode=OneWay}" />
                                     </ScrollViewer>
                                 </Expander>
                             </Border>
@@ -485,10 +510,8 @@
                                         </Grid>
                                     </Expander.Header>
                                     <ScrollViewer MaxHeight="200" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" Margin="0,4,0,0">
-                                        <TextBlock Text="{x:Bind ViewModel.CurrentStep2Log, Mode=OneWay}"
-                                                   FontFamily="Consolas"
-                                                   FontSize="10"
-                                                   TextWrapping="NoWrap" />
+                                        <TextBox Style="{StaticResource StepLogTextBoxStyle}"
+                                                 Text="{x:Bind ViewModel.CurrentStep2Log, Mode=OneWay}" />
                                     </ScrollViewer>
                                 </Expander>
                             </Border>
@@ -522,10 +545,8 @@
                                         </Grid>
                                     </Expander.Header>
                                     <ScrollViewer MaxHeight="200" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" Margin="0,4,0,0">
-                                        <TextBlock Text="{x:Bind ViewModel.CurrentStep3Log, Mode=OneWay}"
-                                                   FontFamily="Consolas"
-                                                   FontSize="10"
-                                                   TextWrapping="NoWrap" />
+                                        <TextBox Style="{StaticResource StepLogTextBoxStyle}"
+                                                 Text="{x:Bind ViewModel.CurrentStep3Log, Mode=OneWay}" />
                                     </ScrollViewer>
                                 </Expander>
                             </Border>
@@ -559,10 +580,8 @@
                                         </Grid>
                                     </Expander.Header>
                                     <ScrollViewer MaxHeight="200" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" Margin="0,4,0,0">
-                                        <TextBlock Text="{x:Bind ViewModel.CurrentStep4Log, Mode=OneWay}"
-                                                   FontFamily="Consolas"
-                                                   FontSize="10"
-                                                   TextWrapping="NoWrap" />
+                                        <TextBox Style="{StaticResource StepLogTextBoxStyle}"
+                                                 Text="{x:Bind ViewModel.CurrentStep4Log, Mode=OneWay}" />
                                     </ScrollViewer>
                                 </Expander>
                             </Border>
@@ -596,10 +615,8 @@
                                         </Grid>
                                     </Expander.Header>
                                     <ScrollViewer MaxHeight="200" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" Margin="0,4,0,0">
-                                        <TextBlock Text="{x:Bind ViewModel.CurrentStep5Log, Mode=OneWay}"
-                                                   FontFamily="Consolas"
-                                                   FontSize="10"
-                                                   TextWrapping="NoWrap" />
+                                        <TextBox Style="{StaticResource StepLogTextBoxStyle}"
+                                                 Text="{x:Bind ViewModel.CurrentStep5Log, Mode=OneWay}" />
                                     </ScrollViewer>
                                 </Expander>
                             </Border>
@@ -665,16 +682,49 @@
                     </StackPanel>
                 </Grid>
 
-                <ScrollViewer Grid.Row="1"
-                              MaxHeight="180"
-                              Margin="0,8,0,0"
-                              VerticalScrollBarVisibility="Auto"
-                              HorizontalScrollBarVisibility="Auto">
-                    <TextBlock Text="{x:Bind ViewModel.ConsoleLogs, Mode=OneWay}"
-                               FontFamily="Consolas"
-                               FontSize="11"
-                               TextWrapping="NoWrap" />
-                </ScrollViewer>
+                <Grid Grid.Row="1" Margin="0,8,0,0">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <!-- Action bar: copy to clipboard + clear + auto-scroll toggle -->
+                    <StackPanel Grid.Row="0"
+                                Orientation="Horizontal"
+                                HorizontalAlignment="Right"
+                                Spacing="6"
+                                Margin="0,0,0,4">
+                        <CheckBox x:Name="ConsoleAutoScrollCheck"
+                                  Content="Auto-scroll"
+                                  IsChecked="True"
+                                  MinWidth="0"
+                                  FontSize="11"/>
+                        <Button x:Name="CopyConsoleLogsButton"
+                                Content="📋 Copy"
+                                FontSize="11"
+                                Padding="8,2"
+                                Click="CopyConsoleLogsButton_Click"
+                                ToolTipService.ToolTip="Copy toàn bộ nội dung console log vào clipboard"/>
+                    </StackPanel>
+
+                    <!-- ReadOnly TextBox so users can select + Ctrl+C / right-click copy -->
+                    <ScrollViewer x:Name="ConsoleLogsScrollViewer"
+                                  Grid.Row="1"
+                                  MaxHeight="180"
+                                  VerticalScrollBarVisibility="Auto"
+                                  HorizontalScrollBarVisibility="Auto">
+                        <TextBox x:Name="ConsoleLogsTextBox"
+                                 Text="{x:Bind ViewModel.ConsoleLogs, Mode=OneWay}"
+                                 FontFamily="Consolas"
+                                 FontSize="11"
+                                 IsReadOnly="True"
+                                 AcceptsReturn="True"
+                                 TextWrapping="NoWrap"
+                                 Background="Transparent"
+                                 BorderThickness="0"
+                                 Foreground="{ThemeResource TextFillColorPrimaryBrush}"/>
+                    </ScrollViewer>
+                </Grid>
             </Grid>
         </Border>
 

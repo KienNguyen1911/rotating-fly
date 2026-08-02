@@ -293,13 +293,28 @@ namespace AssetAutomator.Application.Services
                 var page = await context.NewPageAsync();
                 await page.GotoAsync("https://gemini.google.com");
 
-                // NOTE: The caller (UI code-behind) is responsible for showing a MessageBox
-                // and waiting for user confirmation before calling SyncCookiesFromBrowserContextAsync.
-                // We return the context for the caller to manage.
                 _log.Info(LogCategory.CookieSync, "Chrome opened — waiting for user to complete login.");
 
-                // The caller must handle the interactive wait and call SyncCookiesFromBrowserContext
-                // We'll provide a helper:
+                // Wait until user actually logs in. We poll the cookie store
+                // every second — Playwright Chrome loads cookies from the
+                // profile DB on launch, so __Secure-1PSID will appear as
+                // soon as the user authenticates via Google's login flow.
+                // Without this gate the previous version called
+                // SyncCookiesFromBrowserContextAsync immediately, which
+                // extracted stale cookies (or none) and then CloseAsync()
+                // slammed the browser shut while the user was still typing
+                // their password.
+                bool loggedIn = await WaitForUserLoginAsync(context, onStatus);
+                if (!loggedIn)
+                {
+                    try { await context.CloseAsync(); } catch { }
+                    return (false, "Timed out waiting for user to log in to gemini.google.com.", persistentProfilePath);
+                }
+
+                // Small grace period so the final session cookies are
+                // committed before we read them.
+                await Task.Delay(500);
+
                 var syncService = new GeminiCookieSyncService(msg => _log.Info(LogCategory.CookieSync, msg), _configService, browserService);
                 bool syncOk = await syncService.SyncCookiesFromBrowserContextAsync(context);
                 await context.CloseAsync();
@@ -331,6 +346,56 @@ namespace AssetAutomator.Application.Services
                 _log.Error(LogCategory.CookieSync, $"Playwright login failed: {ex.Message}");
                 return (false, $"Login error: {ex.Message}", null);
             }
+        }
+
+        /// <summary>
+        /// Polls the browser context until the user has actually completed
+        /// login to gemini.google.com (signalled by the presence of the
+        /// <c>__Secure-1PSID</c> cookie). Caps at ~5 minutes so we don't
+        /// wait forever if the user closes the window.
+        /// </summary>
+        private async Task<bool> WaitForUserLoginAsync(
+            Microsoft.Playwright.IBrowserContext context,
+            Action<string>? onStatus)
+        {
+            const int pollIntervalMs = 1000;
+            const int maxWaitMs = 5 * 60 * 1000;
+            int waited = 0;
+
+            onStatus?.Invoke("[LOGIN] ⏳ Đang đợi bạn đăng nhập Gemini trong cửa sổ Chrome...");
+
+            while (waited < maxWaitMs)
+            {
+                await Task.Delay(pollIntervalMs);
+                waited += pollIntervalMs;
+
+                try
+                {
+                    var cookies = await context.CookiesAsync(new[] { "https://gemini.google.com", "https://google.com" });
+                    var psid = cookies.FirstOrDefault(c => c.Name == "__Secure-1PSID");
+                    if (psid != null && !string.IsNullOrWhiteSpace(psid.Value) &&
+                        psid.Value.Length > 20 && !psid.Value.StartsWith("deleted"))
+                    {
+                        onStatus?.Invoke($"[LOGIN] ✅ Phát hiện session đăng nhập Gemini sau {waited / 1000}s — chuẩn bị trích xuất cookies...");
+                        _log.Success(LogCategory.CookieSync,
+                            $"User login detected in browser after {waited / 1000}s (PSID length: {psid.Value.Length}).");
+                        return true;
+                    }
+                }
+                catch
+                {
+                    // Browser may have been closed mid-poll; surface as failure
+                    // only once we hit the overall timeout.
+                }
+
+                // Heartbeat every 15s so user sees we're still waiting.
+                if (waited % 15000 == 0)
+                {
+                    onStatus?.Invoke($"[LOGIN] ⏳ Vẫn đang chờ bạn hoàn tất đăng nhập... ({waited / 1000}s)");
+                }
+            }
+
+            return false;
         }
 
         // ─────────────────────────────────────────────────────

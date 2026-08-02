@@ -179,7 +179,9 @@ namespace AssetAutomator.Infrastructure.Helpers
         {
             _log.Info(LogCategory.PythonServer, "Restarting Gemini Python Server...");
             StopServer();
-            await Task.Delay(300);
+            // Wait long enough for Windows to release the socket (TIME_WAIT).
+            // 1.5s is empirically enough on Win11 for port 8000 in our setup.
+            await Task.Delay(1500);
             var result = await EnsureServerRunningAsync(baseUrl, skipInitialCheck: true);
             if (result.Success)
                 _log.Success(LogCategory.PythonServer, "Server restarted successfully.");
@@ -192,20 +194,120 @@ namespace AssetAutomator.Infrastructure.Helpers
         {
             try
             {
+                // Always start by killing the C#-tracked process tree (the parent
+                // python.exe that launched uvicorn workers).
                 if (_serverProcess != null && !_serverProcess.HasExited)
                 {
-                    _log.Info(LogCategory.PythonServer, $"Killing server process (PID: {_serverProcess.Id})...");
-                    _serverProcess.Kill(entireProcessTree: true);
-                    _serverProcess.WaitForExit(3000);
+                    _log.Info(LogCategory.PythonServer, $"Killing tracked server process (PID: {_serverProcess.Id})...");
+                    try
+                    {
+                        _serverProcess.Kill(entireProcessTree: true);
+                        _serverProcess.WaitForExit(3000);
+                    }
+                    catch (Exception ex)
+                    {
+                        _log.Warning(LogCategory.PythonServer, $"Failed to kill tracked process: {ex.Message}");
+                    }
                     _serverProcess.Dispose();
                     _serverProcess = null;
-                    _log.Success(LogCategory.PythonServer, "Server process killed.");
                 }
+
+                // ── Belt & suspenders: also nuke ANY python.exe process still
+                // listening on port 8000. Without this step, an orphaned child
+                // from a previous session can hold the port and the new
+                // server fails with `address already in use`, leaving us
+                // talking to a stale, unauthenticated server.
+                int port = 8000;
+                if (TryParsePortFromBaseUrl(baseUrl: "http://localhost:8000", out var configuredPort))
+                    port = configuredPort;
+                KillOrphanedListenersOnPort(port);
             }
             catch (Exception ex)
             {
                 _log.Error(LogCategory.PythonServer, $"Error stopping server: {ex.Message}");
             }
+        }
+
+        private void KillOrphanedListenersOnPort(int port)
+        {
+            try
+            {
+                // netstat -ano | findstr :PORT  →  PID list
+                var psi = new ProcessStartInfo
+                {
+                    FileName = "netstat",
+                    Arguments = "-ano -p TCP",
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    CreateNoWindow = true
+                };
+                using var proc = Process.Start(psi);
+                if (proc == null) return;
+                string output = proc.StandardOutput.ReadToEnd();
+                proc.WaitForExit(2000);
+
+                var pids = new HashSet<int>();
+                string needle = $":{port} ";
+                foreach (var line in output.Split('\n'))
+                {
+                    if (!line.Contains(needle)) continue;
+                    // Columns: Proto Local-Address Foreign-Address State PID
+                    var trimmed = line.Trim();
+                    if (trimmed.StartsWith("TCP") == false) continue;
+                    var parts = trimmed.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                    if (parts.Length < 5) continue;
+                    // Only LISTENING sockets matter for "address already in use".
+                    if (!parts[3].Equals("LISTENING", StringComparison.OrdinalIgnoreCase)) continue;
+                    if (int.TryParse(parts[4], out int pid))
+                        pids.Add(pid);
+                }
+
+                foreach (int pid in pids)
+                {
+                    if (pid <= 4) continue; // skip system PIDs (0/4)
+                    try
+                    {
+                        using var p = Process.GetProcessById(pid);
+                        // Only kill python.exe / uvicorn / server.py — never blindly
+                        // kill whatever happens to listen on 8000 (could be a dev tool).
+                        string name = p.ProcessName.ToLowerInvariant();
+                        bool isPythonish = name.Contains("python") || name.Contains("uvicorn");
+                        if (!isPythonish)
+                        {
+                            _log.Debug(LogCategory.PythonServer,
+                                $"Skipping PID {pid} ({p.ProcessName}) on port {port} — not python.exe");
+                            continue;
+                        }
+
+                        _log.Info(LogCategory.PythonServer,
+                            $"Killing orphan listener on port {port}: PID {pid} ({p.ProcessName})");
+                        p.Kill(entireProcessTree: true);
+                        p.WaitForExit(2000);
+                    }
+                    catch (Exception ex)
+                    {
+                        _log.Warning(LogCategory.PythonServer,
+                            $"Failed to kill orphan PID {pid} on port {port}: {ex.Message}");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _log.Warning(LogCategory.PythonServer, $"KillOrphanedListenersOnPort failed: {ex.Message}");
+            }
+        }
+
+        private static bool TryParsePortFromBaseUrl(string baseUrl, out int port)
+        {
+            port = 0;
+            try
+            {
+                var uri = new Uri(baseUrl);
+                port = uri.Port;
+                return port > 0;
+            }
+            catch { return false; }
         }
 
         public (bool IsRunning, int? Pid, string? StartTime) GetProcessInfo()

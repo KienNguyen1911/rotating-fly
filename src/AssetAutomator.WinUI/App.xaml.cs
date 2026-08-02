@@ -88,13 +88,55 @@ public partial class App : Microsoft.UI.Xaml.Application
 
                 // ViewModels
                 services.AddSingleton<ViewModels.SidebarViewModel>();
-                services.AddTransient<ViewModels.TasksViewModel>();
-                services.AddTransient<ViewModels.PoolViewModel>();
-                services.AddTransient<ViewModels.ProfilesViewModel>();
-                services.AddTransient<ViewModels.GeminiViewModel>();
-                services.AddTransient<ViewModels.HistoryViewModel>();
-                services.AddTransient<ViewModels.SettingsViewModel>();
-                services.AddTransient<ViewModels.BatchImageGenViewModel>();
+
+                // Most WinUI ViewModels have nullable default params on their
+                // constructors (legacy pattern). MS.DI silently injects null for
+                // those params even when the service IS registered (see
+                // Microsoft.Extensions.DependencyInjection ActivatorUtilities
+                // behavior + Stack Overflow #60379123). Explicit factories below
+                // force each dependency to be resolved via GetRequiredService.
+                services.AddTransient<ViewModels.TasksViewModel>(sp => new ViewModels.TasksViewModel(
+                    sp.GetRequiredService<PipelineOrchestrator>(),
+                    sp.GetRequiredService<HistoryService>(),
+                    sp.GetRequiredService<ILogService>(),
+                    sp.GetRequiredService<IConfigService>()
+                ));
+                services.AddTransient<ViewModels.PoolViewModel>(sp => new ViewModels.PoolViewModel(
+                    sp.GetRequiredService<ImagePoolService>(),
+                    sp.GetRequiredService<IConfigService>()
+                ));
+                services.AddTransient<ViewModels.ProfilesViewModel>(sp => new ViewModels.ProfilesViewModel(
+                    sp.GetRequiredService<BrowserService>(),
+                    sp.GetRequiredService<IConfigService>(),
+                    sp.GetRequiredService<ILogService>()
+                ));
+                services.AddTransient<ViewModels.HistoryViewModel>(sp => new ViewModels.HistoryViewModel(
+                    sp.GetRequiredService<HistoryService>()
+                ));
+                services.AddTransient<ViewModels.SettingsViewModel>(sp => new ViewModels.SettingsViewModel(
+                    sp.GetRequiredService<IConfigService>()
+                ));
+                services.AddTransient<ViewModels.BatchImageGenViewModel>(sp => new ViewModels.BatchImageGenViewModel(
+                    sp.GetRequiredService<BatchProjectService>(),
+                    sp.GetRequiredService<BatchImageGenService>(),
+                    sp.GetRequiredService<IConfigService>()
+                ));
+
+                // GeminiViewModel needs explicit factory wiring — its constructor
+                // accepts nullable params (legacy pattern) which makes MS.DI inject
+                // null into every dependency. The factory below resolves each
+                // dependency via GetRequiredService so the VM actually gets the
+                // real services instead of silent nulls (see StackOverflow #60379123).
+                services.AddTransient<ViewModels.GeminiViewModel>(sp => new ViewModels.GeminiViewModel(
+                    sp.GetRequiredService<GeminiCreatorService>(),
+                    sp.GetRequiredService<PipelineOrchestrator>(),
+                    sp.GetRequiredService<YoutubeTopicSuggestionStep>(),
+                    sp.GetRequiredService<GeminiApiService>(),
+                    sp.GetRequiredService<Infrastructure.Helpers.PythonServerManager>(),
+                    sp.GetRequiredService<IConfigService>(),
+                    sp.GetRequiredService<ILogService>(),
+                    sp.GetRequiredService<IBrowserService>()
+                ));
 
                 services.AddSingleton<MainWindow>();
             })

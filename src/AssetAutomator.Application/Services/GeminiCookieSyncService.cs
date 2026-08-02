@@ -27,20 +27,77 @@ namespace AssetAutomator.Application.Services
 
         public string GetDefaultCookiesJsonPath()
         {
+            // CRITICAL: cookies.json must live NEXT TO server.py — that's
+            // what `Path(__file__).resolve().parent / "cookies.json"` reads
+            // inside the Python server. Writing anywhere else (e.g. the
+            // bin output folder) silently breaks authentication.
+            //
+            // We resolve by locating server.py first, so even when running
+            // from a build output directory with no Modules/ next to it,
+            // cookies still land where the Python process expects them.
+            string serverScriptDir = FindServerScriptDirectory();
+            if (!string.IsNullOrEmpty(serverScriptDir))
+            {
+                return Path.Combine(serverScriptDir, "cookies.json");
+            }
+
+            // Fallback for legacy code paths (should not be reached anymore).
             string baseDir = AppDomain.CurrentDomain.BaseDirectory;
             string targetPath = Path.Combine(baseDir, "Modules", "Gemini-API-2.0.0", "cookies.json");
-
             if (!File.Exists(targetPath))
             {
-                // Fallback to project root if running under dev build
                 string devPath = Path.GetFullPath(Path.Combine(baseDir, "..", "..", "..", "Modules", "Gemini-API-2.0.0", "cookies.json"));
                 if (Directory.Exists(Path.GetDirectoryName(devPath)))
                 {
                     targetPath = devPath;
                 }
             }
-
             return targetPath;
+        }
+
+        private static string FindServerScriptDirectory()
+        {
+            string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+
+            // 1) Same directory tree as the running exe (bin output copy).
+            string candidate = Path.Combine(baseDir, "Modules", "Gemini-API-2.0.0");
+            if (File.Exists(Path.Combine(candidate, "server.py"))) return candidate;
+
+            // 2) Walk up to the project root (dev scenario: exe lives in
+            //    bin/x64/Debug/net10.0-windows10.0.26100.0/ inside the
+            //    AssetAutomator.WinUI project; the Modules folder is at the
+            //    repo root).
+            DirectoryInfo? dir = new DirectoryInfo(baseDir);
+            for (int i = 0; i < 8 && dir != null; i++)
+            {
+                candidate = Path.Combine(dir.FullName, "Modules", "Gemini-API-2.0.0");
+                if (File.Exists(Path.Combine(candidate, "server.py"))) return candidate;
+
+                candidate = Path.Combine(dir.FullName, "src", "Modules", "Gemini-API-2.0.0");
+                if (File.Exists(Path.Combine(candidate, "server.py"))) return candidate;
+
+                dir = dir.Parent;
+            }
+
+            // 3) Last-ditch: use the exact path PythonServerManager resolves.
+            try
+            {
+                var mgrType = Type.GetType("AssetAutomator.Infrastructure.Helpers.PythonServerManager, AssetAutomator.Infrastructure");
+                if (mgrType != null)
+                {
+                    var mgrInstance = mgrType.GetProperty("Default")?.GetValue(null);
+                    var resolveMethod = mgrType.GetMethod("ResolveServerScriptPath");
+                    if (resolveMethod != null)
+                    {
+                        string? scriptPath = resolveMethod.Invoke(mgrInstance, null) as string;
+                        if (!string.IsNullOrEmpty(scriptPath))
+                            return Path.GetDirectoryName(scriptPath)!;
+                    }
+                }
+            }
+            catch { }
+
+            return string.Empty;
         }
 
         private const string DefaultUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36";
@@ -155,6 +212,13 @@ namespace AssetAutomator.Application.Services
 
                 string jsonContent = JsonSerializer.Serialize(rootObj, new JsonSerializerOptions { WriteIndented = true });
                 await SaveCookiesJsonContentAsync(savePath, jsonContent);
+
+                // Mirror to the alternate location (bin output folder) if it
+                // differs from the Python script folder, so anyone running the
+                // legacy fallback path also picks up the new cookies. This
+                // keeps behaviour backward-compatible while the primary
+                // path now writes next to server.py.
+                MirrorToAlternateLocations(savePath);
 
                 // Invalidate Python temp cookie cache
                 ClearTempCookieCache();
@@ -295,6 +359,85 @@ namespace AssetAutomator.Application.Services
                 }
             }
             catch { }
+        }
+
+        /// <summary>
+        /// Mirrors a freshly-written cookies.json to the legacy bin output
+        /// folder (if it differs from the canonical location) so any code path
+        /// that still tries to read cookies.json from AppDomain.BaseDirectory
+        /// also gets the latest cookies. No-op when both paths collapse to
+        /// the same file.
+        /// </summary>
+        private async Task MirrorToAlternateLocations(string canonicalPath)
+        {
+            try
+            {
+                string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+                string altPath = Path.Combine(baseDir, "Modules", "Gemini-API-2.0.0", "cookies.json");
+                if (string.Equals(Path.GetFullPath(canonicalPath), Path.GetFullPath(altPath), StringComparison.OrdinalIgnoreCase))
+                    return;
+
+                if (File.Exists(altPath) || Directory.Exists(Path.GetDirectoryName(altPath)))
+                {
+                    Directory.CreateDirectory(Path.GetDirectoryName(altPath)!);
+                    string content = await File.ReadAllTextAsync(canonicalPath);
+                    await File.WriteAllTextAsync(altPath, content);
+                    _log($"[COOKIE-SYNC] 🪞 Đã mirror cookies sang bin folder: {altPath}");
+                }
+            }
+            catch (Exception ex)
+            {
+                _log($"[COOKIE-SYNC] ⚠️ Mirror sang bin folder thất bại: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Mirror the freshly-written cookies.json to every other well-known
+        /// location on disk so the Python server cannot accidentally read
+        /// a stale copy. Idempotent — skips paths identical to the source.
+        /// </summary>
+        private void MirrorCookiesToAlternateLocations(string primarySavePath)
+        {
+            try
+            {
+                string content = File.ReadAllText(primarySavePath);
+                string primaryFull = Path.GetFullPath(primarySavePath);
+
+                // Candidate directories that historically held cookies.json
+                string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+                var candidates = new List<string>
+                {
+                    // Bin output copy (where most legacy code used to write)
+                    Path.Combine(baseDir, "Modules", "Gemini-API-2.0.0", "cookies.json"),
+                    // Project source root (next to server.py when running
+                    // Python directly from the repo)
+                    Path.GetFullPath(Path.Combine(baseDir, "..", "..", "..", "..", "..", "Modules", "Gemini-API-2.0.0", "cookies.json")),
+                };
+
+                foreach (string alt in candidates)
+                {
+                    try
+                    {
+                        string altFull = Path.GetFullPath(alt);
+                        if (string.Equals(altFull, primaryFull, StringComparison.OrdinalIgnoreCase)) continue;
+
+                        // Only overwrite if the directory exists or we can create it
+                        string dir = Path.GetDirectoryName(alt)!;
+                        if (!Directory.Exists(dir)) continue;
+
+                        File.WriteAllText(alt, content);
+                        _log($"[COOKIE-SYNC] 🔁 Đã mirror cookies.json sang: {alt}");
+                    }
+                    catch (Exception ex)
+                    {
+                        _log($"[COOKIE-SYNC] ⚠️ Không thể mirror tới {alt}: {ex.Message}");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _log($"[COOKIE-SYNC] ⚠️ MirrorCookiesToAlternateLocations thất bại: {ex.Message}");
+            }
         }
 
         /// <summary>

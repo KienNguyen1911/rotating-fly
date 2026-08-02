@@ -698,6 +698,8 @@ public partial class GeminiViewModel : ObservableObject
         if (selected.Count == 0)
         {
             StatusLog = "⚠️ Vui lòng tích chọn ít nhất 1 task để thực thi.";
+            IsConsoleLogVisible = true;
+            await ShowRunAlertAsync("Chưa chọn task", "Vui lòng tích chọn ít nhất 1 task trong bảng để thực thi thi pipeline.");
             return;
         }
 
@@ -711,19 +713,84 @@ public partial class GeminiViewModel : ObservableObject
         await RunTaskBatchAsync(new List<GeminiTaskModel> { task });
     }
 
+    /// <summary>
+    /// Resets per-step status + logs of a task so re-running a previously failed/completed
+    /// task does not carry over stale step badges ("✔️ Hoàn thành" on a step that will
+    /// re-run). Mirrors WPF behaviour where a fresh run starts the accordion from "⚪ Chờ".
+    /// </summary>
+    private static void ResetTaskStatuses(GeminiTaskModel task)
+    {
+        task.Status = NodeStatus.Idle;
+        task.CurrentStepInfo = "Sẵn sàng";
+        task.Step1Status = NodeStatus.Idle;
+        task.Step2Status = NodeStatus.Idle;
+        task.Step3Status = NodeStatus.Idle;
+        task.Step4Status = NodeStatus.Idle;
+        task.Step5Status = NodeStatus.Idle;
+        task.Step1Logs = string.Empty;
+        task.Step2Logs = string.Empty;
+        task.Step3Logs = string.Empty;
+        task.Step4Logs = string.Empty;
+        task.Step5Logs = string.Empty;
+    }
+
+    /// <summary>
+    /// Opens a small InfoBar-style ContentDialog from the main window's XamlRoot.
+    /// Wraps the native <see cref="ContentDialog"/> for safe invocation off the UI thread.
+    /// </summary>
+    private async Task ShowRunAlertAsync(string title, string message, string closeText = "Đóng")
+    {
+        var xamlRoot = App.MainWindowInstance?.Content?.XamlRoot ?? PageFallbackXamlRoot;
+        if (xamlRoot == null) return;
+
+        var dialog = new ContentDialog
+        {
+            Title = title,
+            Content = message,
+            CloseButtonText = closeText,
+            DefaultButton = ContentDialogButton.Close,
+            XamlRoot = xamlRoot
+        };
+        await dialog.ShowAsync();
+    }
+
+    /// <summary>Lazy-captured XamlRoot for dialogs shown before the main window exists.</summary>
+    private Microsoft.UI.Xaml.XamlRoot? PageFallbackXamlRoot { get; set; }
+
     private async Task RunTaskBatchAsync(IList<GeminiTaskModel> tasks)
     {
         if (_pipelineOrchestrator == null || _geminiCreatorService == null)
         {
             StatusLog = "⚠️ Pipeline orchestrator chưa sẵn sàng.";
+            _logService?.Error(LogCategory.GeminiCreator, "Pipeline orchestrator / GeminiCreatorService null — DI không inject.");
+            IsConsoleLogVisible = true;
             return;
         }
 
         if (IsGenerating)
         {
             StatusLog = "⚠️ Đang có phiên chạy khác. Hãy hủy trước khi bắt đầu mới.";
+            IsConsoleLogVisible = true;
             return;
         }
+
+        if (tasks.Count == 0)
+        {
+            StatusLog = "⚠️ Không có task nào để chạy.";
+            return;
+        }
+
+        // Reset status on every task so re-runs start from a clean slate
+        foreach (var t in tasks)
+        {
+            ResetTaskStatuses(t);
+        }
+
+        // Mirror WPF: auto-open logs drawer for the first task so the user can see
+        // per-step progress immediately without having to click the row manually.
+        SelectedTask = tasks[0];
+        IsTaskLogsDrawerOpen = true;
+        IsConsoleLogVisible = true;
 
         _runCts?.Dispose();
         _runCts = new CancellationTokenSource();
@@ -731,6 +798,10 @@ public partial class GeminiViewModel : ObservableObject
 
         IsGenerating = true;
         StatusLog = $"[RUN] 🚀 Bắt đầu pipeline cho {tasks.Count} task...";
+        _logService?.Info(LogCategory.Pipeline,
+            $"Bắt đầu batch Gemini pipeline cho {tasks.Count} task (Slot: DeepRsrch=2 | Voiceover=3 | SceneCreator=4 | ImageGen=1).");
+
+        PipelineBatchResult? batchResult = null;
 
         try
         {
@@ -743,16 +814,24 @@ public partial class GeminiViewModel : ObservableObject
                 }
             }
 
-            await Task.Run(() => _pipelineOrchestrator.ExecuteBatchAsync(
+            batchResult = await _pipelineOrchestrator.ExecuteBatchAsync(
                 tasks.ToList(),
                 (taskModel, msg) =>
                 {
                     _dispatcherQueue.TryEnqueue(() =>
                     {
-                        taskModel.Logs += $"[{DateTime.Now:HH:mm:ss}] {msg}\n";
+                        string stamped = $"[{DateTime.Now:HH:mm:ss}] {msg}\n";
+                        taskModel.Logs += stamped;
+                        // Also push to the global Console Logs panel so the user can see
+                        // pipeline progress even when no Logs drawer is open.
+                        ConsoleLogs += stamped;
+                        UpdateTaskStepInfoFromLog(taskModel, msg);
                     });
                 },
-                ct));
+                ct).ConfigureAwait(true);
+
+            StatusLog = $"[RUN] {batchResult}";
+            _logService?.Success(LogCategory.Pipeline, batchResult.ToString());
         }
         catch (OperationCanceledException)
         {
@@ -761,8 +840,35 @@ public partial class GeminiViewModel : ObservableObject
         }
         catch (Exception ex)
         {
-            StatusLog = $"[RUN] ❌ Lỗi pipeline: {ex.Message}";
-            _logService?.Error(LogCategory.GeminiCreator, $"Pipeline error: {ex.Message}");
+            // Surface full exception so empty `ex.Message` cases (e.g. inner
+            // exceptions without a message, or thrown from non-default ctor)
+            // are still diagnosable. Walks the InnerException chain and keeps
+            // the stack trace so we can spot the failing step.
+            //
+            // AggregateException can show up when Task.Run wraps async failures.
+            // Unwrap first so we always report the *real* root cause.
+            Exception root = ex;
+            while (root is AggregateException agg && agg.InnerException != null)
+                root = agg.InnerException;
+
+            var detail = BuildExceptionDetail(ex);
+            StatusLog = $"[RUN] ❌ Lỗi pipeline: {root.GetType().Name}: {root.Message}";
+            _logService?.Error(LogCategory.GeminiCreator, $"Pipeline error: {root.GetType().Name}: {root.Message}\n{detail}");
+            // Also dump to ConsoleLogs so the user can copy the stack trace
+            ConsoleLogs += $"[{DateTime.Now:HH:mm:ss}] [RUN] ❌ Pipeline exception ({root.GetType().Name})\n{detail}\n";
+
+            // Try to mark per-task as failed so the UI doesn't look "stuck"
+            foreach (var t in tasks)
+            {
+                if (t is GeminiTaskModel gm)
+                {
+                    gm.Step1Status = NodeStatus.Failed;
+                    gm.Step2Status = NodeStatus.Failed;
+                    gm.Step3Status = NodeStatus.Failed;
+                    gm.Step4Status = NodeStatus.Failed;
+                    gm.Step5Status = NodeStatus.Failed;
+                }
+            }
         }
         finally
         {
@@ -770,6 +876,154 @@ public partial class GeminiViewModel : ObservableObject
             _runCts?.Dispose();
             _runCts = null;
         }
+
+        // Mirror WPF: show summary dialog with success/failed counts + elapsed time
+        if (batchResult != null)
+        {
+            try
+            {
+                var xamlRoot = App.MainWindowInstance?.Content?.XamlRoot ?? PageFallbackXamlRoot;
+                if (xamlRoot != null)
+                {
+                    var dialog = new ContentDialog
+                    {
+                        Title = "Pipeline Orchestrator — Kết Quả",
+                        Content =
+                            $"Đã hoàn thành thực thi {batchResult.TotalTasks} Gemini tasks!\n\n" +
+                            $"✅ Thành công: {batchResult.SuccessCount}\n" +
+                            $"❌ Thất bại: {batchResult.FailedCount}\n" +
+                            $"⏱️ Thời gian: {batchResult.Elapsed.TotalMinutes:F1} phút",
+                        CloseButtonText = "Đóng",
+                        DefaultButton = ContentDialogButton.Close,
+                        XamlRoot = xamlRoot
+                    };
+                    await dialog.ShowAsync();
+                }
+            }
+            catch
+            {
+                // best-effort summary — never crash the run if the dialog can't show
+            }
+        }
+    }
+
+    // ─────────────────────────────────────────────────────
+    //  Step routing — push orchestrator log lines into the
+    //  per-step accordion of the *currently selected* task.
+    //  Mirrors the WPF UpdateTaskStepInfoFromLog heuristic.
+    // ─────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Builds a multi-line exception diagnostics string for logging. Walks the
+    /// InnerException chain and includes the stack trace so we can pinpoint
+    /// the failure even when <see cref="Exception.Message"/> is empty/null.
+    /// </summary>
+    private static string BuildExceptionDetail(Exception ex)
+    {
+        var sb = new System.Text.StringBuilder();
+        int depth = 0;
+        var current = ex;
+        while (current != null)
+        {
+            sb.AppendLine($"  [{depth}] {current.GetType().FullName}: {current.Message}");
+            if (!string.IsNullOrWhiteSpace(current.StackTrace))
+            {
+                sb.AppendLine("      StackTrace:");
+                sb.AppendLine(current.StackTrace);
+            }
+            current = current.InnerException;
+            depth++;
+            if (depth > 8) { sb.AppendLine("  ... (truncated)"); break; }
+        }
+        return sb.ToString();
+    }
+
+    private void UpdateTaskStepInfoFromLog(GeminiTaskModel taskItem, string msg)
+    {
+        bool isSuccess = msg.Contains("Success", StringComparison.OrdinalIgnoreCase) ||
+                         msg.Contains("⏭️", StringComparison.OrdinalIgnoreCase) ||
+                         msg.Contains("Completed", StringComparison.OrdinalIgnoreCase) ||
+                         msg.Contains("Hoàn thành", StringComparison.OrdinalIgnoreCase);
+
+        if (msg.Contains("DEEP-RESEARCH-POLL", StringComparison.OrdinalIgnoreCase))
+        {
+            taskItem.Step1Status = NodeStatus.Running;
+            int elapsedIdx = msg.IndexOf("Elapsed:", StringComparison.OrdinalIgnoreCase);
+            taskItem.CurrentStepInfo = elapsedIdx >= 0
+                ? $"Step 1: Deep Research ({msg.Substring(elapsedIdx).Trim()})"
+                : "Step 1: Deep Research (Đang nghiên cứu...)";
+            taskItem.Step1Logs += $"[{DateTime.Now:HH:mm:ss}] {msg}\n";
+        }
+        else if (msg.Contains("STEP 1 & 2", StringComparison.OrdinalIgnoreCase) ||
+                 msg.Contains("[STEP 2]", StringComparison.OrdinalIgnoreCase) ||
+                 msg.Contains("STEP 1", StringComparison.OrdinalIgnoreCase) ||
+                 msg.Contains("Deep Research", StringComparison.OrdinalIgnoreCase) ||
+                 msg.Contains("research_report", StringComparison.OrdinalIgnoreCase) ||
+                 msg.Contains("transcript.txt", StringComparison.OrdinalIgnoreCase) ||
+                 msg.Contains("Transcript", StringComparison.OrdinalIgnoreCase) ||
+                 msg.Contains("script", StringComparison.OrdinalIgnoreCase))
+        {
+            taskItem.Step1Status = isSuccess ? NodeStatus.Success : NodeStatus.Running;
+            taskItem.CurrentStepInfo = isSuccess ? "Step 1: ✔️ Done" : "Step 1: Deep Research & Transcript";
+            taskItem.Step1Logs += $"[{DateTime.Now:HH:mm:ss}] {msg}\n";
+        }
+        else if (msg.Contains("STEP 3", StringComparison.OrdinalIgnoreCase) ||
+                 msg.Contains("VOICEOVER", StringComparison.OrdinalIgnoreCase) ||
+                 msg.Contains("Voiceover", StringComparison.OrdinalIgnoreCase) ||
+                 msg.Contains("SRT", StringComparison.OrdinalIgnoreCase) ||
+                 msg.Contains("AI84", StringComparison.OrdinalIgnoreCase) ||
+                 msg.Contains("transcriptUrl", StringComparison.OrdinalIgnoreCase) ||
+                 msg.Contains("text-to-speech", StringComparison.OrdinalIgnoreCase) ||
+                 msg.Contains("TTS Job", StringComparison.OrdinalIgnoreCase) ||
+                 msg.Contains("voiceover.mp3", StringComparison.OrdinalIgnoreCase) ||
+                 msg.Contains("voiceover.srt", StringComparison.OrdinalIgnoreCase) ||
+                 msg.Contains("voiceover.wav", StringComparison.OrdinalIgnoreCase))
+        {
+            taskItem.Step2Status = isSuccess ? NodeStatus.Success : NodeStatus.Running;
+            taskItem.CurrentStepInfo = isSuccess ? "Step 2: ✔️ Done" : "Step 2: Voiceover & SRT";
+            taskItem.Step2Logs += $"[{DateTime.Now:HH:mm:ss}] {msg}\n";
+        }
+        else if (msg.Contains("[STEP 4]", StringComparison.OrdinalIgnoreCase) ||
+                 msg.Contains("Scene Creator", StringComparison.OrdinalIgnoreCase) ||
+                 msg.Contains("Scene Breakdown", StringComparison.OrdinalIgnoreCase) ||
+                 msg.Contains("scenes.json", StringComparison.OrdinalIgnoreCase) ||
+                 msg.Contains("scene_count", StringComparison.OrdinalIgnoreCase))
+        {
+            taskItem.Step3Status = isSuccess ? NodeStatus.Success : NodeStatus.Running;
+            taskItem.CurrentStepInfo = isSuccess ? "Step 3: ✔️ Done" : "Step 3: Scene Breakdown & Prompts";
+            taskItem.Step3Logs += $"[{DateTime.Now:HH:mm:ss}] {msg}\n";
+        }
+        else if (msg.Contains("[STEP 5]", StringComparison.OrdinalIgnoreCase) ||
+                 msg.Contains("Batch Image", StringComparison.OrdinalIgnoreCase) ||
+                 msg.Contains("Image Generation", StringComparison.OrdinalIgnoreCase) ||
+                 msg.Contains("scene_", StringComparison.OrdinalIgnoreCase))
+        {
+            taskItem.Step4Status = isSuccess ? NodeStatus.Success : NodeStatus.Running;
+            taskItem.CurrentStepInfo = isSuccess ? "Step 4: ✔️ Done" : "Step 4: Image Generation";
+            taskItem.Step4Logs += $"[{DateTime.Now:HH:mm:ss}] {msg}\n";
+        }
+        else
+        {
+            // General pipeline logs fall through to whichever step is currently running
+            if (taskItem.Step4Status == NodeStatus.Running) taskItem.Step4Logs += $"[{DateTime.Now:HH:mm:ss}] {msg}\n";
+            else if (taskItem.Step3Status == NodeStatus.Running) taskItem.Step3Logs += $"[{DateTime.Now:HH:mm:ss}] {msg}\n";
+            else if (taskItem.Step2Status == NodeStatus.Running) taskItem.Step2Logs += $"[{DateTime.Now:HH:mm:ss}] {msg}\n";
+            else taskItem.Step1Logs += $"[{DateTime.Now:HH:mm:ss}] {msg}\n";
+        }
+
+        // Notify accordion so badges/labels refresh when this task is the selected one
+        // (or even if not — XAML binds via CurrentStep1..5Status which returns SelectedTask's value,
+        // so when the user opens the live task drawer the badges will already reflect the latest run).
+        OnPropertyChanged(nameof(CurrentStep1Status));
+        OnPropertyChanged(nameof(CurrentStep2Status));
+        OnPropertyChanged(nameof(CurrentStep3Status));
+        OnPropertyChanged(nameof(CurrentStep4Status));
+        OnPropertyChanged(nameof(CurrentStep5Status));
+        OnPropertyChanged(nameof(CurrentStep1Log));
+        OnPropertyChanged(nameof(CurrentStep2Log));
+        OnPropertyChanged(nameof(CurrentStep3Log));
+        OnPropertyChanged(nameof(CurrentStep4Log));
+        OnPropertyChanged(nameof(CurrentStep5Log));
     }
 
     // ─────────────────────────────────────────────────────

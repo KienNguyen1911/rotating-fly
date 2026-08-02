@@ -6,10 +6,12 @@ using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Animation;
 using System;
 using System.Linq;
+using System.Threading.Tasks;
 using AssetAutomator.Core.Interfaces;
 using AssetAutomator.Core.Models;
 using AssetAutomator.WinUI.ViewModels;
 using AssetAutomator.WinUI.Views.Dialogs;
+using Windows.ApplicationModel.DataTransfer;
 using Windows.Storage.Pickers;
 using WinRT.Interop;
 
@@ -24,6 +26,46 @@ public sealed partial class GeminiPage : Page
         InitializeComponent();
         ViewModel = App.Services.GetRequiredService<GeminiViewModel>();
         DataContext = ViewModel;
+
+        // Auto-scroll console logs to bottom whenever content changes
+        ConsoleLogsTextBox.TextChanged += ConsoleLogsTextBox_TextChanged;
+    }
+
+    private void ConsoleLogsTextBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (ConsoleAutoScrollCheck?.IsChecked != true) return;
+        // Defer to next render frame so the new content is measured first.
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            ConsoleLogsScrollViewer?.ChangeView(null, double.MaxValue, null, disableAnimation: true);
+        });
+    }
+
+    private void CopyConsoleLogsButton_Click(object sender, RoutedEventArgs e)
+    {
+        string text = ViewModel?.ConsoleLogs ?? string.Empty;
+        if (string.IsNullOrEmpty(text))
+        {
+            ShowTransientStatus("Console log trống — không có gì để copy.");
+            return;
+        }
+
+        var dataPackage = new DataPackage();
+        dataPackage.SetText(text);
+        Clipboard.SetContent(dataPackage);
+
+        // Provide user-visible feedback (toast-style status in the page header).
+        int lines = text.Count(c => c == '\n');
+        ShowTransientStatus($"📋 Đã copy {text.Length:N0} ký tự ({lines:N0} dòng) vào clipboard.");
+    }
+
+    private void ShowTransientStatus(string message)
+    {
+        // Push the message into the same StatusLog the rest of the VM uses so
+        // users see confirmation in the page footer without an extra dialog.
+        if (ViewModel is null) return;
+        var prop = typeof(GeminiViewModel).GetProperty("StatusLog");
+        prop?.SetValue(ViewModel, message);
     }
 
     private void BtnShowRowDetails_Click(object sender, RoutedEventArgs e)
@@ -96,6 +138,41 @@ public sealed partial class GeminiPage : Page
         {
             ViewModel.OpenTaskLogsCommand.Execute(task);
         }
+    }
+
+    private async void BtnRunSingleTask_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button btn || btn.Tag is not GeminiTaskModel task) return;
+
+        if (ViewModel.IsGenerating)
+        {
+            await ShowInfoAsync("Đang có pipeline chạy", "Một pipeline khác đang chạy. Vui lòng hủy hoặc đợi phiên hiện tại hoàn thành trước khi chạy task mới.");
+            return;
+        }
+
+        // Mirror WPF: open the live logs drawer for the chosen task so the user
+        // sees per-step progress immediately while the pipeline is running.
+        ViewModel.SelectedTask = task;
+        ViewModel.IsTaskLogsDrawerOpen = true;
+        ViewModel.IsConsoleLogVisible = true;
+
+        await ViewModel.RunSingleTaskCommand.ExecuteAsync(task);
+    }
+
+    private async Task ShowInfoAsync(string title, string message)
+    {
+        var xamlRoot = App.MainWindowInstance?.Content?.XamlRoot ?? PageRoot.XamlRoot;
+        if (xamlRoot == null) return;
+
+        var dialog = new ContentDialog
+        {
+            Title = title,
+            Content = message,
+            CloseButtonText = "Đóng",
+            DefaultButton = ContentDialogButton.Close,
+            XamlRoot = xamlRoot
+        };
+        await dialog.ShowAsync();
     }
 
     private bool _isDraggingDrawer;

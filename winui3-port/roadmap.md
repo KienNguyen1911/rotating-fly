@@ -177,6 +177,33 @@ After Phase A+B+C (~6 sprints), WinUI 3 reaches ~95% feature parity with WPF and
 
 ---
 
+## Sprint 8.5 (post-Sprint 8 polish) — Run Task hard-wire — ✅ COMPLETED
+
+| ID | Task | Tab | Effort | Status |
+|---|---|---|---|---|
+| R1 | Fix per-row Run button binding (`ElementName=LstGeminiTasks` was a dead path; replaced with `BtnRunSingleTask_Click` event handler so the row's `x:Bind`-typed DataTemplate can still reach the VM) | Gemini | 0.5h | ✅ Done |
+| R2 | Auto-open Logs drawer + Console Logs when running, mirror WPF | Gemini | 0.5h | ✅ Done |
+| R3 | Reset per-step statuses (`Step1..5Status`, `Logs`) at run start so re-runs start clean | Gemini | 0.5h | ✅ Done |
+| R4 | Capture `PipelineBatchResult` and show post-run summary dialog (Success/Failed counts + elapsed time) | Gemini | 1h | ✅ Done |
+| R5 | Port WPF's `UpdateTaskStepInfoFromLog` heuristic so orchestrator log lines flow into the right step's accordion (Step1 DeepResearch / Step2 Voiceover / Step3 Scene Creator / Step4 ImageGen) | Gemini | 1h | ✅ Done |
+| R6 | Disable per-row Run button while the task is already `Running` (so the user can't trigger two parallel runs from the same row) | Gemini | 0.25h | ✅ Done |
+| **Total** | | | **3.75h** | **100%** |
+
+**Sprint 8.5 notes**
+
+- `GeminiPage.xaml` Row 7 Actions: the first action button (▶ Run) now uses `Click="BtnRunSingleTask_Click" Tag="{x:Bind}"` instead of the broken `Command="{Binding ViewModel.RunSingleTaskCommand, ElementName=LstGeminiTasks}"`. The old binding could never resolve because the DataTemplate's compiled bindings (`x:DataType="models:GeminiTaskModel"`) do not expose the surrounding `ViewModel`.
+- `GeminiViewModel.RunTaskBatchAsync`:
+  - Resets every selected task's status + step logs via the new `ResetTaskStatuses` helper before invoking the orchestrator.
+  - Sets `SelectedTask = tasks[0]` and opens `IsTaskLogsDrawerOpen = true` + `IsConsoleLogVisible = true` so the live logs drawer pops up immediately, matching the WPF "open TaskLogSidebar on Run" behaviour.
+  - Routes orchestrator log lines through the new `UpdateTaskStepInfoFromLog` heuristic so per-step badges in the 5-step accordion turn Running → Success as the pipeline advances, and per-step log buffers (`StepNLogs`) accumulate.
+  - Captures the `PipelineBatchResult` returned by `ExecuteBatchAsync` and shows a summary ContentDialog (`Tổng / Thành công / Thất bại / Thời gian`).
+- `GeminiPage.xaml.cs` adds `BtnRunSingleTask_Click` and a `ShowInfoAsync` helper used to display "đang có pipeline khác" notifications.
+- Pre-existing `RunSelectedTasksCommand` (toolbar ▶ button) + `RunSingleTaskCommand` (RowDetails drawer) keep working as before; the new event-handler path on the row Run button is now the primary entry point.
+
+**Build & smoke-test result:** Build succeeded with 0 errors via MSBuild.exe. No new warnings introduced (only pre-existing `MVVMTK0045` AOT-incompatibility notes on `[ObservableProperty]` fields, which apply project-wide).
+
+---
+
 ## Sprint 9 (optional, 40h) — Phase D finish + OAuth
 
 | ID | Task | Tab | Effort |
