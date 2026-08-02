@@ -120,29 +120,60 @@ After Phase A+B+C (~6 sprints), WinUI 3 reaches ~95% feature parity with WPF and
 
 ---
 
-## Sprint 7 (40h) — Phase C finish + Phase D start
+## Sprint 7 (40h) — Phase C finish + Phase D start — ✅ COMPLETED
 
-| ID | Task | Tab | Effort |
-|---|---|---|---|
-| C6 | Build Python Server Log panel (toggle button, status, clear button, log TextBox) | Gemini | 8h |
-| C7 | Build Sidebar 5-Step Accordion (5 Expanders with badges + logs) | Gemini | 12h |
-| D1 | Add License + Update buttons in MainWindow header | Shell | 2h |
-| **Total** | | | **22h** |
+| ID | Task | Tab | Effort | Status | Owner |
+|---|---|---|---|---|---|
+| C6 | Build Python Server Log panel (toggle button, status indicator, clear button, log textbox) | Gemini | 8h | ✅ Done | AI Assistant |
+| C7 | Build Sidebar 5-Step Accordion (5 Expanders with status badges + per-step logs of the selected task) | Gemini | 12h | ✅ Done | AI Assistant |
+| D1 | Add License + Update buttons in MainWindow header (with click handlers opening LicenseDialog / checking GitHub releases) | Shell | 2h | ✅ Done | AI Assistant |
+| **Total** | | | **22h** | **100%** | |
 
 **Buffer:** 18h slack.
 
+**Sprint 7 notes**
+- New converter `StepStatusToTextConverter` (NodeStatus → text label like "⏳ Đang chạy...") added in `Converters/StepStatusToTextConverter.cs`.
+- `NodeStatusToBrushConverter` extended to handle the `Idle`/`Pending`/`Waiting` states (slate-600 #475569) so the 5-step accordion badges show the WPF-matching grey when a step has not started.
+- `GeminiViewModel` now routes `LogCategory.PythonServer` log entries into the new `PythonServerLog` buffer (instead of the generic `ConsoleLogs` panel) and derives a `PythonServerStatus` indicator ("✅ Running" / "❌ Crashed" / "⚪ Unknown").
+- Safe step-status / step-log accessors (`CurrentStep1Status` … `CurrentStep5Status`, `CurrentStep1Log` …) added so the accordion XAML does not need to dereference a possibly-null `SelectedTask`.
+- MainWindow D1 buttons:
+  - `BtnLicense` → opens the existing `LicenseDialog` (with `XamlRoot` set to the main window's root grid).
+  - `BtnCheckUpdate` → fetches the latest GitHub release of `KienNguyen1911/AssetAutomator-Releases`; if the version differs from the running app's assembly version, shows `UpdateDialog`; otherwise shows a "Đã cập nhật" content dialog.
+
 ---
 
-## Sprint 8 (40h) — Phase D finish
+## Sprint 8 (40h) — Phase D finish — ✅ COMPLETED
 
-| ID | Task | Tab | Effort |
-|---|---|---|---|
-| D2 | Build Sidebar drawer logs (drag-handle, slide animation) | Shell | 12h |
-| D3 | Port Style resources (Colors/Themes/Light/Dark) | Global | 12h |
-| D4 | Port custom control templates (Buttons.xaml styles) | Global | 8h |
-| **Total** | | | **32h** |
+| ID | Task | Tab | Effort | Status | Owner |
+|---|---|---|---|---|---|
+| D2 | Build Sidebar drawer logs (drag-handle, slide animation) | Shell | 12h | ✅ Done | AI Assistant |
+| D3 | Port Style resources (Colors/Themes/Light/Dark) | Global | 12h | ✅ Done | AI Assistant |
+| D4 | Port custom control templates (Buttons.xaml styles) | Global | 8h | ✅ Done | AI Assistant |
+| **Total** | | | **32h** | **100%** | |
 
 **Buffer:** 8h slack.
+
+**Sprint 8 notes**
+
+- **D3 — Style resources** (`Styles/Theme.xaml`, `Styles/Theme.Light.xaml`, `Styles/Theme.Dark.xaml`)
+  - New `Theme.xaml` exposes stable semantic colour tokens (`Color.Canvas`, `Color.Ink`, `Color.Success`, …).
+  - `Theme.Light.xaml` and `Theme.Dark.xaml` provide `SolidColorBrush` instances under keys like `Surface.DefaultBrush`, `Border.DefaultBrush`, `Action.PrimaryBrush`, etc. plus legacy aliases (`CanvasBrush`, `InkBrush`, `HairlineBrush`, …) for 1:1 parity with the WPF dictionary.
+  - Registered via `App.xaml` `ResourceDictionary.ThemeDictionaries` so the framework automatically swaps dark/light when the active theme changes.
+
+- **D4 — Button styles** (`Styles/ButtonStyles.xaml`)
+  - `Button.Base` + implicit `Style TargetType="Button"` apply rounded 8 px corners, themed background/border/foreground and `SemiBold 12 px` typography to every Button.
+  - Named variants: `PrimaryButton` (filled dark), `SecondaryButton` (subtle), `GreenButton`, `DeleteButton`, `IconButton` (28×28), `RoundCloseButton` (round red hover), `HeaderPillButton` (white pill used by the title bar).
+  - MainWindow D1 + new D2 "Logs" toggle now use `HeaderPillButton` for visual consistency.
+
+- **D2 — Sidebar drawer** (`ViewModels/SidebarViewModel.cs`, `Controls/ResizableDragHandle.cs`, `MainWindow.xaml/.cs`)
+  - `SidebarViewModel` is a singleton (`App.Services`) with `IsOpen`, `Title`, `Logs`, `DrawerWidth` and helper methods `Show(title, initialLogs)`, `AppendLog(line)`, `AppendLogs(lines)`, `Clear()`, `ToggleCommand`, `CloseCommand`.
+  - New sidebar overlay (`Grid Row 1`) slides in from the right via `TranslateTransform` + `Storyboard` (220 ms `CubicEase.EaseOut` open, 180 ms `EaseIn` close).
+  - `ResizableDragHandle` (subclassed from `Grid` because `Border` is sealed) sets the West-East resize cursor via the protected `UIElement.ProtectedCursor` and exposes `ResetCursor()`.
+  - Drag handle clamps width between `SidebarViewModel.MinWidth` (320 px) and `MaxWidthRatio` (80 % of window width), persisting the result back to `Sidebar.DrawerWidth` so the `x:Bind` keeps the drawer's `Width` in sync.
+  - New "Logs" header pill (`BtnToggleSidebar`) opens the drawer; in-page VM access to `SidebarViewModel` allows any page to push logs via `Show`/`AppendLog`.
+  - Round ✕ close button uses the new `RoundCloseButton` style.
+
+**Build & smoke-test result:** Build succeeded with 0 errors via MSBuild.exe (`C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Current\Bin\MSBuild.exe`). Smoke test confirms the app launches, MainWindow handle is non-zero (window visible) and no stderr.
 
 ---
 

@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Theme.Light.xaml
+  Light-theme SolidColorBrush values for every semantic token
+  defined in Theme.xaml. Keys match the WPF resource keys for
+  parity with the original styling system.
+-->
+<ResourceDictionary
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- Semantic surface / content tokens. -->
+    <SolidColorBrush x:Key="Surface.DefaultBrush" Color="{StaticResource Color.Canvas}" />
+    <SolidColorBrush x:Key="Surface.RaisedBrush" Color="{StaticResource Color.SurfaceSoft}" />
+    <SolidColorBrush x:Key="Surface.HoverBrush" Color="{StaticResource Color.SurfaceStrong}" />
+    <SolidColorBrush x:Key="Surface.SelectedBrush" Color="{StaticResource Color.SurfaceStrong}" />
+    <SolidColorBrush x:Key="Surface.SoftBrush" Color="{StaticResource Color.SurfaceSoft}" />
+    <SolidColorBrush x:Key="Surface.CardBrush" Color="{StaticResource Color.SurfaceCard}" />
+    <SolidColorBrush x:Key="Surface.StrongBrush" Color="{StaticResource Color.SurfaceStrong}" />
+
+    <SolidColorBrush x:Key="Content.PrimaryBrush" Color="{StaticResource Color.Ink}" />
+    <SolidColorBrush x:Key="Content.MutedBrush" Color="{StaticResource Color.Body}" />
+    <SolidColorBrush x:Key="Content.OnActionBrush" Color="{StaticResource Color.OnAction}" />
+
+    <SolidColorBrush x:Key="Border.DefaultBrush" Color="{StaticResource Color.Hairline}" />
+    <SolidColorBrush x:Key="Border.SubtleBrush" Color="{StaticResource Color.Hairline}" />
+    <SolidColorBrush x:Key="Action.PrimaryBrush" Color="{StaticResource Color.Primary}" />
+
+    <!-- Status colours. -->
+    <SolidColorBrush x:Key="Status.PendingBrush" Color="{StaticResource Color.Pending}" />
+    <SolidColorBrush x:Key="Status.WarningBrush" Color="{StaticResource Color.Warning}" />
+    <SolidColorBrush x:Key="Status.SuccessBrush" Color="{StaticResource Color.Success}" />
+    <SolidColorBrush x:Key="Status.DangerBrush" Color="{StaticResource Color.Danger}" />
+
+    <!-- Legacy aliases (matching the WPF brush names for 1:1 parity). -->
+    <SolidColorBrush x:Key="CanvasBrush" Color="{StaticResource Color.Canvas}" />
+    <SolidColorBrush x:Key="InkBrush" Color="{StaticResource Color.Ink}" />
+    <SolidColorBrush x:Key="BodyBrush" Color="{StaticResource Color.Body}" />
+    <SolidColorBrush x:Key="PrimaryBrush" Color="{StaticResource Color.Primary}" />
+    <SolidColorBrush x:Key="PrimaryActiveBrush" Color="{StaticResource Color.PrimaryActive}" />
+    <SolidColorBrush x:Key="PrimaryDisabledBrush" Color="{StaticResource Color.PrimaryDisabled}" />
+    <SolidColorBrush x:Key="SurfaceSoftBrush" Color="{StaticResource Color.SurfaceSoft}" />
+    <SolidColorBrush x:Key="SurfaceCardBrush" Color="{StaticResource Color.SurfaceCard}" />
+    <SolidColorBrush x:Key="SurfaceStrongBrush" Color="{StaticResource Color.SurfaceStrong}" />
+    <SolidColorBrush x:Key="HairlineBrush" Color="{StaticResource Color.Hairline}" />
+    <SolidColorBrush x:Key="SemanticUpBrush" Color="{StaticResource Color.Success}" />
+    <SolidColorBrush x:Key="SemanticDownBrush" Color="{StaticResource Color.Danger}" />
+    <SolidColorBrush x:Key="OnPrimaryBrush" Color="{StaticResource Color.OnAction}" />
+    <SolidColorBrush x:Key="MutedSoftBrush" Color="{StaticResource Color.MutedSoft}" />
+    <SolidColorBrush x:Key="SubtleBrush" Color="{StaticResource Color.Subtle}" />
+</ResourceDictionary>

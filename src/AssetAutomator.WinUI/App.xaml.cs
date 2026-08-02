@@ -86,6 +86,7 @@ public partial class App : Microsoft.UI.Xaml.Application
                 services.AddSingleton<PipelineOrchestrator>();
 
                 // ViewModels
+                services.AddSingleton<ViewModels.SidebarViewModel>();
                 services.AddTransient<ViewModels.TasksViewModel>();
                 services.AddTransient<ViewModels.PoolViewModel>();
                 services.AddTransient<ViewModels.ProfilesViewModel>();

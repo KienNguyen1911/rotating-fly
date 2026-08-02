@@ -7,7 +7,26 @@
             <ResourceDictionary.MergedDictionaries>
                 <XamlControlsResources xmlns="using:Microsoft.UI.Xaml.Controls" />
                 <ResourceDictionary Source="ms-appx:///Styles/CardStyles.xaml" />
+                <ResourceDictionary Source="ms-appx:///Styles/Theme.xaml" />
+                <ResourceDictionary Source="ms-appx:///Styles/ButtonStyles.xaml" />
+                <ResourceDictionary Source="ms-appx:///Styles/Theme.Light.xaml" />
             </ResourceDictionary.MergedDictionaries>
+            <!--
+              Theme.Dark.xaml is registered in ThemeDictionaries so the framework
+              automatically swaps it in when the active theme is "Default" (Dark).
+            -->
+            <ResourceDictionary.ThemeDictionaries>
+                <ResourceDictionary x:Key="Default">
+                    <ResourceDictionary.MergedDictionaries>
+                        <ResourceDictionary Source="ms-appx:///Styles/Theme.Dark.xaml" />
+                    </ResourceDictionary.MergedDictionaries>
+                </ResourceDictionary>
+                <ResourceDictionary x:Key="Light">
+                    <ResourceDictionary.MergedDictionaries>
+                        <ResourceDictionary Source="ms-appx:///Styles/Theme.Light.xaml" />
+                    </ResourceDictionary.MergedDictionaries>
+                </ResourceDictionary>
+            </ResourceDictionary.ThemeDictionaries>
         </ResourceDictionary>
     </Application.Resources>
 </Application>

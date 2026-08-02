@@ -77,6 +77,87 @@ public partial class GeminiViewModel : ObservableObject
     [ObservableProperty]
     private int _videoDurationMinutes = 1;
 
+    // ─────────────────────────────────────────────────────
+    //  C6 — Python Server Log panel
+    // ─────────────────────────────────────────────────────
+
+    [ObservableProperty]
+    private string _pythonServerLog = string.Empty;
+
+    [ObservableProperty]
+    private string _pythonServerStatus = "⚪ Unknown";
+
+    [ObservableProperty]
+    private bool _isPythonLogPanelCollapsed;
+
+    public bool IsPythonLogPanelVisible => !IsPythonLogPanelCollapsed;
+
+    partial void OnIsPythonLogPanelCollapsedChanged(bool value)
+    {
+        OnPropertyChanged(nameof(IsPythonLogPanelVisible));
+    }
+
+    [RelayCommand]
+    private void TogglePythonLogPanel()
+    {
+        IsPythonLogPanelCollapsed = !IsPythonLogPanelCollapsed;
+    }
+
+    [RelayCommand]
+    private void ClearPythonServerLog()
+    {
+        PythonServerLog = string.Empty;
+        StatusLog = "ℹ️ Đã xóa Python Server log panel.";
+    }
+
+    // ─────────────────────────────────────────────────────
+    //  Layout toggles — D8 (drawer-style sidebar to free up space)
+    // ─────────────────────────────────────────────────────
+
+    /// <summary>True = right sidebar (Python log + 5-step accordion) is shown.</summary>
+    [ObservableProperty]
+    private bool _isRightSidebarVisible = true;
+
+    [RelayCommand]
+    private void ToggleRightSidebar()
+    {
+        IsRightSidebarVisible = !IsRightSidebarVisible;
+    }
+
+    /// <summary>True = bottom Console Logs panel is shown. Default false to keep page compact.</summary>
+    [ObservableProperty]
+    private bool _isConsoleLogVisible;
+
+    [RelayCommand]
+    private void ToggleConsoleLog()
+    {
+        IsConsoleLogVisible = !IsConsoleLogVisible;
+    }
+
+    // ─────────────────────────────────────────────────────
+    //  C7 — 5-Step Accordion helpers
+    // ─────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Returns a brush for a step badge based on the step status.
+    /// Reused by the 5-step accordion sidebar.
+    /// </summary>
+    public static Microsoft.UI.Xaml.Media.Brush GetStepBadgeBrush(NodeStatus status) => status switch
+    {
+        NodeStatus.Running => new Microsoft.UI.Xaml.Media.SolidColorBrush(Converters.NodeStatusToBrushConverter.ParseHexColor("#F59E0B")),
+        NodeStatus.Success => new Microsoft.UI.Xaml.Media.SolidColorBrush(Converters.NodeStatusToBrushConverter.ParseHexColor("#10B981")),
+        NodeStatus.Failed  => new Microsoft.UI.Xaml.Media.SolidColorBrush(Converters.NodeStatusToBrushConverter.ParseHexColor("#EF4444")),
+        _ => new Microsoft.UI.Xaml.Media.SolidColorBrush(Converters.NodeStatusToBrushConverter.ParseHexColor("#475569"))
+    };
+
+    public static string GetStepBadgeText(NodeStatus status) => status switch
+    {
+        NodeStatus.Running => "⏳ Đang chạy...",
+        NodeStatus.Success => "✔️ Hoàn thành",
+        NodeStatus.Failed  => "❌ Lỗi",
+        _ => "⚪ Chờ"
+    };
+
     public GeminiViewModel(
         GeminiCreatorService? geminiCreatorService = null,
         PipelineOrchestrator? pipelineOrchestrator = null,
@@ -125,6 +206,13 @@ public partial class GeminiViewModel : ObservableObject
 
     private void OnLogServiceEntry(LogEntry entry)
     {
+        // Route by category: PythonServer → Python log panel, everything else → console.
+        if (entry.Category == LogCategory.PythonServer)
+        {
+            AppendToPythonServerLog(entry);
+            return;
+        }
+
         if (entry.Category is not (LogCategory.GeminiCreator
             or LogCategory.GeminiApi
             or LogCategory.Pipeline
@@ -146,12 +234,71 @@ public partial class GeminiViewModel : ObservableObject
         }
     }
 
+    private void AppendToPythonServerLog(LogEntry entry)
+    {
+        string line = $"[{entry.FormattedTimestamp}] {entry.LevelIcon} {entry.CategoryLabel} {entry.Message}";
+
+        void Apply()
+        {
+            PythonServerLog += line + Environment.NewLine;
+            UpdatePythonServerStatusIndicator(entry);
+        }
+
+        if (_dispatcherQueue != null)
+        {
+            _dispatcherQueue.TryEnqueue(Apply);
+        }
+        else
+        {
+            Apply();
+        }
+    }
+
+    private void UpdatePythonServerStatusIndicator(LogEntry entry)
+    {
+        if (entry.Message.Contains("successfully launched", StringComparison.OrdinalIgnoreCase) ||
+            entry.Message.Contains("Health check OK", StringComparison.OrdinalIgnoreCase) ||
+            entry.Message.Contains("responding", StringComparison.OrdinalIgnoreCase))
+        {
+            PythonServerStatus = "✅ Running";
+        }
+        else if (entry.Level == LogLevel.Error &&
+                 (entry.Message.Contains("exited prematurely", StringComparison.OrdinalIgnoreCase) ||
+                  entry.Message.Contains("not found", StringComparison.OrdinalIgnoreCase)))
+        {
+            PythonServerStatus = "❌ Crashed";
+        }
+    }
+
     public bool HasSelectedTasks => GeminiTasks.Any(t => t.IsSelected);
     public bool HasSelectedTask => SelectedTask != null;
+
+    // ── Safe step status/log accessors (return defaults when no task selected) ──
+    public NodeStatus CurrentStep1Status => SelectedTask?.Step1Status ?? NodeStatus.Idle;
+    public NodeStatus CurrentStep2Status => SelectedTask?.Step2Status ?? NodeStatus.Idle;
+    public NodeStatus CurrentStep3Status => SelectedTask?.Step3Status ?? NodeStatus.Idle;
+    public NodeStatus CurrentStep4Status => SelectedTask?.Step4Status ?? NodeStatus.Idle;
+    public NodeStatus CurrentStep5Status => SelectedTask?.Step5Status ?? NodeStatus.Idle;
+
+    public string CurrentStep1Log => string.IsNullOrWhiteSpace(SelectedTask?.Step1Logs) ? "Chưa có log cho bước này." : SelectedTask.Step1Logs;
+    public string CurrentStep2Log => string.IsNullOrWhiteSpace(SelectedTask?.Step2Logs) ? "Chưa có log cho bước này." : SelectedTask.Step2Logs;
+    public string CurrentStep3Log => string.IsNullOrWhiteSpace(SelectedTask?.Step3Logs) ? "Chưa có log cho bước này." : SelectedTask.Step3Logs;
+    public string CurrentStep4Log => string.IsNullOrWhiteSpace(SelectedTask?.Step4Logs) ? "Chưa có log cho bước này." : SelectedTask.Step4Logs;
+    public string CurrentStep5Log => string.IsNullOrWhiteSpace(SelectedTask?.Step5Logs) ? "Chưa có log cho bước này." : SelectedTask.Step5Logs;
 
     partial void OnSelectedTaskChanged(GeminiTaskModel? value)
     {
         OnPropertyChanged(nameof(HasSelectedTask));
+        OnPropertyChanged(nameof(CurrentStep1Status));
+        OnPropertyChanged(nameof(CurrentStep2Status));
+        OnPropertyChanged(nameof(CurrentStep3Status));
+        OnPropertyChanged(nameof(CurrentStep4Status));
+        OnPropertyChanged(nameof(CurrentStep5Status));
+        OnPropertyChanged(nameof(CurrentStep1Log));
+        OnPropertyChanged(nameof(CurrentStep2Log));
+        OnPropertyChanged(nameof(CurrentStep3Log));
+        OnPropertyChanged(nameof(CurrentStep4Log));
+        OnPropertyChanged(nameof(CurrentStep5Log));
     }
 
     private void NotifySelectionChanged()

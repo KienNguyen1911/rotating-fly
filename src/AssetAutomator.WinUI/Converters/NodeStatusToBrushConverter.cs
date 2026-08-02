@@ -22,6 +22,7 @@ public class NodeStatusToBrushConverter : IValueConverter
             "running" or "generating..." or "processing" => ParseHexColor("#FFC107"),
             "success" or "done" or "completed" => ParseHexColor("#4CAF50"),
             "failed" or "error" => ParseHexColor("#F44336"),
+            "idle" or "pending" or "waiting" => ParseHexColor("#475569"),
             _ => ParseHexColor("#607D8B")
         });
     }

@@ -1,6 +1,6 @@
 # WinUI 3 Port — Phân tích khoảng trống & Kế hoạch bổ sung
 
-> **Trạng thái:** ✅ **Phase A (Sprint 1 & 2)**, **Phase B (Sprint 3, 4, 5)** hoàn thành 100%. Sprint 5 vừa hoàn thành: Card Grid với overlay glass + aspect-ratio-driven height (`AspectRatioHeightConverter`), Fallback Table View 9-cột, Progress bar + 4 header buttons (Save / Google Flow Web / View Toggle / Open Folder), full set của Converters (`YoutubeUrlConverter`, `HexToBrushConverter`, `NodeStatusToBrushConverter`, `AspectRatioHeightConverter`, `StringToImageSourceConverter`, `StepStatusToBrushConverter`, `BoolToVisibilityConverter`). Build 0 errors.
+> **Trạng thái:** ✅ **Phase A (Sprint 1 & 2)**, **Phase B (Sprint 3, 4, 5)**, **Phase C (Sprint 6 & 7)**, **Phase D (Sprint 8)** hoàn thành 100%. Sprint 8 vừa hoàn thành: Theme dictionaries (`Theme.xaml`/`Theme.Light.xaml`/`Theme.Dark.xaml`) với semantic colour tokens, ButtonStyles (`Button.Base` + `PrimaryButton`/`SecondaryButton`/`GreenButton`/`DeleteButton`/`IconButton`/`RoundCloseButton`/`HeaderPillButton`), Sidebar drawer overlay với `SidebarViewModel` singleton + `ResizableDragHandle` + `TranslateTransform` slide animation (220 ms in, 180 ms out) + drag-to-resize clamp `[320 px .. 80 % window width]`. Build 0 errors, smoke test pass (MainWindow visible, no stderr).
 > **Mục đích:** So sánh chi tiết UI giữa WPF (production, đầy đủ) và WinUI 3 (skeleton, đang port) cho từng tab/dialog, đánh dấu các control/feature còn thiếu, và đề xuất thứ tự bổ sung.
 
 ---
@@ -13,7 +13,7 @@
 | Dialogs (ScenesViewer, VoiceSelector, License, Update, NewProject...) | 8 Dialogs | 8 Dialogs Fully Implemented & Wired | **100% (Phase A)** |
 | Batch Image Gen (Dashboard + Routing + Card Grid) | Projects Dashboard & Editor | Projects Dashboard, Routing & Cards Grid Shell | **Phase B (Sprint 3 Done)** |
 | Build Status | 0 Errors | **0 Errors, 0 Warnings (Passed)** | **100%** |
-| Remaining Modules (Batch Editor & Gemini Creator) | Phase B & C | Phase B (Sprint 4-5) & Phase C (Sprint 6-7) | **Chuẩn bị Sprint 4** |
+| Remaining Modules (Batch Editor & Gemini Creator) | Phase B & C | Phase B (Sprint 4-5) & Phase C (Sprint 6-7) | **Sprint 8 done** |
 
 **Kết luận ngắn:** WinUI 3 đã hoàn thành **Phase A (Sprint 1 & Sprint 2)** và **Sprint 3 (Phase B Start)**. Trang `BatchImageGenPage` đã được tạo kèm với `BatchImageGenViewModel`, Projects Dashboard, nút duyệt thư mục lưu trữ dự án, tạo dự án mới via `NewProjectDialog`, và lưới hiển thị card dự án phản hồi giao diện.
 
@@ -31,7 +31,7 @@
 | Settings (lines 672-785) | `Views/Pages/SettingsPage.xaml` | ✅ **Phase A Completed (100%)**: Đã thêm PasswordBox x3, API URLs, chọn thư mục Chrome Profiles, khung cấu hình & test Proxy, nút Export/Import/Check keys, Theme selector |
 | History (lines 786-1019) | `Views/Pages/HistoryPage.xaml` | ✅ **Phase A Completed (100%)**: Đã thêm ListBox dates, thanh lọc 3 TextBox + 6 failure checkboxes, Step status badges (5 step x 3 state), nút thao tác từng hàng |
 | Batch Image Gen (lines 1020-1495) | `Views/Pages/BatchImageGenPage.xaml` | 🟢 **Phase B Middle (Sprint 4 Completed)**: Projects Dashboard + Project Editor left sidebar (Character dropzone, Script JSON, Config & AI Model Expander, Concurrency & Generate Button), `BatchImageGenViewModel`, 0 errors build & test run pass. |
-| Gemini AI Creator (lines 1497-1886) | `Views/Pages/GeminiPage.xaml` | 🟡 **Sắp triển khai (Phase C - Sprint 6-7)**: Toolbar 5 buttons, DataGrid 7 columns, RowDetails, Python server log panel |
+| Gemini AI Creator (lines 1497-1886) | `Views/Pages/GeminiPage.xaml` | 🟢 **Phase C Completed (100%)**: Toolbar 6 buttons, ListView 7-col với header Grid + DataTemplate row, RowDetails Flyout 4 panels (Scriptwriter, Scene Creator, Voice/Provider/CharacterRef, Topic suggestion), Python Server Log panel, Sidebar 5-Step Accordion, Cancel + ClearLogs buttons, ConsoleLogs ScrollViewer+TextBlock, VideoDuration NumberBox, ProgressRing IsGenerating. |
 
 ### 2.2. Sidebar / Special panels (chưa được map)
 
