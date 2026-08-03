@@ -391,6 +391,32 @@ public sealed partial class GeminiPage : Page
         };
         stack.Children.Add(sceneModelCombo);
 
+        // ── Mode toggle: API Stream (default, fast) vs Playwright (real Web UI) ──
+        // API Stream mode calls the Python REST /api/chat/stream-extended endpoint,
+        // mirroring test_gem_and_thinking.py — uploads SRT + transcript, streams
+        // extended thinking + scenes JSON back in realtime, no Chrome required.
+        // Playwright mode drives the real Gemini Web UI through a persistent
+        // Chrome profile (requires user to have a Gemini session in Chrome).
+        var modeApiRadio = new RadioButton
+        {
+            Content = "📡 API Stream (mặc định — nhanh, không cần Chrome)",
+            IsChecked = task.UseApiStreamForSceneCreator,
+            FontSize = 11,
+            GroupName = $"SceneCreatorMode_{task.Id}",
+            Margin = new Thickness(0, 4, 0, 0)
+        };
+        var modePwRadio = new RadioButton
+        {
+            Content = "🎭 Playwright (Web UI thật, cần Chrome profile)",
+            IsChecked = !task.UseApiStreamForSceneCreator,
+            FontSize = 11,
+            GroupName = $"SceneCreatorMode_{task.Id}"
+        };
+        modeApiRadio.Checked += (s, e) => task.UseApiStreamForSceneCreator = true;
+        modePwRadio.Checked += (s, e) => task.UseApiStreamForSceneCreator = false;
+        stack.Children.Add(modeApiRadio);
+        stack.Children.Add(modePwRadio);
+
         card.Child = stack;
         Grid.SetRow(card, row);
         Grid.SetColumn(card, col);

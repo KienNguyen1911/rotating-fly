@@ -333,6 +333,19 @@ namespace AssetAutomator.Application.Services
             string gemName = taskModel.SelectedSceneCreatorGem?.Name ?? string.Empty;
             string model = GeminiApiService.ResolveModelName(taskModel.SceneCreatorModel);
 
+            // Routing: respect the per-task toggle so users can A/B test
+            // API Stream (fast, no Chrome) vs Playwright (real Web UI).
+            // Default = ApiStream because it mirrors test_gem_and_thinking.py
+            // and does not require a Chrome profile with an active session.
+            var mode = taskModel.UseApiStreamForSceneCreator
+                ? GeminiPlaywrightSceneBreakdownStep.SceneBreakdownMode.ApiStream
+                : GeminiPlaywrightSceneBreakdownStep.SceneBreakdownMode.Playwright;
+
+            // Auto-enable extended thinking when the resolved model name
+            // already carries the -thinking suffix (e.g. gemini-3-flash-thinking).
+            bool enableThinking = model.Contains("thinking", StringComparison.OrdinalIgnoreCase) ||
+                                  model.Contains("advanced", StringComparison.OrdinalIgnoreCase);
+
             await _sceneBreakdownStep.ExecuteAsync(
                 task: task,
                 logTask: log,
@@ -340,8 +353,9 @@ namespace AssetAutomator.Application.Services
                 outputDir: outputDir,
                 gemId: string.IsNullOrWhiteSpace(gemId) ? null : gemId,
                 sessionId: null,
-                gemName: gemName
-            );
+                gemName: gemName,
+                mode: mode,
+                enableExtendedThinking: enableThinking);
         }
 
         private async Task RunStageImageGenAsync(

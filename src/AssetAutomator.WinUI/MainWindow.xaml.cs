@@ -27,6 +27,21 @@ public sealed partial class MainWindow : Window
 
         NavView.SelectedItem = NavView.MenuItems[0];
         ContentFrame.Navigate(typeof(TasksPage));
+
+        this.Closed += MainWindow_Closed;
+    }
+
+    private void MainWindow_Closed(object sender, WindowEventArgs args)
+    {
+        try
+        {
+            var pythonServerManager = App.Services.GetService<AssetAutomator.Infrastructure.Helpers.PythonServerManager>();
+            pythonServerManager?.StopServer();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[MainWindow_Closed] {ex.Message}");
+        }
     }
 
     private void SetSize()

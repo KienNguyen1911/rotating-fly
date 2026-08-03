@@ -170,6 +170,26 @@ namespace AssetAutomator.Core.Models
             set { if (_selectedSceneCreatorGem != value) { _selectedSceneCreatorGem = value; OnPropertyChanged(); OnPropertyChanged(nameof(SceneCreatorSummary)); } }
         }
 
+        private bool _useApiStreamForSceneCreator = true;
+
+        /// <summary>
+        /// When <c>true</c> (default), Step 3 (Scene Breakdown) uses the Python
+        /// REST server's <c>/api/chat/stream-extended</c> endpoint to stream the
+        /// extended-thinking process + final scenes JSON back in realtime.
+        /// This mirrors <c>test_gem_and_thinking.py</c> and does NOT require a
+        /// Chrome profile with an active Gemini session.
+        ///
+        /// When <c>false</c>, falls back to driving the real Gemini Web UI
+        /// through Playwright + a persistent Chrome profile. Use this when the
+        /// Python server is unavailable or the user wants the exact Web UI
+        /// behaviour.
+        /// </summary>
+        public bool UseApiStreamForSceneCreator
+        {
+            get => _useApiStreamForSceneCreator;
+            set { if (_useApiStreamForSceneCreator != value) { _useApiStreamForSceneCreator = value; OnPropertyChanged(); } }
+        }
+
         private string _characterRef = "";
 
         public string CharacterRef
@@ -302,12 +322,22 @@ namespace AssetAutomator.Core.Models
 
         public string SceneCreatorSummary =>
             $"{(SelectedSceneCreatorGem?.Name ?? "Mặc Định")} · {SceneCreatorModel}" +
-            (SceneCreatorModel.Contains("pro", StringComparison.OrdinalIgnoreCase) ? " 🧠" : "");
+            (SceneCreatorModel.Contains("pro", StringComparison.OrdinalIgnoreCase) ? " 🧠" : "") +
+            (UseApiStreamForSceneCreator ? " 📡" : " 🎭");
+
+        private readonly System.Threading.SynchronizationContext? _syncContext = System.Threading.SynchronizationContext.Current;
 
         public event PropertyChangedEventHandler? PropertyChanged;
         protected void OnPropertyChanged([CallerMemberName] string? propertyName = null)
         {
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+            if (_syncContext != null)
+            {
+                _syncContext.Post(_ => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName)), null);
+            }
+            else
+            {
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+            }
         }
     }
 }

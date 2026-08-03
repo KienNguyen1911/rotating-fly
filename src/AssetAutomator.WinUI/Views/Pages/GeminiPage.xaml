@@ -105,6 +105,13 @@
                         </StackPanel>
                     </Button>
 
+                    <Button Command="{x:Bind ViewModel.BulkAddTasksCommand}" ToolTipService.ToolTip="Thêm hàng loạt (kế thừa config nếu đang chọn task)">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <FontIcon Glyph="&#xE8D5;" FontSize="12" />
+                            <TextBlock Text="Thêm Hàng Loạt" />
+                        </StackPanel>
+                    </Button>
+
                     <Button Command="{x:Bind ViewModel.DeleteSelectedTasksCommand}" ToolTipService.ToolTip="Xóa các task đã chọn">
                         <StackPanel Orientation="Horizontal" Spacing="6">
                             <FontIcon Glyph="&#xE74D;" FontSize="12" />

@@ -36,6 +36,12 @@ public partial class GeminiViewModel : ObservableObject
     private readonly DispatcherQueue _dispatcherQueue;
     private CancellationTokenSource? _runCts;
 
+    private readonly System.Text.StringBuilder _pendingConsoleLogs = new();
+    private readonly object _consoleLogLock = new();
+    private readonly DispatcherTimer _logTimer;
+    private readonly System.Collections.Concurrent.ConcurrentQueue<(GeminiTaskModel Task, string Message)> _pendingTaskLogs = new();
+    private bool _hasTaskStatusChanged = false;
+
     public ObservableCollection<GeminiTaskModel> GeminiTasks { get; } = new();
     public ObservableCollection<GemOptionItem> AvailableScriptwriterGems { get; } = new();
     public ObservableCollection<GemOptionItem> AvailableSceneCreatorGems { get; } = new();
@@ -172,6 +178,10 @@ public partial class GeminiViewModel : ObservableObject
         _dispatcherQueue = DispatcherQueue.GetForCurrentThread()
             ?? (App.MainWindowInstance?.DispatcherQueue);
 
+        _logTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+        _logTimer.Tick += OnLogTimerTick;
+        _logTimer.Start();
+
         if (_logService != null)
         {
             _logService.OnLogEntry += OnLogServiceEntry;
@@ -212,13 +222,63 @@ public partial class GeminiViewModel : ObservableObject
             ? $"[{entry.FormattedTimestamp}] [Python] {entry.Message}\n"
             : $"[{entry.FormattedTimestamp}] [{entry.Level}] {entry.Message}\n";
 
-        if (_dispatcherQueue != null)
+        lock (_consoleLogLock)
         {
-            _dispatcherQueue.TryEnqueue(() => ConsoleLogs += line);
+            _pendingConsoleLogs.Append(line);
         }
-        else
+    }
+
+    private void OnLogTimerTick(object? sender, object e)
+    {
+        bool taskLogsUpdated = false;
+        
+        while (_pendingTaskLogs.TryDequeue(out var item))
         {
-            ConsoleLogs += line;
+            taskLogsUpdated = true;
+            string stamped = $"[{DateTime.Now:HH:mm:ss}] {item.Message}\n";
+            item.Task.Logs += stamped;
+            if (item.Task.Logs.Length > 50000) item.Task.Logs = item.Task.Logs.Substring(item.Task.Logs.Length - 50000);
+            
+            lock (_consoleLogLock)
+            {
+                _pendingConsoleLogs.Append(stamped);
+            }
+            
+            UpdateTaskStepInfoFromLog(item.Task, item.Message);
+        }
+
+        string newConsoleLogs = string.Empty;
+        lock (_consoleLogLock)
+        {
+            if (_pendingConsoleLogs.Length > 0)
+            {
+                newConsoleLogs = _pendingConsoleLogs.ToString();
+                _pendingConsoleLogs.Clear();
+            }
+        }
+
+        if (!string.IsNullOrEmpty(newConsoleLogs))
+        {
+            ConsoleLogs += newConsoleLogs;
+            if (ConsoleLogs.Length > 100000)
+            {
+                ConsoleLogs = ConsoleLogs.Substring(ConsoleLogs.Length - 50000);
+            }
+        }
+
+        if (taskLogsUpdated || _hasTaskStatusChanged)
+        {
+            _hasTaskStatusChanged = false;
+            OnPropertyChanged(nameof(CurrentStep1Status));
+            OnPropertyChanged(nameof(CurrentStep2Status));
+            OnPropertyChanged(nameof(CurrentStep3Status));
+            OnPropertyChanged(nameof(CurrentStep4Status));
+            OnPropertyChanged(nameof(CurrentStep5Status));
+            OnPropertyChanged(nameof(CurrentStep1Log));
+            OnPropertyChanged(nameof(CurrentStep2Log));
+            OnPropertyChanged(nameof(CurrentStep3Log));
+            OnPropertyChanged(nameof(CurrentStep4Log));
+            OnPropertyChanged(nameof(CurrentStep5Log));
         }
     }
 
@@ -291,6 +351,66 @@ public partial class GeminiViewModel : ObservableObject
         SelectedTask = newTask;
         StatusLog = $"[INFO] Đã thêm task mới vào hàng đợi (Tổng: {GeminiTasks.Count} tasks).";
         _logService?.Info(LogCategory.GeminiCreator, $"Added new task to queue. Total: {GeminiTasks.Count}");
+    }
+
+    [RelayCommand]
+    private async Task BulkAddTasksAsync()
+    {
+        if (_geminiCreatorService == null)
+        {
+            StatusLog = "⚠️ GeminiCreatorService chưa sẵn sàng. Hãy thử lại sau.";
+            return;
+        }
+
+        var xamlRoot = App.MainWindowInstance?.Content?.XamlRoot;
+        if (xamlRoot == null) return;
+
+        var referenceTask = SelectedTask ?? new GeminiTaskModel();
+
+        var dialog = new AssetAutomator.WinUI.Views.Dialogs.BulkTaskWizardDialog(
+            referenceTask,
+            AvailableScriptwriterGems,
+            AvailableSceneCreatorGems,
+            AvailableAiModels,
+            AvailableImageProviders)
+        {
+            XamlRoot = xamlRoot
+        };
+
+        var result = await dialog.ShowAsync();
+        if (result == ContentDialogResult.Primary && dialog.Topics.Any())
+        {
+            int count = 0;
+            var configuredTask = dialog.TemplateTask;
+
+            foreach (var topicItem in dialog.Topics)
+            {
+                if (string.IsNullOrWhiteSpace(topicItem.Topic)) continue;
+
+                var newTask = _geminiCreatorService.CreateDefaultTask(
+                    AvailableScriptwriterGems,
+                    AvailableSceneCreatorGems,
+                    topicItem.Topic);
+
+                // Apply config from the wizard's template task
+                newTask.ScriptwriterModel = configuredTask.ScriptwriterModel;
+                newTask.SceneCreatorModel = configuredTask.SceneCreatorModel;
+                newTask.SelectedScriptwriterGem = configuredTask.SelectedScriptwriterGem;
+                newTask.SelectedSceneCreatorGem = configuredTask.SelectedSceneCreatorGem;
+                newTask.EnableDeepResearch = configuredTask.EnableDeepResearch;
+                newTask.UseApiStreamForSceneCreator = configuredTask.UseApiStreamForSceneCreator;
+                newTask.SelectedImageProvider = configuredTask.SelectedImageProvider;
+                newTask.TargetLanguage = configuredTask.TargetLanguage;
+                newTask.CharacterRef = configuredTask.CharacterRef;
+                newTask.VoiceId = configuredTask.VoiceId;
+
+                GeminiTasks.Add(newTask);
+                count++;
+            }
+
+            StatusLog = $"[INFO] Đã tạo thành công {count} tasks mới.";
+            _logService?.Info(LogCategory.GeminiCreator, $"Bulk added {count} tasks via wizard.");
+        }
     }
 
     [RelayCommand]
@@ -814,21 +934,13 @@ public partial class GeminiViewModel : ObservableObject
                 }
             }
 
-            batchResult = await _pipelineOrchestrator.ExecuteBatchAsync(
+            batchResult = await Task.Run(() => _pipelineOrchestrator.ExecuteBatchAsync(
                 tasks.ToList(),
                 (taskModel, msg) =>
                 {
-                    _dispatcherQueue.TryEnqueue(() =>
-                    {
-                        string stamped = $"[{DateTime.Now:HH:mm:ss}] {msg}\n";
-                        taskModel.Logs += stamped;
-                        // Also push to the global Console Logs panel so the user can see
-                        // pipeline progress even when no Logs drawer is open.
-                        ConsoleLogs += stamped;
-                        UpdateTaskStepInfoFromLog(taskModel, msg);
-                    });
+                    _pendingTaskLogs.Enqueue((taskModel, msg));
                 },
-                ct).ConfigureAwait(true);
+                ct));
 
             StatusLog = $"[RUN] {batchResult}";
             _logService?.Success(LogCategory.Pipeline, batchResult.ToString());
@@ -1011,19 +1123,12 @@ public partial class GeminiViewModel : ObservableObject
             else taskItem.Step1Logs += $"[{DateTime.Now:HH:mm:ss}] {msg}\n";
         }
 
-        // Notify accordion so badges/labels refresh when this task is the selected one
-        // (or even if not — XAML binds via CurrentStep1..5Status which returns SelectedTask's value,
-        // so when the user opens the live task drawer the badges will already reflect the latest run).
-        OnPropertyChanged(nameof(CurrentStep1Status));
-        OnPropertyChanged(nameof(CurrentStep2Status));
-        OnPropertyChanged(nameof(CurrentStep3Status));
-        OnPropertyChanged(nameof(CurrentStep4Status));
-        OnPropertyChanged(nameof(CurrentStep5Status));
-        OnPropertyChanged(nameof(CurrentStep1Log));
-        OnPropertyChanged(nameof(CurrentStep2Log));
-        OnPropertyChanged(nameof(CurrentStep3Log));
-        OnPropertyChanged(nameof(CurrentStep4Log));
-        OnPropertyChanged(nameof(CurrentStep5Log));
+        if (taskItem.Step1Logs.Length > 50000) taskItem.Step1Logs = taskItem.Step1Logs.Substring(taskItem.Step1Logs.Length - 50000);
+        if (taskItem.Step2Logs.Length > 50000) taskItem.Step2Logs = taskItem.Step2Logs.Substring(taskItem.Step2Logs.Length - 50000);
+        if (taskItem.Step3Logs.Length > 50000) taskItem.Step3Logs = taskItem.Step3Logs.Substring(taskItem.Step3Logs.Length - 50000);
+        if (taskItem.Step4Logs.Length > 50000) taskItem.Step4Logs = taskItem.Step4Logs.Substring(taskItem.Step4Logs.Length - 50000);
+
+        _hasTaskStatusChanged = true;
     }
 
     // ─────────────────────────────────────────────────────

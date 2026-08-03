@@ -178,7 +178,7 @@ namespace AssetAutomator.Application.Steps
                     if (duration < 10) duration = 10;
                 }
 
-                double maxPollingSeconds = duration / 2.0;
+                double maxPollingSeconds = duration / 1.5;
                 if (maxPollingSeconds < 5) maxPollingSeconds = 5;
 
                 logTask(task, $"[VOICEOVER] Max polling budget for transcriptUrl: {maxPollingSeconds:F1} seconds.");

@@ -94,7 +94,8 @@ namespace AssetAutomator.Application.Services
                         configScriptwriter = scriptwriterCollection.First(g => g.Id == gem.id);
                     }
 
-                    if (gem.id.Equals(_configService.CurrentSettings.SceneCreatorGemId, StringComparison.OrdinalIgnoreCase) ||
+                    if (IsBedtimeSceneCreator(gem.id, gem.name) ||
+                        gem.id.Equals(_configService.CurrentSettings.SceneCreatorGemId, StringComparison.OrdinalIgnoreCase) ||
                         (configSceneCreator == defaultSceneCreator &&
                          (gem.name.Contains("scriptor", StringComparison.OrdinalIgnoreCase) ||
                           gem.name.Contains("rewrite", StringComparison.OrdinalIgnoreCase) ||
@@ -134,6 +135,26 @@ namespace AssetAutomator.Application.Services
         // ─────────────────────────────────────────────────────
         //  Cookie Import
         // ─────────────────────────────────────────────────────
+
+        /// <summary>
+        /// Returns <c>true</c> if the given gem id/name matches the
+        /// "Bedtime Scene Creator" Gem that the legacy
+        /// <c>test_gem_and_thinking.py</c> probe targets.
+        /// Hard-coded to the public Gem id <c>b1af0c371214</c> first,
+        /// then a name-based fuzzy match as a fallback for renamed clones.
+        /// </summary>
+        public static bool IsBedtimeSceneCreator(string? gemId, string? gemName)
+        {
+            const string BedtimeSceneCreatorId = "b1af0c371214";
+            if (!string.IsNullOrWhiteSpace(gemId) &&
+                gemId.Equals(BedtimeSceneCreatorId, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+            if (string.IsNullOrWhiteSpace(gemName)) return false;
+            return gemName.Contains("bedtime scene creator", StringComparison.OrdinalIgnoreCase) ||
+                   gemName.Contains("bedtime", StringComparison.OrdinalIgnoreCase) && gemName.Contains("scene", StringComparison.OrdinalIgnoreCase);
+        }
 
         /// <summary>
         /// Cookie import modes: Auto (scan Chrome profiles) or Manual (pick cookies.json file).
