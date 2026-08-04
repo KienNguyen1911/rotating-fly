@@ -1,32 +1,31 @@
-using System;
-using System.Collections.Generic;
+using AssetAutomator.Core.Interfaces;
 
 namespace AssetAutomator.Application.Services.Providers
 {
     /// <summary>
-    /// Factory for creating and retrieving IImageGenProvider strategies based on provider key.
-    /// Supports "glabs" and "flow_local".
+    /// Factory for retrieving the singleton <see cref="IImageGenProvider"/> implementation.
+    /// The application now ships a single image-gen strategy
+    /// (<c>FlowLocalImageGenProvider</c>) backed by the Google Flow Local API
+    /// running on <c>D:\Dev\google-flow-2.0.0</c>.
     /// </summary>
     public static class ImageGenProviderFactory
     {
-        private static readonly Dictionary<string, IImageGenProvider> _providers = new Dictionary<string, IImageGenProvider>(StringComparer.OrdinalIgnoreCase)
-        {
-            ["glabs"] = new GlabsImageGenProvider(),
-            ["flow_local"] = new FlowLocalImageGenProvider()
-        };
+        public const string FlowLocalProviderKey = "flow_local";
+
+        private static readonly FlowLocalImageGenProvider _flowLocal = new FlowLocalImageGenProvider();
 
         /// <summary>
-        /// Retrieves the requested IImageGenProvider instance.
-        /// Defaults to GlabsImageGenProvider if key is null or unknown.
+        /// Returns the configured provider. Any unknown / legacy key (e.g. <c>"glabs"</c>
+        /// saved by older projects) is gracefully remapped to <c>flow_local</c>.
         /// </summary>
-        public static IImageGenProvider GetProvider(string providerKey)
+        public static IImageGenProvider GetProvider(string? providerKey)
         {
-            if (!string.IsNullOrWhiteSpace(providerKey) && _providers.TryGetValue(providerKey.Trim(), out var provider))
+            if (string.Equals(providerKey, FlowLocalProviderKey, System.StringComparison.OrdinalIgnoreCase))
             {
-                return provider;
+                return _flowLocal;
             }
 
-            return _providers["glabs"];
+            return _flowLocal;
         }
     }
 }

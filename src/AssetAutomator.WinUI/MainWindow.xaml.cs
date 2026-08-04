@@ -7,6 +7,7 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media.Animation;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.UI.Xaml.Media;
 using Windows.Graphics;
 using WinRT.Interop;
 using AssetAutomator.WinUI.ViewModels;
@@ -19,6 +20,8 @@ namespace AssetAutomator.WinUI;
 
 public sealed partial class MainWindow : Window
 {
+    private DispatcherTimer? _flowLocalStatusTimer;
+
     public MainWindow()
     {
         InitializeComponent();
@@ -29,14 +32,69 @@ public sealed partial class MainWindow : Window
         ContentFrame.Navigate(typeof(TasksPage));
 
         this.Closed += MainWindow_Closed;
+        this.Activated += MainWindow_Activated;
+
+        // Q3: Poll Flow Local status mỗi 3s để update BottomBar indicator
+        StartFlowLocalStatusPolling();
+    }
+
+    private void MainWindow_Activated(object sender, WindowActivatedEventArgs args)
+    {
+        // Trigger một lần update ngay khi window activated
+        _ = UpdateFlowLocalIndicatorAsync();
+    }
+
+    private void StartFlowLocalStatusPolling()
+    {
+        _flowLocalStatusTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
+        _flowLocalStatusTimer.Tick += async (_, _) => await UpdateFlowLocalIndicatorAsync();
+        _flowLocalStatusTimer.Start();
+    }
+
+    private async Task UpdateFlowLocalIndicatorAsync()
+    {
+        try
+        {
+            var launcher = App.Services.GetService<AssetAutomator.Infrastructure.Helpers.GoogleFlow2ServerLauncher>();
+            if (launcher == null)
+            {
+                FlowLocalIndicator.Text = "Flow Local: chưa đăng ký";
+                FlowLocalIcon.Glyph = "\uE783"; // warning
+                return;
+            }
+            var (ok, diag) = await launcher.IsRunningAsync();
+            if (ok)
+            {
+                FlowLocalIndicator.Text = "Flow Local: ✅ sẵn sàng";
+                FlowLocalIcon.Glyph = "\uE73E"; // check
+                FlowLocalIcon.Foreground = new SolidColorBrush(Microsoft.UI.Colors.LightGreen);
+            }
+            else
+            {
+                FlowLocalIndicator.Text = "Flow Local: 🔄 đang khởi động...";
+                FlowLocalIcon.Glyph = "\uE9CE"; // sync
+                FlowLocalIcon.Foreground = new SolidColorBrush(Microsoft.UI.Colors.Goldenrod);
+            }
+        }
+        catch
+        {
+            // best-effort; indicator sẽ retry sau 3s
+        }
     }
 
     private void MainWindow_Closed(object sender, WindowEventArgs args)
     {
         try
         {
+            _flowLocalStatusTimer?.Stop();
+
             var pythonServerManager = App.Services.GetService<AssetAutomator.Infrastructure.Helpers.PythonServerManager>();
             pythonServerManager?.StopServer();
+
+            // B3: Stop Google Flow Local server khi app đóng, tránh orphan process
+            // giữ port 8787 → lần sau launch fail "address already in use".
+            var flowLauncher = App.Services.GetService<AssetAutomator.Infrastructure.Helpers.GoogleFlow2ServerLauncher>();
+            flowLauncher?.Stop();
         }
         catch (Exception ex)
         {

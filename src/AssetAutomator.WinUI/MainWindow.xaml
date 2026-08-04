@@ -90,5 +90,25 @@
 
             <Frame x:Name="ContentFrame" />
         </NavigationView>
+
+        <!-- Q3: BottomBar indicator cho Flow Local status -->
+        <Border Grid.Row="1"
+                HorizontalAlignment="Right"
+                VerticalAlignment="Bottom"
+                Margin="0,0,12,8"
+                Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                BorderThickness="1"
+                CornerRadius="12"
+                Padding="10,4"
+                Opacity="0.92">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+                <FontIcon x:Name="FlowLocalIcon" Glyph="&#xE9CE;" FontSize="12" />
+                <TextBlock x:Name="FlowLocalIndicator"
+                           Text="Flow Local: đang kiểm tra..."
+                           FontSize="11"
+                           VerticalAlignment="Center" />
+            </StackPanel>
+        </Border>
     </Grid>
 </Window>

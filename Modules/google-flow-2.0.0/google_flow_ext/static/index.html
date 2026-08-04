@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Google Flow Extended - System Dashboard</title>
+  <link rel="stylesheet" href="/ext-static/skeuo.css" />
+</head>
+<body>
+
+  <!-- Top Console Header -->
+  <header class="top-console">
+    <div class="top-console-inner">
+      <div class="brand-badge">
+        <div class="brand-icon-plate">FX</div>
+        <div>
+          <div class="brand-title">GOOGLE FLOW EXTENDED</div>
+          <div class="brand-sub">Skeuomorphic Control Rack v2.0.0-ext</div>
+        </div>
+      </div>
+
+      <nav class="nav-tabs">
+        <a href="/" class="nav-btn active">📊 Dashboard</a>
+        <a href="/setup" class="nav-btn">⚙️ Setup Wizard</a>
+        <a href="/admin" class="nav-btn">🛡️ Captcha Admin</a>
+        <a href="/portal" class="nav-btn">🔑 User Console</a>
+      </nav>
+    </div>
+  </header>
+
+  <!-- Main Content Container -->
+  <main class="container">
+
+    <!-- Status Overview Plate -->
+    <section class="skeuo-card">
+      <div class="card-header">
+        <div class="card-title">
+          <span id="ledApiHealth" class="led led-cyan active"></span>
+          System Status & Health Console
+        </div>
+        <div style="font-family: var(--font-mono); font-size: 13px; color: var(--text-muted);">
+          PORT: <span style="color: var(--accent-cyan);">8787</span> | MODE: <span style="color: var(--accent-emerald);">ONLINE</span>
+        </div>
+      </div>
+
+      <div class="grid-3">
+        <div class="metric-box">
+          <div style="display: flex; align-items: center; justify-content: space-between;">
+            <div class="metric-label">Session Token (ST)</div>
+            <span id="ledTokenLive" class="led led-green"></span>
+          </div>
+          <div id="metricStStatus" class="metric-value">CHECKING...</div>
+          <div style="font-size: 11px; color: var(--text-dim); margin-top: 4px;">Live Google Session</div>
+        </div>
+
+        <div class="metric-box">
+          <div style="display: flex; align-items: center; justify-content: space-between;">
+            <div class="metric-label">Access Token (AT)</div>
+            <span id="ledTokenPersisted" class="led led-amber"></span>
+          </div>
+          <div id="metricAtStatus" class="metric-value">CHECKING...</div>
+          <div style="font-size: 11px; color: var(--text-dim); margin-top: 4px;">Auto-Refreshed</div>
+        </div>
+
+        <div class="metric-box">
+          <div style="display: flex; align-items: center; justify-content: space-between;">
+            <div class="metric-label">Google Flow Project</div>
+            <span id="ledProjectReady" class="led led-green"></span>
+          </div>
+          <div id="metricProjectId" class="metric-value">STANDBY</div>
+          <div style="font-size: 11px; color: var(--text-dim); margin-top: 4px;">Multi-Project Isolated</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Operational Controls Grid -->
+    <div class="grid-2">
+      <!-- Extended Features Control Panel -->
+      <section class="skeuo-card">
+        <div class="card-header">
+          <div class="card-title">🚀 Extended Features Engine</div>
+        </div>
+
+        <div class="inset-panel" style="margin-bottom: 16px;">
+          <div style="font-weight: 600; color: #ffffff; margin-bottom: 6px;">OpenAI API Compatibility</div>
+          <div style="font-size: 13px; color: var(--text-muted);">
+            Includes support for <code style="color: var(--accent-cyan); font-family: var(--font-mono);">/v1/images/generations</code>, 
+            <code style="color: var(--accent-cyan); font-family: var(--font-mono);">/v1/images/edits</code> (Image-to-Image), and 
+            <code style="color: var(--accent-cyan); font-family: var(--font-mono);">/v1/projects</code>.
+          </div>
+        </div>
+
+        <div class="inset-panel">
+          <div style="font-weight: 600; color: #ffffff; margin-bottom: 6px;">Auto-Token Refresh Engine</div>
+          <div style="font-size: 13px; color: var(--text-muted);">
+            Interceptors automatically handle token expiration errors during generation retries without dropping connections.
+          </div>
+        </div>
+      </section>
+
+      <!-- Realtime Activity Log Console -->
+      <section class="skeuo-card">
+        <div class="card-header">
+          <div class="card-title">🖥️ Realtime System Log</div>
+          <button class="skeuo-btn" onclick="document.getElementById('dashLogCrt').innerHTML=''">Clear Log</button>
+        </div>
+
+        <div id="dashLogCrt" class="crt-screen">
+          <div>[SYSTEM] Extended Control Rack Initialized.</div>
+          <div>[SYSTEM] Listening on http://127.0.0.1:8787...</div>
+        </div>
+      </section>
+    </div>
+
+    <!-- Footer -->
+    <footer class="footer-bar">
+      Google Flow Extended Control Rack &copy; 2026 | Skeuomorphic Design System
+    </footer>
+
+  </main>
+
+  <script src="/ext-static/app.js"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      appendLog('dashLogCrt', 'System status monitor started.', 'info');
+      appendLog('dashLogCrt', 'Connected to Google Flow Core 2.0.1.', 'success');
+    });
+  </script>
+</body>
+</html>

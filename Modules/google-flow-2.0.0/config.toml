@@ -1,0 +1,17 @@
+[flow]
+labs_base_url = "https://labs.google/fx/api"
+api_base_url = "https://aisandbox-pa.googleapis.com/v1"
+timeout = 120
+max_retries = 3
+
+[output]
+output_dir = "output"
+
+[captcha]
+method = "personal" # personal / none
+personal_headless = false
+personal_timeout = 90
+personal_settle_seconds = 2.0
+
+[debug]
+enabled = true

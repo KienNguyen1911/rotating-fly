@@ -3,95 +3,111 @@
                xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                xmlns:local="using:AssetAutomator.WinUI.Views.Dialogs"
                xmlns:models="using:AssetAutomator.Core.Models"
-               Title="Thêm Task Hàng Loạt (Bulk Add)"
-               PrimaryButtonText="Tiếp tục"
+               xmlns:converters="using:AssetAutomator.WinUI.Converters"
+               Title="Thêm Task Hàng Loạt"
+               PrimaryButtonText="Tạo Task"
                SecondaryButtonText="Hủy bỏ"
                DefaultButton="Primary"
                PrimaryButtonClick="ContentDialog_PrimaryButtonClick"
                SecondaryButtonClick="ContentDialog_SecondaryButtonClick">
 
-    <Grid MinWidth="500" MinHeight="450">
-        <!-- BƯỚC 1: NHẬP TOPIC -->
-        <Grid x:Name="Step1Panel" Visibility="Visible">
+    <ContentDialog.Resources>
+        <converters:BoolToVisibilityConverter x:Key="BoolToVisibilityConverter" />
+    </ContentDialog.Resources>
+
+    <Grid MinWidth="550" MinHeight="400">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <StackPanel Grid.Row="0" Spacing="4" Margin="0,0,0,16">
+            <TextBlock Text="Nhập danh sách topic hoặc link YouTube" FontWeight="SemiBold" />
+            <TextBlock Text="Mỗi dòng là 1 task mới. Dán từ Excel, Notepad đều được." 
+                       Opacity="0.7" FontSize="12" TextWrapping="Wrap" />
+        </StackPanel>
+
+        <!-- Main Content -->
+        <Grid Grid.Row="1">
             <Grid.RowDefinitions>
-                <RowDefinition Height="Auto" />
                 <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
-            <TextBlock Text="Bước 1: Nhập danh sách chủ đề hoặc link YouTube (mỗi dòng 1 task mới):" 
-                       TextWrapping="Wrap" Margin="0,0,0,12" Opacity="0.8" />
+            <!-- Multiline Topic Input -->
+            <TextBox x:Name="TopicsInputBox"
+                     Grid.Row="0"
+                     AcceptsReturn="True"
+                     TextWrapping="Wrap"
+                     PlaceholderText="Lợi ích của việc đọc sách&#x0a;https://www.youtube.com/watch?v=abc123&#x0a;Cách giảm stress hiệu quả"
+                     TextChanged="TopicsInputBox_TextChanged"
+                     VerticalAlignment="Stretch"
+                     MinHeight="120" />
 
-            <ListView Grid.Row="1" ItemsSource="{x:Bind Topics}" SelectionMode="None">
-                <ListView.ItemTemplate>
-                    <DataTemplate x:DataType="local:TopicItem">
-                        <Grid Margin="0,0,0,8" ColumnSpacing="8">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-                            <TextBox Text="{x:Bind Topic, Mode=TwoWay}" PlaceholderText="Ví dụ: Lợi ích của việc đọc sách..." />
-                            <Button Grid.Column="1" Click="RemoveTopic_Click" Tag="{x:Bind}" ToolTipService.ToolTip="Xóa dòng này">
-                                <FontIcon Glyph="&#xE74D;" FontSize="14" Foreground="Red" />
-                            </Button>
-                        </Grid>
-                    </DataTemplate>
-                </ListView.ItemTemplate>
-            </ListView>
+            <!-- Template Selector -->
+            <Border Grid.Row="1" Margin="0,12,0,0" 
+                    Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                    CornerRadius="6" Padding="12">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
 
-            <Button Grid.Row="2" Margin="0,12,0,0" Click="AddTopic_Click" HorizontalAlignment="Left">
-                <StackPanel Orientation="Horizontal" Spacing="6">
-                    <FontIcon Glyph="&#xE710;" FontSize="12" />
-                    <TextBlock Text="Thêm dòng" />
+                    <TextBlock Grid.Column="0" Text="Template:" VerticalAlignment="Center" 
+                               FontWeight="SemiBold" Margin="0,0,12,0" />
+                    
+                    <ComboBox x:Name="TemplateComboBox" Grid.Column="1"
+                              ItemsSource="{x:Bind AvailableTemplates}"
+                              SelectedItem="{x:Bind SelectedTemplate, Mode=TwoWay}"
+                              DisplayMemberPath="Topic"
+                              HorizontalAlignment="Stretch" />
+                    
+                    <TextBlock Grid.Column="2" VerticalAlignment="Center" Margin="12,0,0,0"
+                               Opacity="0.6" FontSize="12">
+                        <Run Text="{x:Bind TaskCount}" />
+                        <Run Text=" task(s)" />
+                    </TextBlock>
+                </Grid>
+            </Border>
+
+            <!-- Preview Section -->
+            <Border Grid.Row="2" Margin="0,12,0,0" 
+                    Background="{ThemeResource LayerFillColorDefaultBrush}"
+                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                    BorderThickness="1" CornerRadius="6" Padding="12"
+                    Visibility="{x:Bind HasTopics, Converter={StaticResource BoolToVisibilityConverter}}">
+                <StackPanel Spacing="8">
+                    <TextBlock Text="Preview" FontWeight="SemiBold" Opacity="0.8" />
+                    <ListView ItemsSource="{x:Bind PreviewItems}" MaxHeight="150" 
+                              SelectionMode="None" Background="Transparent">
+                        <ListView.ItemTemplate>
+                            <DataTemplate x:DataType="local:PreviewItem">
+                                <Grid ColumnSpacing="8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <FontIcon Grid.Column="0" Glyph="&#xE8AB;" FontSize="12" 
+                                              Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
+                                              VerticalAlignment="Center" Margin="0,0,8,0" />
+                                    <TextBlock Grid.Column="1" Text="{x:Bind DisplayText}" 
+                                               TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                                </Grid>
+                            </DataTemplate>
+                        </ListView.ItemTemplate>
+                    </ListView>
                 </StackPanel>
-            </Button>
+            </Border>
         </Grid>
 
-        <!-- BƯỚC 2: CẤU HÌNH -->
-        <Grid x:Name="Step2Panel" Visibility="Collapsed" RowSpacing="12">
-            <Grid.RowDefinitions>
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="*" />
-            </Grid.RowDefinitions>
-
-            <TextBlock Text="Bước 2: Cấu hình chung cho tất cả các task mới" 
-                       TextWrapping="Wrap" Margin="0,0,0,12" Opacity="0.8" />
-
-            <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
-                <StackPanel Spacing="16" Padding="0,0,16,0">
-                    
-                    <!-- Scriptwriter Config -->
-                    <Border Background="{ThemeResource LayerFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8" Padding="12">
-                        <StackPanel Spacing="8">
-                            <TextBlock Text="Scriptwriter (Viết kịch bản)" FontWeight="SemiBold" />
-                            <ComboBox Header="Gem chuyên gia" ItemsSource="{x:Bind AvailableScriptwriterGems}" SelectedItem="{x:Bind TemplateTask.SelectedScriptwriterGem, Mode=TwoWay}" DisplayMemberPath="DisplayName" HorizontalAlignment="Stretch" />
-                            <ComboBox Header="Model AI" ItemsSource="{x:Bind AvailableAiModels}" SelectedItem="{x:Bind TemplateTask.ScriptwriterModel, Mode=TwoWay}" HorizontalAlignment="Stretch" />
-                            <ToggleSwitch Header="Deep Research (Tìm kiếm Web sâu)" IsOn="{x:Bind TemplateTask.EnableDeepResearch, Mode=TwoWay}" />
-                            <TextBox Header="Ngôn ngữ Video" Text="{x:Bind TemplateTask.TargetLanguage, Mode=TwoWay}" />
-                        </StackPanel>
-                    </Border>
-
-                    <!-- Scene Creator Config -->
-                    <Border Background="{ThemeResource LayerFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8" Padding="12">
-                        <StackPanel Spacing="8">
-                            <TextBlock Text="Scene Creator (Tạo hình ảnh)" FontWeight="SemiBold" />
-                            <ComboBox Header="Gem chuyên gia" ItemsSource="{x:Bind AvailableSceneCreatorGems}" SelectedItem="{x:Bind TemplateTask.SelectedSceneCreatorGem, Mode=TwoWay}" DisplayMemberPath="DisplayName" HorizontalAlignment="Stretch" />
-                            <ComboBox Header="Model AI" ItemsSource="{x:Bind AvailableAiModels}" SelectedItem="{x:Bind TemplateTask.SceneCreatorModel, Mode=TwoWay}" HorizontalAlignment="Stretch" />
-                            <ComboBox Header="Nhà cung cấp ảnh" ItemsSource="{x:Bind AvailableImageProviders}" SelectedItem="{x:Bind TemplateTask.SelectedImageProvider, Mode=TwoWay}" HorizontalAlignment="Stretch" />
-                            <TextBox Header="Character Reference (Path ảnh)" Text="{x:Bind TemplateTask.CharacterRef, Mode=TwoWay}" />
-                        </StackPanel>
-                    </Border>
-
-                    <!-- Voice Config -->
-                    <Border Background="{ThemeResource LayerFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8" Padding="12">
-                        <StackPanel Spacing="8">
-                            <TextBlock Text="Lồng Tiếng (ElevenLabs)" FontWeight="SemiBold" />
-                            <TextBox Header="Voice ID" Text="{x:Bind TemplateTask.VoiceId, Mode=TwoWay}" />
-                        </StackPanel>
-                    </Border>
-                    
-                </StackPanel>
-            </ScrollViewer>
-        </Grid>
+        <!-- Footer hint -->
+        <TextBlock Grid.Row="2" Margin="0,12,0,0" FontSize="11" Opacity="0.5" TextWrapping="Wrap">
+            <Run Text="Dòng bắt đầu bằng 'http' hoặc 'www' sẽ được nhận dạng là YouTube URL." />
+        </TextBlock>
     </Grid>
 </ContentDialog>

@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   ButtonStyles.xaml
-  Custom Button control template + named style variants ported from WPF
-  (src/AssetAutomator.UI/Resources/Styles/Buttons.xaml).
+  Custom Button control template + named style variants.
+  Based on original WPF design from legacy UI project.
 
   WinUI 3's default Button chrome is preserved when no template is supplied,
   so we only override visual aspects through Setters that target the

@@ -1,0 +1,3585 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>flow_captcha_service management background</title>
+  <style>
+    :root{
+      --bg:#0b0d13;
+      --panel:rgba(19,23,34,.92);
+      --line:rgba(231,235,245,.1);
+      --text:#e7ebf5;
+      --muted:#9099ad;
+      --primary:#fb7185;
+      --ok:rgba(34,197,94,.12);
+      --warn:rgba(245,158,11,.12);
+      --err:rgba(251,113,133,.12);
+      --shadow:0 28px 68px rgba(3,7,18,.36);
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0;
+      color:var(--text);
+      background:
+        radial-gradient(1100px 480px at -10% -10%, rgba(251,113,133,.18), transparent 58%),
+        radial-gradient(900px 360px at 110% 0%, rgba(245,158,11,.08), transparent 54%),
+        linear-gradient(180deg,#0b0d13 0%,#0d1018 55%,#121624 100%);
+      font-family:"HarmonyOS Sans SC","PingFang SC","Microsoft YaHei","Segoe UI",sans-serif;
+      min-height:100vh;
+    }
+    .container{width:min(1560px,96vw);margin:0 auto;padding:18px 0 36px}
+    .topbar{
+      position:sticky;
+      top:12px;
+      z-index:20;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:14px;
+      padding:14px 18px;
+      border:1px solid rgba(148,163,184,.28);
+      border-radius:18px;
+      background:rgba(255,255,255,.82);
+      backdrop-filter:blur(14px);
+      box-shadow:0 18px 40px rgba(15,23,42,.08);
+    }
+    .brand{display:flex;align-items:flex-start;gap:12px}
+    .brand-dot{
+      width:14px;
+      height:14px;
+      margin-top:9px;
+      border-radius:999px;
+      background:linear-gradient(135deg,#fb7185,#f97316);
+      box-shadow:0 0 0 6px rgba(251,113,133,.12);
+      flex:none;
+    }
+    .title{
+      margin:0;
+      font-size:32px;
+      line-height:1.08;
+      letter-spacing:.2px;
+      text-wrap:balance;
+    }
+    .subtitle{margin:7px 0 0;color:var(--muted);font-size:13px;line-height:1.5}
+    .topbar-side{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end}
+    .role-badge{
+      padding:8px 14px;
+      border-radius:999px;
+      border:1px solid var(--line);
+      background:rgba(248,250,252,.8);
+      font-size:12px;
+      color:#1e293b;
+      font-weight:600;
+      white-space:nowrap;
+    }
+    .portal-link{
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      gap:6px;
+      padding:8px 14px;
+      border-radius:999px;
+      border:1px solid #cbd5e1;
+      color:#0f172a;
+      background:#fff;
+      font-size:12px;
+      font-weight:700;
+      text-decoration:none;
+      white-space:nowrap;
+    }
+    .nav-tabs{
+      display:flex;
+      flex-direction:column;
+      gap:8px;
+      flex-wrap:nowrap;
+      margin-top:0;
+      padding:22px 16px 16px;
+      border:1px solid rgba(15,23,42,.08);
+      border-radius:22px;
+      background:
+        linear-gradient(180deg,rgba(15,23,42,.96) 0%,rgba(30,41,59,.96) 100%);
+      box-shadow:0 20px 42px rgba(15,23,42,.16);
+    }
+    #dashboardNav{
+      position:sticky;
+      top:92px;
+      align-self:start;
+    }
+    #dashboardNav::before{
+      content:"Control Navigation\ADisplay available modules by role";
+      white-space:pre-line;
+      display:block;
+      margin-bottom:10px;
+      padding:0 4px 14px;
+      border-bottom:1px solid rgba(148,163,184,.18);
+      color:rgba(226,232,240,.82);
+      font-size:12px;
+      line-height:1.75;
+      letter-spacing:.08em;
+      font-weight:700;
+    }
+    .nav-group{
+      display:grid;
+      gap:6px;
+    }
+    .nav-group + .nav-group{
+      margin-top:2px;
+      padding-top:10px;
+      border-top:1px solid rgba(148,163,184,.16);
+    }
+    .nav-group-label{
+      padding:0 2px;
+      font-size:10px;
+      color:rgba(156,177,202,.72);
+      letter-spacing:.12em;
+      font-weight:700;
+      text-transform:none;
+    }
+    .nav-tab{
+      display:flex;
+      align-items:center;
+      justify-content:flex-start;
+      gap:9px;
+      width:100%;
+      border:1px solid rgba(148,163,184,.14);
+      border-radius:13px;
+      padding:10px 12px;
+      min-height:42px;
+      font-size:12px;
+      color:#dbe4ef;
+      background:rgba(12,24,42,.48);
+      cursor:pointer;
+      font-weight:700;
+      transition:background .16s ease,border-color .16s ease,box-shadow .16s ease,color .16s ease;
+      text-align:left;
+    }
+    .nav-tab::before{
+      content:"";
+      width:7px;
+      height:7px;
+      border-radius:999px;
+      background:rgba(148,163,184,.42);
+      flex:none;
+    }
+    .nav-main{
+      flex:1;
+      font-size:12px;
+      line-height:1.2;
+    }
+    .nav-meta{
+      display:none;
+    }
+    .nav-tab:hover{
+      border-color:rgba(251,113,133,.24);
+      background:rgba(58,20,27,.56);
+    }
+    .nav-tab.active{
+      color:#f8fbff;
+      background:rgba(251,113,133,.12);
+      border-color:rgba(251,113,133,.3);
+      box-shadow:inset 0 0 0 1px rgba(251,113,133,.18);
+    }
+    .nav-tab.active::before{
+      background:#fb7185;
+    }
+    .sidebar-summary{
+      margin-top:10px;
+      padding:10px 2px 0;
+      border-top:1px solid rgba(148,163,184,.18);
+      display:grid;
+      grid-template-columns:repeat(2,minmax(0,1fr));
+      gap:8px 10px;
+    }
+    .sidebar-summary .summary-label{
+      font-size:10px;
+      letter-spacing:.08em;
+      color:rgba(156,177,202,.64);
+      font-weight:700;
+    }
+    .sidebar-summary .summary-value{
+      margin-top:4px;
+      font-size:12px;
+      color:#f8fafc;
+      font-weight:700;
+      line-height:1.4;
+    }
+    .sidebar-summary .summary-note{
+      display:none;
+    }
+    .panel{
+      background:var(--panel);
+      border:1px solid var(--line);
+      border-radius:14px;
+      box-shadow:var(--shadow);
+      padding:16px;
+      margin-top:14px;
+    }
+    .panel h2{margin:0;font-size:18px}
+    .panel-desc{margin:8px 0 0;font-size:12px;color:var(--muted);line-height:1.65}
+    .grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:12px}
+    .field{display:flex;flex-direction:column;gap:6px}
+    .field label{font-size:13px;font-weight:700;color:#334155}
+    .field .hint{font-size:12px;color:var(--muted)}
+    .field input,.field select,.field textarea{
+      width:100%;
+      border:1px solid #cbd5e1;
+      border-radius:10px;
+      padding:10px 11px;
+      font-size:13px;
+      color:#0f172a;
+      background:#fff;
+      outline:none;
+      transition:border-color .18s ease,box-shadow .18s ease;
+    }
+    .field input:focus,.field select:focus,.field textarea:focus{
+      border-color:#2563eb;
+      box-shadow:0 0 0 3px rgba(37,99,235,.12);
+    }
+    .field textarea{min-height:90px;resize:vertical}
+    .checkbox-line{display:flex;align-items:center;gap:8px;margin-top:10px;color:#334155;font-size:13px;font-weight:600}
+    .actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+    button{
+      border:1px solid transparent;
+      border-radius:10px;
+      padding:9px 15px;
+      font-size:13px;
+      cursor:pointer;
+      color:#fff;
+      background:linear-gradient(120deg,#0f172a,#1e293b);
+      transition:transform .15s ease,box-shadow .15s ease,filter .15s ease;
+    }
+    button:hover{transform:translateY(-1px);box-shadow:0 8px 16px rgba(15,23,42,.2);filter:brightness(1.03)}
+    button.secondary{color:#27272a;border-color:var(--line);background:#fff}
+    button.warn{background:#b45309}
+    .notice{margin-top:12px;border-radius:10px;border:1px solid;padding:10px;font-size:13px;line-height:1.6;display:none}
+    .notice.ok{display:block;background:var(--ok);border-color:#86efac;color:#166534}
+    .notice.warn{display:block;background:var(--warn);border-color:#fcd34d;color:#92400e}
+    .notice.err{display:block;background:var(--err);border-color:#fecaca;color:#991b1b}
+    .cards{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:12px}
+    .card{border:1px solid var(--line);border-radius:12px;padding:12px;background:#fff}
+    .card .k{font-size:12px;color:var(--muted)}
+    .card .v{margin-top:6px;font-size:24px;font-weight:700;color:#0b1324}
+    .guide-items,.guide-steps{margin:10px 0 0;padding-left:18px;line-height:1.7;font-size:13px}
+    .guide-tag{display:inline-flex;align-items:center;border-radius:999px;font-size:11px;padding:1px 8px;margin-right:8px;border:1px solid}
+    .guide-tag.critical{color:#991b1b;background:#fee2e2;border-color:#fca5a5}
+    .guide-tag.required{color:#92400e;background:#fef3c7;border-color:#fcd34d}
+    .guide-tag.info{color:#1e3a8a;background:#dbeafe;border-color:#93c5fd}
+    .table-wrap{width:100%;overflow-x:auto}
+    table{width:100%;border-collapse:collapse;margin-top:12px;font-size:13px}
+    th,td{border-bottom:1px solid #edf2f7;padding:9px 8px;text-align:left;vertical-align:middle}
+    th{color:#475569;font-weight:700;background:#f8fafc}
+    .cluster-panel{
+      border-color:#ccdae8;
+      background:
+        radial-gradient(540px 160px at 0% 0%, rgba(37,99,235,.07), transparent 65%),
+        linear-gradient(180deg,#ffffff 0%,#f8fbff 58%,#f5faff 100%);
+    }
+    .cluster-header{
+      display:flex;
+      align-items:flex-start;
+      justify-content:space-between;
+      gap:12px;
+      flex-wrap:wrap;
+    }
+    .cluster-header .actions{margin-top:0}
+    .cluster-base{
+      margin-top:12px;
+      display:grid;
+      grid-template-columns:repeat(2,minmax(0,1fr));
+      gap:10px;
+    }
+    .cluster-base .field{margin:0}
+    .cluster-base .field input{
+      background:linear-gradient(180deg,#ffffff,#f9fbff);
+      font-weight:600;
+    }
+    .cluster-toolbar{
+      margin-top:12px;
+      display:grid;
+      grid-template-columns:2.2fr 1.2fr 1fr;
+      gap:10px;
+      align-items:end;
+    }
+    .cluster-toolbar .field{margin:0}
+    .cluster-toolbar .field input,.cluster-toolbar .field select{
+      background:#ffffff;
+    }
+    .cluster-kpis{
+      margin-top:12px;
+      display:grid;
+      grid-template-columns:repeat(5,minmax(0,1fr));
+      gap:10px;
+    }
+    .cluster-kpi{
+      border:1px solid #d9e6f2;
+      border-radius:14px;
+      padding:11px 12px;
+      background:linear-gradient(180deg,#ffffff,#f6fbff);
+      box-shadow:0 8px 18px rgba(15,23,42,.05);
+    }
+    .cluster-kpi .k{font-size:12px;color:#5f7086}
+    .cluster-kpi .v{margin-top:5px;font-size:24px;font-weight:800;color:#0f172a;line-height:1}
+    .cluster-kpi .s{margin-top:6px;font-size:11px;color:#5f7086}
+    .cluster-result{
+      margin-top:10px;
+      padding:8px 10px;
+      border-radius:10px;
+      border:1px dashed #cfe0ef;
+      background:#f9fcff;
+      font-size:12px;
+      color:#4c5e76;
+      font-weight:600;
+    }
+    .cluster-wrap{
+      margin-top:10px;
+      max-height:64vh;
+      border:1px solid #cfddeb;
+      border-radius:14px;
+      background:#fff;
+      overflow:auto;
+      box-shadow:inset 0 0 0 1px rgba(255,255,255,.6),0 6px 14px rgba(15,23,42,.04);
+    }
+    .cluster-table{
+      margin-top:0;
+      min-width:1620px;
+    }
+    .cluster-table th,.cluster-table td{
+      padding:11px 9px;
+      border-bottom:1px solid #e7eff7;
+      vertical-align:middle;
+      font-size:12.5px;
+    }
+    .cluster-table th{
+      position:sticky;
+      top:0;
+      z-index:1;
+      background:linear-gradient(180deg,#f8fbff,#f2f7fd);
+      color:#3f536c;
+      font-weight:700;
+      font-size:12px;
+      letter-spacing:.1px;
+      white-space:nowrap;
+    }
+    .cluster-table tbody tr:nth-child(even){background:#fbfdff}
+    .cluster-table tbody tr:hover{background:#eef5ff}
+    .cluster-table td:nth-child(1),
+    .cluster-table td:nth-child(4),
+    .cluster-table td:nth-child(5),
+    .cluster-table td:nth-child(6),
+    .cluster-table td:nth-child(7),
+    .cluster-table td:nth-child(8),
+    .cluster-table td:nth-child(9),
+    .cluster-table td:nth-child(10),
+    .cluster-table td:nth-child(11),
+    .cluster-table td:nth-child(13){
+      text-align:center;
+    }
+    .node-id{
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      min-width:34px;
+      padding:3px 7px;
+      border-radius:999px;
+      border:1px solid #cddceb;
+      background:#f8fbff;
+      color:#42546b;
+      font-size:12px;
+      font-weight:700;
+    }
+    .node-name{
+      font-size:13px;
+      font-weight:700;
+      color:#16263b;
+      max-width:200px;
+      overflow:hidden;
+      text-overflow:ellipsis;
+      white-space:nowrap;
+    }
+    .node-url{
+      max-width:280px;
+      overflow:hidden;
+      text-overflow:ellipsis;
+      white-space:nowrap;
+      color:#384d67;
+      font-size:12px;
+    }
+    .metric-chip{
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      min-width:28px;
+      padding:2px 7px;
+      border-radius:999px;
+      border:1px solid #cfe0ef;
+      background:#f8fbff;
+      color:#2b425a;
+      font-weight:700;
+      font-size:12px;
+      line-height:1.2;
+    }
+    .metric-chip.strong{
+      border-color:#93c5fd;
+      background:#e0f2fe;
+      color:#0b4a6e;
+    }
+    .metric-chip.active{
+      border-color:#fca5a5;
+      background:#fee2e2;
+      color:#9f1239;
+    }
+    .metric-chip.idle{
+      border-color:#86efac;
+      background:#dcfce7;
+      color:#166534;
+    }
+    .reason-badge{
+      display:inline-flex;
+      align-items:center;
+      gap:4px;
+      max-width:180px;
+      overflow:hidden;
+      text-overflow:ellipsis;
+      white-space:nowrap;
+    }
+    .time-cell{
+      color:#334155;
+      line-height:1.25;
+      white-space:nowrap;
+    }
+    .cluster-actions{
+      display:flex;
+      gap:6px;
+      flex-wrap:wrap;
+      justify-content:center;
+    }
+    .cluster-actions button{
+      margin:0;
+      padding:6px 10px;
+      font-size:12px;
+      border-radius:9px;
+    }
+    .input-mini{
+      width:82px;
+      border:1px solid #cbd5e1;
+      border-radius:8px;
+      padding:6px 8px;
+      font-size:12px;
+      color:#0f172a;
+      background:#fff;
+    }
+    .overview-charts{
+      margin-top:12px;
+      display:grid;
+      grid-template-columns:repeat(3,minmax(0,1fr));
+      gap:10px;
+    }
+    .overview-chart{
+      border:1px solid #dbe4ef;
+      border-radius:12px;
+      background:linear-gradient(180deg,#ffffff,#f8fbff);
+      padding:10px;
+    }
+    .overview-chart .k{
+      font-size:12px;
+      color:#64748b;
+      font-weight:700;
+      margin-bottom:8px;
+    }
+    .chart-host{
+      min-height:220px;
+      border:1px solid #e2e8f0;
+      border-radius:10px;
+      background:#fff;
+      padding:6px;
+      overflow:hidden;
+    }
+    .chart-host svg{width:100%;height:206px;display:block}
+    .chart-empty{
+      height:206px;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      color:#94a3b8;
+      font-size:12px;
+    }
+    .status-badge{
+      display:inline-block;
+      border-radius:999px;
+      padding:2px 8px;
+      font-size:12px;
+      font-weight:700;
+      border:1px solid #cbd5e1;
+      color:#334155;
+      background:#fff;
+      white-space:nowrap;
+    }
+    .status-badge.ok{color:#166534;border-color:#86efac;background:#dcfce7}
+    .status-badge.err{color:#991b1b;border-color:#fecaca;background:#fee2e2}
+    .status-badge.warn{color:#92400e;border-color:#fcd34d;background:#fef3c7}
+    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace}
+    .page{
+      display:none;
+      grid-column:2;
+      grid-row:2;
+      min-width:0;
+    }
+    .page.active{display:block}
+    .workspace-head{
+      grid-column:2;
+      grid-row:1;
+      display:flex;
+      align-items:flex-start;
+      justify-content:space-between;
+      gap:16px;
+      padding:18px 22px;
+      border:1px solid rgba(203,213,225,.9);
+      border-radius:20px;
+      background:
+        radial-gradient(560px 180px at 0% 0%, rgba(37,99,235,.14), transparent 72%),
+        linear-gradient(180deg,#ffffff 0%,#f8fbff 100%);
+      box-shadow:0 16px 32px rgba(15,23,42,.08);
+    }
+    .workspace-copy{min-width:0}
+    .workspace-breadcrumb{
+      display:flex;
+      align-items:center;
+      gap:8px;
+      margin-bottom:8px;
+      font-size:12px;
+      color:#64748b;
+      font-weight:600;
+    }
+    .workspace-breadcrumb::before{
+      content:"";
+      width:8px;
+      height:8px;
+      border-radius:999px;
+      background:#fb7185;
+      box-shadow:0 0 0 6px rgba(251,113,133,.12);
+      flex:none;
+    }
+    .workspace-eyebrow{
+      display:inline-flex;
+      align-items:center;
+      padding:5px 11px;
+      border-radius:999px;
+      border:1px solid #bfdbfe;
+      background:#eff6ff;
+      color:#1d4ed8;
+      font-size:11px;
+      font-weight:700;
+      letter-spacing:.08em;
+    }
+    .workspace-title{
+      margin:10px 0 0;
+      font-size:30px;
+      line-height:1.08;
+      color:#0f172a;
+      letter-spacing:.2px;
+    }
+    .workspace-desc{
+      margin:10px 0 0;
+      font-size:13px;
+      color:#5b6676;
+      line-height:1.8;
+      max-width:760px;
+    }
+    .workspace-meta{
+      display:grid;
+      grid-template-columns:repeat(2,minmax(0,1fr));
+      gap:10px;
+      min-width:280px;
+    }
+    .workspace-meta-item{
+      padding:12px 14px;
+      border-radius:16px;
+      border:1px solid #dbe7f5;
+      background:#fff;
+    }
+    .workspace-meta-item .label{
+      font-size:11px;
+      color:#64748b;
+      letter-spacing:.08em;
+      font-weight:700;
+    }
+    .workspace-meta-item .value{
+      margin-top:6px;
+      font-size:14px;
+      color:#0f172a;
+      font-weight:800;
+      line-height:1.4;
+    }
+    .panel-toolbar{
+      display:flex;
+      align-items:flex-start;
+      justify-content:space-between;
+      gap:14px;
+      flex-wrap:wrap;
+      margin-bottom:12px;
+    }
+    .panel-toolbar.compact{
+      margin-bottom:10px;
+      padding-bottom:10px;
+      border-bottom:1px solid #e8eef6;
+    }
+    .toolbar-copy{
+      min-width:0;
+      display:grid;
+      gap:6px;
+    }
+    .toolbar-kicker{
+      font-size:11px;
+      color:#fb7185;
+      letter-spacing:.08em;
+      font-weight:700;
+      text-transform:uppercase;
+    }
+    .toolbar-title{
+      font-size:17px;
+      color:#0f172a;
+      font-weight:800;
+      line-height:1.3;
+    }
+    .toolbar-desc{
+      font-size:12px;
+      color:#64748b;
+      line-height:1.75;
+    }
+    .toolbar-right{
+      display:flex;
+      align-items:center;
+      gap:10px;
+      flex-wrap:wrap;
+      justify-content:flex-end;
+    }
+    .panel-toolbar .actions,
+    .toolbar-right .actions{
+      margin-top:0;
+    }
+    .toolbar-badge{
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      padding:7px 12px;
+      border-radius:999px;
+      border:1px solid #cfe0ef;
+      background:#f8fbff;
+      color:#35506f;
+      font-size:12px;
+      font-weight:700;
+      white-space:nowrap;
+    }
+    .table-toolbar{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+      flex-wrap:wrap;
+      margin:12px 0 10px;
+      padding:10px 12px;
+      border:1px solid #dbe7f5;
+      border-radius:14px;
+      background:linear-gradient(180deg,#fbfdff,#f6faff);
+    }
+    .table-toolbar .toolbar-note{
+      font-size:12px;
+      color:#64748b;
+      line-height:1.7;
+    }
+    .drawer-backdrop{
+      position:fixed;
+      inset:0;
+      z-index:998;
+      background:rgba(15,23,42,.35);
+      display:none;
+    }
+    .drawer-backdrop.show{display:block}
+    .drawer{
+      position:fixed;
+      top:0;
+      right:0;
+      width:min(760px,96vw);
+      height:100vh;
+      z-index:999;
+      background:#fff;
+      border-left:1px solid #dbe4ef;
+      box-shadow:-10px 0 24px rgba(15,23,42,.15);
+      transform:translateX(100%);
+      transition:transform .2s ease;
+      display:flex;
+      flex-direction:column;
+    }
+    .drawer.show{transform:translateX(0)}
+    .drawer-head{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:8px;
+      padding:14px 16px;
+      border-bottom:1px solid #e2e8f0;
+      background:#f8fafc;
+    }
+    .drawer-head h3{margin:0;font-size:16px}
+    .drawer-content{
+      padding:14px 16px 20px;
+      overflow:auto;
+      display:flex;
+      flex-direction:column;
+      gap:12px;
+    }
+    .drawer-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+    .payload-box{
+      margin-top:8px;
+      background:#0b1220;
+      color:#e2e8f0;
+      border-radius:8px;
+      border:1px solid #1e293b;
+      padding:8px;
+      font-size:12px;
+      line-height:1.45;
+      max-height:220px;
+      overflow:auto;
+      white-space:pre-wrap;
+      word-break:break-word;
+    }
+    .timeline-item{
+      border:1px solid #dbe4ef;
+      border-radius:10px;
+      padding:10px;
+      background:#fff;
+    }
+    .hidden{display:none!important}
+    #dashboard{
+      display:none;
+      margin-top:18px;
+      grid-template-columns:minmax(230px,260px) minmax(0,1fr);
+      gap:20px;
+      align-items:start;
+    }
+    .page>.panel:first-child{margin-top:0}
+    #loginPanel{
+      max-width:680px;
+      margin:24px auto 0;
+      padding:0;
+      overflow:hidden;
+      border-radius:18px;
+      border:1px solid rgba(148,163,184,.35);
+      box-shadow:0 18px 40px rgba(15,23,42,.11);
+    }
+    .login-hero{
+      padding:20px 22px;
+      border-bottom:1px solid #e2e8f0;
+      background:linear-gradient(135deg,#f8fbff 0%,#eef4ff 46%,#e8f4ff 100%);
+    }
+    .login-hero h2{margin:0;font-size:24px;letter-spacing:.2px}
+    .login-hero .panel-desc{margin:8px 0 0;font-size:13px;color:#4b5563}
+    .login-body{padding:18px 22px 22px}
+    .login-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:0}
+    .login-actions{margin-top:14px}
+    .login-actions button{min-width:110px}
+    details.advanced{margin-top:10px;border:1px dashed #d4d4d8;border-radius:10px;padding:8px 10px 10px;background:#fafafa}
+    details.advanced>summary{cursor:pointer;font-size:13px;color:#27272a;font-weight:600}
+    .toast{position:fixed;right:16px;bottom:16px;z-index:999;padding:10px 14px;border-radius:10px;color:#fff;font-size:13px;font-weight:600;box-shadow:0 10px 20px rgba(0,0,0,.18);animation:toast-in .22s ease}
+    .toast.ok{background:#15803d}
+    .toast.warn{background:#b45309}
+    .toast.err{background:#dc2626}
+    .action-row{display:flex;gap:6px;flex-wrap:wrap}
+    .inline-note{margin-top:10px;font-size:12px;color:#64748b;line-height:1.7}
+    .table-mini-input{
+      width:96px;
+      min-width:0;
+      padding:7px 9px;
+      border:1px solid #d7e3f2;
+      border-radius:10px;
+      background:#fff;
+      font-size:12px;
+    }
+    .table-mini-input.quota-delta{width:88px}
+    .table-pass-input{width:140px}
+    .cell-stack{display:grid;gap:2px}
+    .cell-main{font-weight:700;color:#0f172a}
+    .cell-sub{font-size:12px;color:#64748b}
+    .quota-badge{
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      min-width:66px;
+      padding:6px 10px;
+      border-radius:999px;
+      border:1px solid #cfe0f5;
+      background:#f8fbff;
+      color:#0f172a;
+      font-size:12px;
+      font-weight:700;
+    }
+    .batch-toolbar{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+      flex-wrap:wrap;
+      margin-top:12px;
+      padding:12px 14px;
+      border:1px solid #dbe7f5;
+      border-radius:14px;
+      background:linear-gradient(180deg,#fbfdff,#f6faff);
+    }
+    .batch-toolbar .actions{margin-top:0}
+    .pager{
+      margin-top:12px;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+      flex-wrap:wrap;
+    }
+    .pager-info{font-size:12px;color:#64748b}
+    .pager-actions{display:flex;gap:8px;flex-wrap:wrap}
+    .code-preview{
+      width:100%;
+      min-height:260px;
+      resize:vertical;
+      border:1px solid #cbd5e1;
+      border-radius:12px;
+      padding:12px;
+      background:#f8fafc;
+      color:#0f172a;
+      font-size:12px;
+      line-height:1.6;
+    }
+    .modal-backdrop{
+      position:fixed;
+      inset:0;
+      z-index:1000;
+      display:none;
+      align-items:center;
+      justify-content:center;
+      padding:18px;
+      background:rgba(15,23,42,.5);
+      backdrop-filter:blur(6px);
+    }
+    .modal-backdrop.show{display:flex}
+    .modal-card{
+      width:min(760px,96vw);
+      max-height:min(88vh,920px);
+      overflow:auto;
+      border-radius:18px;
+      border:1px solid rgba(148,163,184,.28);
+      background:#fff;
+      box-shadow:0 22px 48px rgba(15,23,42,.22);
+    }
+    .modal-head{
+      display:flex;
+      align-items:flex-start;
+      justify-content:space-between;
+      gap:12px;
+      padding:18px 20px 12px;
+      border-bottom:1px solid #e2e8f0;
+      background:linear-gradient(180deg,#f8fbff,#f4f8ff);
+    }
+    .modal-head h3{margin:0;font-size:18px}
+    .modal-head p{margin:8px 0 0;font-size:12px;color:#64748b;line-height:1.7}
+    .modal-body{padding:16px 20px 20px}
+    .modal-meta{
+      margin-bottom:12px;
+      font-size:12px;
+      color:#475569;
+      line-height:1.7;
+      white-space:pre-wrap;
+    }
+    .modal-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+    @keyframes toast-in{from{transform:translateY(10px);opacity:0}to{transform:translateY(0);opacity:1}}
+    @media (max-width:1180px){
+      #dashboard{
+        grid-template-columns:1fr;
+      }
+      #dashboardNav{
+        position:static;
+      }
+      #dashboardNav::before{
+        content:none;
+      }
+      .nav-tabs{
+        flex-direction:row;
+        flex-wrap:wrap;
+        padding:12px;
+      }
+      .nav-group{
+        min-width:min(240px,100%);
+        flex:1 1 240px;
+      }
+      .nav-group + .nav-group{
+        margin-top:0;
+        padding-top:0;
+        border-top:none;
+      }
+      .nav-tab{
+        width:100%;
+        min-width:0;
+      }
+      .workspace-head{
+        grid-column:auto;
+        grid-row:auto;
+        flex-direction:column;
+      }
+      .workspace-meta{
+        width:100%;
+        min-width:0;
+      }
+      .page{
+        grid-column:auto;
+        grid-row:auto;
+      }
+    }
+    @media (max-width:1000px){
+      .title{font-size:27px}
+      .grid,.cards{grid-template-columns:repeat(2,minmax(0,1fr))}
+      .cluster-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}
+      .cluster-base{grid-template-columns:1fr}
+      .cluster-toolbar{grid-template-columns:1fr 1fr}
+      .overview-charts{grid-template-columns:1fr 1fr}
+    }
+    @media (max-width:640px){
+      .container{padding-top:12px}
+      .topbar{flex-direction:column;align-items:flex-start;padding:12px 14px;border-radius:16px}
+      .brand-dot{width:12px;height:12px;margin-top:7px}
+      .title{font-size:22px}
+      .grid,.cards,.login-grid{grid-template-columns:1fr}
+      .drawer-grid{grid-template-columns:1fr}
+      .nav-tabs{padding:10px}
+      .workspace-title{font-size:24px}
+      .workspace-meta{grid-template-columns:1fr}
+      .panel-toolbar,.table-toolbar{align-items:stretch}
+      .cluster-kpis,.cluster-toolbar,.cluster-base{grid-template-columns:1fr}
+      .overview-charts{grid-template-columns:1fr}
+      .pager{align-items:stretch}
+      .pager-actions{width:100%}
+      .pager-actions button{flex:1}
+      #loginPanel{margin-top:16px}
+      .login-hero{padding:16px}
+      .login-hero h2{font-size:21px}
+      .login-body{padding:14px 16px 16px}
+    }
+
+    .sidebar-head{
+      width:100%;
+      display:grid;
+      gap:8px;
+      padding:2px 2px 12px;
+      border-bottom:1px solid rgba(148,163,184,.14);
+    }
+    .sidebar-kicker{
+      font-size:10px;
+      letter-spacing:.14em;
+      text-transform:none;
+      color:rgba(156,177,202,.78);
+      font-weight:700;
+    }
+    .sidebar-title{
+      margin:2px 0 0;
+      font-size:23px;
+      line-height:1.05;
+      color:#f8fbff;
+      letter-spacing:.2px;
+    }
+    .sidebar-desc{
+      margin:2px 0 0;
+      font-size:11px;
+      line-height:1.4;
+      color:var(--muted);
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+    }
+    .sidebar-repo{
+      display:inline-flex;
+      align-items:center;
+      gap:6px;
+      width:fit-content;
+      max-width:100%;
+      margin-top:0;
+      padding:5px 10px;
+      border-radius:999px;
+      border:1px solid rgba(148,163,184,.16);
+      background:rgba(15,23,42,.56);
+      color:#cfe0ff;
+      font-size:10px;
+      font-weight:700;
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+    }
+    .sidebar-head-actions{
+      display:grid;
+      grid-template-columns:repeat(2,minmax(0,1fr));
+      gap:6px;
+      align-items:stretch;
+    }
+    .sidebar-head-actions .portal-link{
+      order:1;
+      width:100%;
+    }
+    .sidebar-role-pill{
+      display:inline-flex;
+      align-items:center;
+      justify-content:flex-start;
+      order:3;
+      grid-column:1 / -1;
+      padding:8px 10px;
+      border-radius:12px;
+      border:1px solid rgba(251,113,133,.18);
+      background:rgba(44,16,24,.7);
+      color:#ffd4db;
+      font-size:10px;
+      font-weight:700;
+      white-space:nowrap;
+      line-height:1.2;
+      overflow:hidden;
+      text-overflow:ellipsis;
+    }
+    #sidebarLogoutBtn{
+      order:2;
+      width:100%;
+    }
+
+    .topbar,
+    #loginPanel,
+    .panel,
+    .card,
+    .workspace-head,
+    .workspace-meta-item,
+    .table-toolbar,
+    .cluster-wrap,
+    .cluster-kpi,
+    .cluster-result,
+    .overview-chart,
+    .chart-host,
+    .drawer,
+    .timeline-item,
+    .modal-card{
+      border-color:var(--line);
+      background:linear-gradient(180deg,rgba(18,23,34,.96),rgba(18,23,34,.9));
+      box-shadow:var(--shadow);
+    }
+    .topbar{
+      background:
+        radial-gradient(560px 180px at 0% 0%, rgba(251,113,133,.12), transparent 72%),
+        linear-gradient(180deg,rgba(18,23,34,.95),rgba(18,23,34,.88));
+    }
+    .nav-tabs{
+      border-color:rgba(148,163,184,.16);
+      background:
+        radial-gradient(760px 260px at 0% 0%, rgba(251,113,133,.14), transparent 72%),
+        linear-gradient(180deg,#0b0d13 0%,#0d1018 48%,#121624 100%);
+      box-shadow:var(--shadow);
+    }
+    .login-hero,
+    .modal-head,
+    .drawer-head{
+      border-color:rgba(148,163,184,.12);
+      background:
+        radial-gradient(560px 180px at 0% 0%, rgba(251,113,133,.12), transparent 72%),
+        linear-gradient(180deg,rgba(18,23,34,.95),rgba(18,23,34,.88));
+    }
+    .title,
+    .workspace-title,
+    .toolbar-title,
+    .panel h2,
+    .card .v,
+    .cluster-kpi .v,
+    .modal-head h3,
+    .drawer-head h3,
+    .workspace-meta-item .value,
+    .node-name,
+    .status-badge,
+    .table-toolbar .toolbar-note strong{
+      color:#f8fbff;
+    }
+    .subtitle,
+    .panel-desc,
+    .toolbar-desc,
+    .toolbar-note,
+    .workspace-desc,
+    .workspace-breadcrumb,
+    .workspace-meta-item .label,
+    .inline-note,
+    .pager-info,
+    .field .hint,
+    .cluster-kpi .k,
+    .cluster-kpi .s,
+    .cluster-result,
+    .summary-label,
+    .summary-note,
+    .modal-meta,
+    .time-cell,
+    .overview-chart .k,
+    .chart-empty{
+      color:var(--muted);
+    }
+    .field label,
+    .checkbox-line{
+      color:#dbeafe;
+    }
+    .role-badge,
+    .toolbar-badge,
+    .workspace-eyebrow{
+      color:#ffd4db;
+      border-color:rgba(251,113,133,.18);
+      background:rgba(251,113,133,.1);
+    }
+    .portal-link{
+      color:#eef1f8;
+      border-color:rgba(148,163,184,.18);
+      background:rgba(255,255,255,.04);
+      padding:8px 10px;
+      border-radius:12px;
+      font-size:11px;
+      font-weight:700;
+    }
+    button{
+      color:#fff;
+      background:linear-gradient(135deg,#fb7185,#f43f5e);
+      box-shadow:0 12px 28px rgba(251,113,133,.2);
+    }
+    button.secondary{
+      color:#eef1f8;
+      border-color:rgba(148,163,184,.18);
+      background:rgba(255,255,255,.04);
+      box-shadow:none;
+      border-radius:12px;
+      padding:8px 10px;
+      font-size:11px;
+    }
+    button.warn{
+      background:linear-gradient(135deg,#c2410c,#ea580c);
+    }
+    .field input,
+    .field select,
+    .field textarea,
+    .input-mini,
+    .code-preview{
+      border-color:rgba(148,163,184,.16);
+      background:rgba(8,17,32,.6);
+      color:#f8fafc;
+    }
+    .field input::placeholder,
+    .field textarea::placeholder{
+      color:rgba(156,177,202,.72);
+    }
+    .field input:focus,
+    .field select:focus,
+    .field textarea:focus{
+      border-color:rgba(251,113,133,.42);
+      box-shadow:0 0 0 4px rgba(251,113,133,.12);
+    }
+    .code-preview{
+      background:rgba(8,17,32,.72);
+    }
+    details.advanced{
+      border-color:rgba(148,163,184,.18);
+      background:rgba(8,17,32,.46);
+    }
+    details.advanced>summary{
+      color:#ffd4db;
+    }
+    .card .k,
+    .toolbar-kicker,
+    .nav-group-label{
+      color:rgba(184,200,221,.82);
+    }
+    .field label,
+    .checkbox-line{
+      color:#dbeafe;
+    }
+    th,
+    td{
+      border-bottom-color:rgba(148,163,184,.1);
+    }
+    th{
+      color:#b8c8dd;
+      background:rgba(15,23,42,.5);
+    }
+    td{
+      color:var(--text);
+    }
+    .cell-main{
+      color:#e5eefb;
+    }
+    .cluster-panel{
+      background:
+        radial-gradient(640px 200px at 0% 0%, rgba(251,113,133,.14), transparent 70%),
+        linear-gradient(180deg,rgba(18,23,34,.96),rgba(18,23,34,.9));
+    }
+    .cluster-table th{
+      background:rgba(15,23,42,.82);
+      color:#cfe0ff;
+    }
+    .cluster-table tbody tr:nth-child(even){
+      background:rgba(148,163,184,.03);
+    }
+    .cluster-table tbody tr:hover{
+      background:rgba(251,113,133,.08);
+    }
+    .node-id,
+    .metric-chip,
+    .toolbar-badge{
+      border-color:rgba(148,163,184,.16);
+      background:rgba(8,17,32,.52);
+      color:#e5eefb;
+    }
+    .metric-chip.strong{
+      border-color:rgba(96,165,250,.28);
+      background:rgba(59,130,246,.16);
+      color:#dbeafe;
+    }
+    .metric-chip.active{
+      border-color:rgba(251,113,133,.28);
+      background:rgba(244,63,94,.14);
+      color:#ffe4e6;
+    }
+    .metric-chip.idle{
+      border-color:rgba(74,222,128,.28);
+      background:rgba(34,197,94,.14);
+      color:#dcfce7;
+    }
+    .status-badge{
+      border-color:rgba(148,163,184,.18);
+      background:rgba(15,23,42,.58);
+      color:#dbeafe;
+    }
+    .status-badge.ok{color:#dcfce7;border-color:rgba(74,222,128,.28);background:rgba(34,197,94,.14)}
+    .status-badge.err{color:#ffe4e6;border-color:rgba(251,113,133,.28);background:rgba(244,63,94,.14)}
+    .status-badge.warn{color:#fef3c7;border-color:rgba(251,191,36,.28);background:rgba(245,158,11,.14)}
+    .notice.ok{background:rgba(34,197,94,.12);border-color:rgba(74,222,128,.24);color:#dcfce7}
+    .notice.warn{background:rgba(245,158,11,.12);border-color:rgba(251,191,36,.24);color:#fef3c7}
+    .notice.err{background:rgba(244,63,94,.12);border-color:rgba(251,113,133,.24);color:#ffe4e6}
+
+    body.admin-authenticated{
+      overflow:auto;
+    }
+    body.admin-authenticated .container{
+      width:100%;
+      max-width:none;
+      margin:0;
+      padding:0;
+    }
+    body.admin-authenticated .topbar{
+      display:none;
+    }
+    body.admin-authenticated #notice,
+    body.admin-authenticated #envNotice{
+      position:fixed;
+      top:18px;
+      right:18px;
+      z-index:1100;
+      width:min(360px,calc(100vw - 36px));
+      margin:0;
+    }
+    body.admin-authenticated #dashboard{
+      margin-top:0;
+      min-height:100vh;
+      min-height:100dvh;
+      grid-template-columns:minmax(244px,272px) minmax(0,1fr);
+      grid-template-rows:auto minmax(0,1fr);
+      gap:0;
+      background:rgba(8,17,32,.34);
+      overflow:visible;
+    }
+    body.admin-authenticated #dashboardNav{
+      grid-column:1;
+      grid-row:1 / span 2;
+      position:relative;
+      top:0;
+      align-self:stretch;
+      min-height:100vh;
+      min-height:100dvh;
+      padding:18px 12px 14px;
+      border:none;
+      border-right:1px solid rgba(148,163,184,.12);
+      border-radius:0;
+      box-shadow:none;
+      min-width:0;
+      overflow:visible;
+      gap:10px;
+    }
+    body.admin-authenticated #dashboardNav::before{
+      content:none;
+    }
+    body.admin-authenticated .nav-group,
+    body.admin-authenticated .sidebar-summary{
+      width:100%;
+    }
+    body.admin-authenticated .sidebar-summary{
+      margin-top:auto;
+      padding-top:12px;
+      border-top:1px solid rgba(148,163,184,.14);
+    }
+    body.admin-authenticated .sidebar-summary .summary-note{
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+    }
+    body.admin-authenticated .workspace-head{
+      grid-column:2;
+      grid-row:1;
+      margin:0;
+      padding:22px 24px 20px;
+      border:none;
+      border-bottom:1px solid rgba(148,163,184,.1);
+      border-radius:0;
+      box-shadow:none;
+      background:
+        radial-gradient(860px 220px at 100% 0%, rgba(59,130,246,.08), transparent 72%),
+        linear-gradient(180deg,rgba(8,17,32,.92),rgba(13,23,40,.88));
+    }
+    body.admin-authenticated .page{
+      grid-column:2;
+      grid-row:2;
+      margin:0;
+      min-width:0;
+      padding:22px 24px 36px;
+      overflow:visible;
+      background:
+        radial-gradient(860px 220px at 100% 0%, rgba(59,130,246,.08), transparent 72%),
+        linear-gradient(180deg,rgba(8,17,32,.92),rgba(13,23,40,.88));
+    }
+
+    @media (max-width:1180px){
+      body.admin-authenticated{
+        overflow:auto;
+      }
+      body.admin-authenticated #dashboard{
+        min-height:auto;
+        grid-template-columns:1fr;
+      }
+      body.admin-authenticated #dashboardNav{
+        grid-column:auto;
+        grid-row:auto;
+        min-height:auto;
+        border-right:none;
+        border-bottom:1px solid rgba(148,163,184,.12);
+      }
+      body.admin-authenticated .workspace-head,
+      body.admin-authenticated .page{
+        grid-column:auto;
+        grid-row:auto;
+      }
+      body.admin-authenticated .page{
+        padding:18px;
+        overflow:visible;
+      }
+      body.admin-authenticated #notice,
+      body.admin-authenticated #envNotice{
+        position:static;
+        width:auto;
+        margin:0 18px 12px;
+      }
+    }
+
+    @media (max-width:640px){
+      .sidebar-title{font-size:24px}
+      .sidebar-head-actions{align-items:stretch}
+      .sidebar-head-actions .portal-link,
+      .sidebar-head-actions .sidebar-role-pill,
+      .sidebar-head-actions button{width:100%;justify-content:center}
+      body.admin-authenticated .workspace-head{padding:18px 16px}
+      body.admin-authenticated .page{padding:16px}
+    }
+
+    :root{
+      --primary:#6d73ff;
+      --shadow:0 28px 68px rgba(3,7,18,.36);
+    }
+
+    body{
+      color:#e7ebf5;
+      background:
+        radial-gradient(1100px 480px at -10% -10%, rgba(109,115,255,.18), transparent 58%),
+        radial-gradient(900px 360px at 110% 0%, rgba(63,210,139,.08), transparent 54%),
+        linear-gradient(180deg,#0b0d13 0%,#0d1018 55%,#121624 100%);
+    }
+
+    .topbar,
+    #loginPanel,
+    .panel,
+    .card,
+    .workspace-head,
+    .workspace-meta-item,
+    .table-toolbar,
+    .cluster-wrap,
+    .cluster-kpi,
+    .cluster-result,
+    .overview-chart,
+    .chart-host,
+    .drawer,
+    .timeline-item,
+    .modal-card{
+      border-color:rgba(231,235,245,.1);
+      background:linear-gradient(180deg,rgba(22,26,38,.96),rgba(22,26,38,.9));
+      box-shadow:var(--shadow);
+    }
+
+    .title,
+    .workspace-title,
+    .toolbar-title,
+    .panel h2,
+    .card .v,
+    .cluster-kpi .v,
+    .modal-head h3,
+    .drawer-head h3,
+    .workspace-meta-item .value,
+    .node-name,
+    .status-badge,
+    .table-toolbar .toolbar-note strong{
+      color:#f6f8fc;
+    }
+
+    .subtitle,
+    .panel-desc,
+    .toolbar-desc,
+    .toolbar-note,
+    .workspace-desc,
+    .workspace-breadcrumb,
+    .workspace-meta-item .label,
+    .inline-note,
+    .pager-info,
+    .field .hint,
+    .cluster-kpi .k,
+    .cluster-kpi .s,
+    .cluster-result,
+    .summary-label,
+    .summary-note,
+    .modal-meta,
+    .time-cell,
+    .overview-chart .k,
+    .chart-empty{
+      color:#9099ad;
+    }
+
+    .field label,
+    .checkbox-line{
+      color:#dbeafe;
+    }
+
+    .role-badge,
+    .toolbar-badge,
+    .workspace-eyebrow{
+      color:#d8dcff;
+      border-color:rgba(109,115,255,.18);
+      background:rgba(109,115,255,.1);
+    }
+
+    .portal-link{
+      color:#d6dbeb;
+      border-color:rgba(231,235,245,.1);
+      background:rgba(255,255,255,.03);
+      border-radius:16px;
+      font-size:12px;
+      min-height:40px;
+      padding:0 14px;
+    }
+
+    button{
+      border-radius:16px;
+      background:linear-gradient(135deg,#5961ec,#6d73ff);
+      box-shadow:0 18px 36px rgba(89,97,236,.22);
+    }
+
+    button.secondary{
+      color:#d6dbeb;
+      border-color:rgba(231,235,245,.1);
+      background:rgba(255,255,255,.03);
+      box-shadow:none;
+      border-radius:16px;
+      min-height:40px;
+      padding:0 14px;
+      font-size:12px;
+    }
+
+    button.warn{
+      background:linear-gradient(135deg,#c2410c,#ea580c);
+    }
+
+    .field input,
+    .field select,
+    .field textarea,
+    .input-mini,
+    .code-preview{
+      border-color:rgba(231,235,245,.1);
+      background:#10131c;
+      color:#f6f8fc;
+      border-radius:16px;
+    }
+
+    .field input::placeholder,
+    .field textarea::placeholder{
+      color:#686f80;
+    }
+
+    .field input:focus,
+    .field select:focus,
+    .field textarea:focus{
+      border-color:rgba(109,115,255,.42);
+      box-shadow:0 0 0 4px rgba(109,115,255,.12);
+    }
+
+    .status-badge{
+      border-color:rgba(231,235,245,.1);
+      background:rgba(255,255,255,.03);
+      color:#dbeafe;
+    }
+
+    .notice.ok{background:rgba(63,210,139,.08);border-color:rgba(63,210,139,.16);color:#b8efd0}
+    .notice.warn{background:rgba(241,179,83,.1);border-color:rgba(241,179,83,.18);color:#f7ddb0}
+    .notice.err{background:rgba(255,112,134,.08);border-color:rgba(255,112,134,.18);color:#ffc4ce}
+
+    th{
+      color:#8e97aa;
+      background:rgba(255,255,255,.02);
+    }
+    td{
+      color:#e7ebf5;
+    }
+
+    .card{
+      border-radius:22px;
+      background:rgba(18,23,35,.76);
+    }
+
+    .card .k,
+    .toolbar-kicker,
+    .nav-group-label{
+      color:#8e97aa;
+      letter-spacing:.12em;
+      text-transform:uppercase;
+    }
+
+    .workspace-breadcrumb::before{
+      background:#6d73ff;
+      box-shadow:0 0 0 6px rgba(109,115,255,.12);
+    }
+
+    .workspace-eyebrow{
+      border-radius:999px;
+    }
+
+    body:not(.admin-authenticated) .container{
+      width:min(560px,calc(100vw - 32px));
+      min-height:100vh;
+      margin:0 auto;
+      padding:24px 0 32px;
+      display:grid;
+      align-content:center;
+      gap:24px;
+    }
+
+    body:not(.admin-authenticated) .topbar{
+      display:none;
+    }
+
+    body:not(.admin-authenticated) .brand{
+      display:grid;
+      justify-items:center;
+      gap:10px;
+    }
+
+    body:not(.admin-authenticated) .brand > div{
+      display:grid;
+      justify-items:center;
+      gap:14px;
+    }
+
+    body:not(.admin-authenticated) .brand-dot{
+      display:none;
+    }
+
+    body:not(.admin-authenticated) .login-kicker{
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      width:fit-content;
+      padding:8px 12px;
+      border-radius:999px;
+      border:1px solid rgba(109,115,255,.24);
+      background:rgba(109,115,255,.08);
+      color:#c6ccff;
+      font-size:11px;
+      font-weight:800;
+      letter-spacing:.14em;
+      text-transform:uppercase;
+    }
+
+    body:not(.admin-authenticated) .title{
+      margin:0;
+      font-size:clamp(28px,4.8vw,48px);
+      line-height:1;
+      letter-spacing:-.05em;
+      text-wrap:unset;
+      color:#f6f8fc;
+    }
+
+    body:not(.admin-authenticated) .topbar-side{
+      display:none;
+    }
+
+    body:not(.admin-authenticated) .role-badge{
+      display:none;
+    }
+
+    body:not(.admin-authenticated) #notice,
+    body:not(.admin-authenticated) #envNotice{
+      margin:0;
+    }
+
+    body:not(.admin-authenticated) #loginPanel{
+      max-width:none;
+      margin:0;
+      padding:28px;
+      border-radius:30px;
+      overflow:visible;
+      background:
+        radial-gradient(520px 180px at 0% 0%, rgba(109,115,255,.12), transparent 72%),
+        rgba(22,26,38,.9);
+    }
+
+    body:not(.admin-authenticated) .login-hero{
+      padding:0 0 18px;
+      border-bottom:none;
+      background:none;
+    }
+
+    body:not(.admin-authenticated) .login-hero h2{
+      margin:0;
+      font-size:24px;
+      line-height:1.08;
+      letter-spacing:-.04em;
+      color:#f6f8fc;
+    }
+
+    body:not(.admin-authenticated) #loginPanel .field label{
+      font-size:11px;
+      font-weight:700;
+      letter-spacing:.12em;
+      text-transform:uppercase;
+      color:#8e97aa;
+    }
+
+    body:not(.admin-authenticated) #loginPanel .field input{
+      min-height:48px;
+      padding:12px 14px;
+      border-radius:16px;
+      font-size:16px;
+    }
+
+    body:not(.admin-authenticated) .login-body{
+      padding:18px 0 0;
+    }
+
+    body:not(.admin-authenticated) .login-grid{
+      grid-template-columns:1fr;
+      gap:14px;
+    }
+
+    body:not(.admin-authenticated) .login-actions{
+      margin-top:18px;
+    }
+
+    body:not(.admin-authenticated) .login-actions button{
+      width:100%;
+      min-height:44px;
+      padding:0 16px;
+      font-size:14px;
+      font-weight:700;
+      border-radius:16px;
+    }
+
+    body.admin-authenticated #dashboard{
+      background:#0c1018;
+      grid-template-columns:minmax(280px,300px) minmax(0,1fr);
+    }
+
+    body.admin-authenticated #dashboardNav{
+      padding:28px 20px;
+      border-right:1px solid rgba(231,235,245,.1);
+      background:rgba(10,12,17,.92);
+      gap:18px;
+    }
+
+    body.admin-authenticated .sidebar-head{
+      gap:12px;
+      padding:0 0 8px;
+      border-bottom:none;
+    }
+
+    body.admin-authenticated .sidebar-kicker{
+      display:inline-flex;
+      width:fit-content;
+      padding:8px 12px;
+      border-radius:999px;
+      border:1px solid rgba(109,115,255,.18);
+      background:rgba(109,115,255,.08);
+      color:#c6ccff;
+      font-size:11px;
+      letter-spacing:.14em;
+      text-transform:uppercase;
+    }
+
+    body.admin-authenticated .sidebar-title{
+      font-size:30px;
+      line-height:1.04;
+      letter-spacing:-.04em;
+      color:#f6f8fc;
+    }
+
+    body.admin-authenticated .sidebar-desc{
+      font-size:13px;
+      line-height:1.7;
+      color:#9099ad;
+      white-space:normal;
+    }
+
+    body.admin-authenticated .sidebar-repo{
+      padding:6px 10px;
+      border-radius:999px;
+      border:1px solid rgba(231,235,245,.1);
+      background:rgba(255,255,255,.03);
+      color:#d6dbeb;
+      font-size:11px;
+    }
+
+    body.admin-authenticated .sidebar-head-actions{
+      grid-template-columns:1fr;
+      gap:10px;
+    }
+
+    body.admin-authenticated .sidebar-role-pill{
+      justify-content:flex-start;
+      min-height:44px;
+      padding:0 14px;
+      border-radius:16px;
+      border:1px solid rgba(109,115,255,.18);
+      background:rgba(109,115,255,.08);
+      color:#d8dcff;
+      font-size:12px;
+      text-transform:none;
+    }
+
+    body.admin-authenticated .nav-group{
+      gap:8px;
+    }
+
+    body.admin-authenticated .nav-group + .nav-group{
+      margin-top:0;
+      padding-top:14px;
+      border-top:1px solid rgba(231,235,245,.08);
+    }
+
+    body.admin-authenticated .nav-tab{
+      position:relative;
+      min-height:52px;
+      padding:12px 16px 12px 20px;
+      border-radius:18px;
+      border:1px solid transparent;
+      background:transparent;
+      color:#9098ab;
+    }
+
+    body.admin-authenticated .nav-tab::before{
+      position:absolute;
+      left:0;
+      top:10px;
+      bottom:10px;
+      width:3px;
+      height:auto;
+      background:transparent;
+      border-radius:999px;
+    }
+
+    body.admin-authenticated .nav-tab:hover{
+      background:rgba(255,255,255,.03);
+      border-color:transparent;
+      color:#e7ebf5;
+    }
+
+    body.admin-authenticated .nav-tab.active{
+      background:rgba(255,255,255,.04);
+      border-color:transparent;
+      color:#f6f8fc;
+      box-shadow:none;
+    }
+
+    body.admin-authenticated .nav-tab.active::before{
+      background:#6d73ff;
+    }
+
+    body.admin-authenticated .nav-main{
+      font-size:14px;
+      font-weight:700;
+      line-height:1.2;
+    }
+
+    body.admin-authenticated .nav-meta{
+      display:none;
+    }
+
+    body.admin-authenticated .nav-tab{
+      min-height:46px;
+    }
+
+    body.admin-authenticated .sidebar-summary{
+      padding:16px;
+      border:1px solid rgba(231,235,245,.1);
+      border-radius:22px;
+      background:#10131c;
+    }
+
+    body.admin-authenticated .workspace-head{
+      margin:20px 20px 0;
+      padding:24px;
+      border:1px solid rgba(231,235,245,.1);
+      border-radius:30px;
+      background:
+        radial-gradient(520px 180px at 0% 0%, rgba(109,115,255,.1), transparent 72%),
+        rgba(22,26,38,.82);
+      box-shadow:var(--shadow);
+    }
+
+    body.admin-authenticated .page{
+      padding:22px 20px 36px;
+      background:transparent;
+    }
+
+    body.admin-authenticated .panel{
+      border-radius:30px;
+      padding:22px;
+    }
+
+    body.admin-authenticated .cards .card{
+      border-radius:22px;
+      padding:20px;
+    }
+
+    body.admin-authenticated .workspace-meta{
+      gap:12px;
+    }
+
+    @media (max-width:1180px){
+      body:not(.admin-authenticated) .container{
+        width:min(560px,calc(100vw - 24px));
+      }
+
+      body.admin-authenticated #dashboard{
+        grid-template-columns:1fr;
+      }
+
+      body.admin-authenticated #dashboardNav{
+        padding:18px;
+        border-right:none;
+        border-bottom:1px solid rgba(231,235,245,.1);
+      }
+
+      body.admin-authenticated .workspace-head{
+        margin:18px 18px 0;
+      }
+
+      body.admin-authenticated .page{
+        padding:18px;
+      }
+    }
+
+    @media (max-width:640px){
+      body:not(.admin-authenticated) .container{
+        width:min(100vw - 20px,100%);
+        padding:16px 0 28px;
+      }
+
+      body:not(.admin-authenticated) .title{
+        font-size:34px;
+      }
+
+      body:not(.admin-authenticated) #loginPanel{
+        padding:20px;
+        border-radius:24px;
+      }
+
+      body.admin-authenticated .workspace-head{
+        margin:16px 16px 0;
+        padding:18px;
+        border-radius:24px;
+      }
+
+      body.admin-authenticated .panel,
+      body.admin-authenticated .cards .card{
+        border-radius:24px;
+        padding:18px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="topbar">
+      <div class="brand"></div>
+      <div class="topbar-side">
+        <div id="roleBadge" class="role-badge">Current role: Not logged in</div>
+      </div>
+    </div>
+
+    <div id="notice" class="notice"></div>
+    <div id="envNotice" class="notice warn hidden"></div>
+
+    <section id="loginPanel" class="panel panel-login">
+      <div class="login-hero">
+        <h2>Administrator login</h2>
+      </div>
+      <div class="login-body">
+        <div class="grid login-grid">
+          <div class="field"><label>username</label><input id="loginUsername" value="admin" /></div>
+          <div class="field"><label>password</label><input id="loginPassword" type="password" value="admin" /></div>
+        </div>
+        <div class="actions login-actions"><button id="loginBtn">Log in to the background</button></div>
+      </div>
+    </section>
+
+    <div id="dashboard">
+      <div id="dashboardNav" class="nav-tabs">
+        <div class="sidebar-head">
+          <div>
+            <div class="sidebar-kicker">Management background</div>
+            <h2 class="sidebar-title">console</h2>
+            <p class="sidebar-desc">flow_captcha_service</p>
+            <a class="sidebar-repo" href="https://github.com/genz27/flow_captcha_service" target="_blank" rel="noreferrer" title="https://github.com/genz27/flow_captcha_service">GitHub</a>
+          </div>
+          <div class="sidebar-head-actions">
+            <div id="sidebarRoleBadge" class="sidebar-role-pill">Not logged in</div>
+            <button id="sidebarLogoutBtn" class="secondary" type="button">Log out</button>
+          </div>
+        </div>
+        <div id="navGroupCommon" class="nav-group">
+          <div class="nav-group-label">Common workspace</div>
+          <button id="navOverview" class="nav-tab active" data-page="overview"><span class="nav-main">Overview</span><span class="nav-meta">Check running status and thread capacity</span></button>
+          <button id="navConfig" class="nav-tab" data-page="config"><span class="nav-main">System configuration</span><span class="nav-meta">Manage roles, parameters and browser settings</span></button>
+          <button id="navLogs" class="nav-tab" data-page="logs"><span class="nav-main">log</span><span class="nav-meta">View call records and error causes in pages</span></button>
+        </div>
+        <div id="navGroupMaster" class="nav-group hidden">
+          <div class="nav-group-label">Master node exclusive</div>
+          <button id="navCluster" class="nav-tab hidden" data-page="cluster"><span class="nav-main">Cluster diagnostics</span><span class="nav-meta">Track node health, heartbeat and scheduling</span></button>
+          <button id="navApiKeys" class="nav-tab hidden" data-page="apikeys"><span class="nav-main">API Key</span><span class="nav-meta">Maintain masternode service key</span></button>
+          <button id="navUsers" class="nav-tab hidden" data-page="users"><span class="nav-main">user</span><span class="nav-meta">View portal users and quota usage</span></button>
+          <button id="navCdks" class="nav-tab hidden" data-page="cdks"><span class="nav-main">CDK</span><span class="nav-meta">Generate, start, stop and distribute redemption codes</span></button>
+        </div>
+        <div class="sidebar-summary">
+          <div>
+            <div class="summary-label">current role</div>
+            <div id="sidebarRoleText" class="summary-value">Not logged in</div>
+          </div>
+          <div>
+            <div class="summary-label">current module</div>
+            <div id="sidebarPageText" class="summary-value">Overview</div>
+          </div>
+          <div class="summary-note">The master node displays the cluster, API Key, user, and CDK.</div>
+        </div>
+      </div>
+
+      <section id="workspaceHead" class="workspace-head">
+        <div class="workspace-copy">
+          <div id="workspaceBreadcrumb" class="workspace-breadcrumb">Console / Overview</div>
+          <div id="workspaceEyebrow" class="workspace-eyebrow">console</div>
+          <h2 id="workspaceTitle" class="workspace-title">Console overview</h2>
+          <p id="workspaceDesc" class="workspace-desc">View the operable modules under the current role and quickly enter the configuration, diagnosis and log workspace.</p>
+        </div>
+        <div class="workspace-meta">
+          <div class="workspace-meta-item">
+            <div class="label">current role</div>
+            <div id="workspaceRole" class="value">Not logged in</div>
+          </div>
+          <div class="workspace-meta-item">
+            <div class="label">active module</div>
+            <div id="workspacePage" class="value">Overview</div>
+          </div>
+        </div>
+      </section>
+
+      <div id="pageOverview" class="page active">
+        <section id="guidePanel" class="panel hidden">
+          <h2>First deployment guide</h2>
+          <p id="guideSummary" class="panel-desc"></p>
+          <ul id="guideItems" class="guide-items"></ul>
+          <ol id="guideSteps" class="guide-steps"></ol>
+        </section>
+
+        <section class="panel">
+          <h2>Operational overview</h2>
+          <div class="cards">
+            <div class="card"><div class="k">active session</div><div id="statActive" class="v">-</div></div>
+            <div class="card"><div class="k">Cache session</div><div id="statCached" class="v">-</div></div>
+            <div class="card"><div class="k">Cumulative number of tasks</div><div id="statTotal" class="v">-</div></div>
+            <div class="card"><div class="k">Enable API Key number</div><div id="statEnabledKey" class="v">-</div></div>
+            <div class="card"><div id="statStandbyTokenLabel" class="k">Current pool token</div><div id="statStandbyTokenCount" class="v">-</div></div>
+            <div class="card"><div id="statThreadTotalLabel" class="k">Total number of threads</div><div id="statThreadTotal" class="v">-</div></div>
+            <div class="card"><div id="statThreadIdleLabel" class="k">Number of idle threads</div><div id="statThreadIdle" class="v">-</div></div>
+          </div>
+          <p id="clusterStatsHint" class="panel-desc hidden">Description of statistical caliber: What is counted here is the effective capacity of coding solve. Total threads = total effective capacity; idle threads = effective capacity - active sessions; does not represent upstream image/video generation concurrency or completion time.</p>
+          <div class="actions"><button id="refreshAllBtn" class="secondary">Refresh data</button><button id="logoutBtn" class="secondary">Log out</button></div>
+        </section>
+      </div>
+
+      <div id="pageConfig" class="page">
+        <section class="panel">
+          <h2>Administrator account</h2>
+          <p class="panel-desc">As long as the password is changed successfully, the old password will become invalid immediately.</p>
+          <div class="grid">
+            <div class="field"><label>Current username</label><input id="adminCurrentUser" readonly /></div>
+            <div class="field"><label>new username</label><input id="adminNewUser" placeholder="Optional" /></div>
+            <div class="field"><label>Current Password</label><input id="adminOldPassword" type="password" placeholder="Required" /></div>
+            <div class="field"><label>New Password</label><input id="adminNewPassword" type="password" placeholder="Not less than 6 people" /></div>
+          </div>
+          <div class="actions"><button id="saveAdminBtn">Save administrator account</button></div>
+        </section>
+
+        <section class="panel">
+          <h2>System configuration (setting.toml)</h2>
+          <p class="panel-desc">Displays required fields by current role. The main node will not display the sub-node fields, and the sub-nodes will not display the main node fields.</p>
+
+          <div class="grid">
+            <div class="field"><label>Deploy role</label><select id="cfgRole"><option value="standalone">standalone</option><option value="master">master node</option><option value="subnode">subnode</option></select><div class="hint">After switching roles, some configurations need to be restarted to take effect.</div></div>
+            <div class="field"><label>Node name</label><input id="cfgNodeName" /></div>
+            <div class="field"><label>listening address</label><input id="cfgServerHost" /></div>
+            <div class="field"><label>listening port</label><input id="cfgServerPort" type="number" min="1" max="65535" /></div>
+          </div>
+
+          <div class="grid">
+            <div class="field"><label>Log level</label><select id="cfgLogLevel"><option value="DEBUG">DEBUG</option><option value="INFO">INFO</option><option value="WARNING">WARNING</option><option value="ERROR">ERROR</option><option value="CRITICAL">CRITICAL</option></select></div>
+            <div class="field"><label>Automatic log clearing interval (minutes)</label><input id="cfgLogAutoClearMinutes" type="number" min="0" /><div class="hint">Filling in 0 means closed. It only clears the log and does not affect the user's remaining times and used times.</div></div>
+            <div class="field"><label>Process timeout (seconds)</label><input id="cfgFlowTimeout" type="number" min="10" /></div>
+            <div class="field"><label>Zoom timeout (seconds)</label><input id="cfgUpsampleTimeout" type="number" min="10" /></div>
+            <div class="field"><label>Session retention time (seconds)</label><input id="cfgSessionTtl" type="number" min="120" /></div>
+          </div>
+          <div class="grid">
+            <div class="field"><label>Automatically generate code Website Key</label><input id="cfgFlowWebsiteKey" placeholder="Use flow2api default website key when left empty" /><div class="hint">Used for native flow token production code and automatic pool replenishment after startup.</div></div>
+            <div class="field"><label>Automatic production code Project ID</label><input id="cfgAutoWarmProjectId" placeholder="46a52124-04fa-4db0-99ba-61c240490584" /><div class="hint">It is recommended to fill in the real Flow project id in `browser` mode; a general resident warm-up page will also be automatically created when `personal` mode is left blank.</div></div>
+            <div class="field"><label>Automatic production code Action</label><select id="cfgAutoWarmAction"><option value="IMAGE_GENERATION">Image(IMAGE_GENERATION)</option><option value="VIDEO_GENERATION">Video (VIDEO_GENERATION)</option></select><div class="hint">After the service is started, the image and video pool will continue to be replenished; this is used to specify the native action to be replenished first. The master role only saves templates and will not execute them locally.</div></div>
+          </div>
+          <div class="grid">
+            <div class="field"><label>Yes/Custom preheat URL</label><input id="cfgAutoWarmWebsiteUrl" placeholder="https://example.com/login" /><div class="hint">After filling in, standalone/subnode will continue to replenish the token pool of this yes/custom target after it is started.</div></div>
+            <div class="field"><label>Yes/Customized preheating Website Key</label><input id="cfgAutoWarmWebsiteKey" placeholder="site key" /></div>
+            <div class="field"><label>Yes/Customized preheating Action</label><input id="cfgAutoWarmCustomAction" placeholder="homepage" /><div class="hint">Used for yes/custom warmup targets; defaults to homepage when left blank.</div></div>
+          </div>
+          <div class="grid">
+            <label class="checkbox-line"><input id="cfgLogStartupClear" type="checkbox" /> Automatically clear history logs after startup</label>
+          </div>
+
+          <div class="grid">
+            <div class="field"><label>Portal external address</label><input id="cfgPortalPublicBaseUrl" placeholder="https://re.lmmllm.com" /><div class="hint">Used to generate the OAuth/OIDC callback address. It is recommended to fill in the HTTPS domain name actually accessed by the user.</div></div>
+          </div>
+          <div class="grid">
+            <label class="checkbox-line"><input id="cfgOidcEnabled" type="checkbox" /> Enable portal OAuth2/OIDC login</label>
+            <label class="checkbox-line"><input id="cfgOauthOnly" type="checkbox" /> Allow only OAuth/OIDC logins</label>
+          </div>
+          <div class="grid">
+            <div class="field"><label>OIDC base address</label><input id="cfgOidcBaseUrl" placeholder="https://sso.example.com" /><div class="hint">Optional. When Well-Known is not filled in, the system will splice `/oauth/authorize`, `/oauth/token`, `/oauth/userinfo` according to the fixed path.</div></div>
+            <div class="field"><label>OIDC Well-Known URL</label><input id="cfgOidcWellKnownUrl" placeholder="https://sso.example.com/.well-known/openid-configuration" /><div class="hint">Optional. After filling in, the authorization/token/userinfo endpoint will be automatically discovered first.</div></div>
+            <div class="field"><label>Client ID</label><input id="cfgOidcClientId" placeholder="client_id" /></div>
+            <div class="field"><label>Client Secret</label><input id="cfgOidcClientSecret" type="password" placeholder="client_secret" /></div>
+          </div>
+          <div class="grid">
+            <div class="field"><label>Scope</label><input id="cfgOidcScope" placeholder="openid profile email" /></div>
+          </div>
+          <div class="grid">
+            <div class="field"><label>Registration bonus</label><input id="cfgRegisterBonusQuota" type="number" min="0" /><div class="hint">Both local registration and the first OIDC automatic account creation will be given away.</div></div>
+            <div class="field"><label>Minimum reward for signing in</label><input id="cfgCheckinMinQuota" type="number" min="0" /></div>
+            <div class="field"><label>Maximum sign-in reward</label><input id="cfgCheckinMaxQuota" type="number" min="0" /><div class="hint">Users sign in once a day and receive random gifts within this range.</div></div>
+          </div>
+
+          <div id="masterConfigPanel" class="hidden">
+            <div class="grid">
+              <div class="field"><label>Child node offline threshold (seconds)</label><input id="cfgMasterNodeStale" type="number" min="10" /><div class="hint">If there is no heartbeat for more than this period, the master node will treat it as unavailable.</div></div>
+              <div class="field"><label>Master node scheduling timeout (seconds)</label><input id="cfgMasterDispatchTimeout" type="number" min="5" /><div class="hint">The maximum time the master node waits for a response from a child node.</div></div>
+            </div>
+          </div>
+
+          <div id="subnodeConfigPanel" class="hidden">
+            <div class="grid">
+              <div class="field"><label>Master node address</label><input id="cfgMasterBaseUrl" placeholder="http://master:8060" /></div>
+              <div class="field"><label>Cluster Key</label><input id="cfgMasterClusterKey" placeholder="fcs_cluster_..." /></div>
+              <div class="field"><label>External address of child node</label><input id="cfgNodePublicUrl" placeholder="http://subnode:8060" /></div>
+              <div class="field"><label>Child node API Key</label><input id="cfgNodeApiKey" placeholder="node_api_key_..." /></div>
+            </div>
+            <div class="grid">
+              <div class="field"><label>Heartbeat interval (seconds)</label><input id="cfgHeartbeatSeconds" type="number" min="5" /></div>
+              <div class="field"><label>Node weight</label><input id="cfgNodeWeight" type="number" min="1" /></div>
+              <div class="field"><label>Node maximum concurrency</label><input id="cfgNodeMaxConcurrency" type="number" min="1" /></div>
+            </div>
+          </div>
+
+          <div class="grid">
+            <div class="field"><label>Local coding mode</label><select id="cfgCaptchaMethod"><option value="browser">browser shared browser</option><option value="personal">personal built-in browser</option></select><div class="hint">`browser` uses the Playwright shared browser pool; `personal` uses the nodriver resident tab. The headed image will automatically inject the Playwright Chromium path.</div></div>
+          </div>
+
+          <div id="captchaPersonalBasicFields" class="grid">
+            <div class="field"><label>personal project pool size</label><input id="cfgPersonalProjectPoolSize" type="number" min="1" max="50" /><div class="hint">Only affects the default pool size for project rotation in personal mode.</div></div>
+            <div class="field"><label>Personal permanent tab page limit</label><input id="cfgPersonalMaxTabs" type="number" min="1" max="50" /></div>
+            <div class="field"><label>personal idle recovery seconds</label><input id="cfgPersonalIdleTtl" type="number" min="60" /></div>
+          </div>
+
+          <details class="advanced">
+            <summary>Advanced parameters (generally do not need to be changed)</summary>
+            <div class="grid">
+              <div class="field"><label>Database file path</label><input id="cfgDbPath" /></div>
+              <div class="field"><label>Browser background startup</label><select id="cfgLaunchBg"><option value="true">enable</option><option value="false">closure</option></select></div>
+              <div class="field"><label>DOM wait seconds</label><input id="cfgDomWait" type="number" step="0.1" min="1" /></div>
+              <div class="field"><label>reCAPTCHA stable waiting seconds</label><input id="cfgSettle" type="number" step="0.1" min="0" /></div>
+            </div>
+            <div class="grid">
+              <div class="field"><label>Score test warm-up seconds</label><input id="cfgWarmup" type="number" step="0.1" min="0" /></div>
+              <div class="field"><label>Number of seconds to wait for score test stability</label><input id="cfgScoreTestSettle" type="number" step="0.1" min="0" /><div class="hint">Additional wait before personal custom score-test token verification.</div></div>
+            </div>
+            <div id="captchaPersonalAdvancedFields" class="grid">
+              <div class="field"><label>personal rebuild tab threshold</label><input id="cfgPersonalRecreateThreshold" type="number" min="1" max="20" /><div class="hint">After the number of consecutive server-side exceptions reaches this number, the current resident tab page will be rebuilt.</div></div>
+              <div class="field"><label>personal browser restart threshold</label><input id="cfgPersonalRestartThreshold" type="number" min="2" max="20" /><div class="hint">After the number of consecutive server-side exceptions reaches this number, directly restart the personal browser.</div></div>
+            </div>
+          </details>
+
+          <div class="actions"><button id="saveSystemBtn">Save system configuration</button></div>
+        </section>
+
+        <section id="runtimeConfigPanel" class="panel hidden">
+          <h2>Runtime coding configuration (database)</h2>
+          <p class="panel-desc">Required for child node/standalone mode only. The master node does not perform local browser coding, so this block will not be displayed. This supports direct switching between `browser` / `personal`, and synchronously saves the same personal parameters of `flow2api`.</p>
+          <div class="grid">
+            <div class="field"><label>Local coding mode</label><select id="rtCaptchaMethod"><option value="browser">browser shared browser</option><option value="personal">personal built-in browser</option></select></div>
+            <div class="field"><label>Browser concurrency count (browser_count)</label><input id="rtBrowserCount" type="number" min="1" /><div class="hint">It is recommended to start with 1 and then gradually increase it after confirming that it is stable.</div></div>
+            <div class="field"><label>Browser proxy pool (browser_proxy_url)</label><textarea id="rtProxyUrl" placeholder="Supports single agent or multiple agent pools. Can be separated by newline, comma, semicolon."></textarea><div id="rtProxyPoolHint" class="hint">No agent pool is currently configured.</div></div>
+            <div class="field"><label>personal project pool size</label><input id="rtPersonalProjectPoolSize" type="number" min="1" max="50" /></div>
+            <div class="field"><label>Personal permanent tab page limit</label><input id="rtPersonalMaxTabs" type="number" min="1" max="50" /></div>
+            <div class="field"><label>personal idle recovery seconds</label><input id="rtPersonalIdleTtl" type="number" min="60" /></div>
+          </div>
+          <label class="checkbox-line"><input id="rtProxyEnabled" type="checkbox" /> Enable browser proxy</label>
+          <div class="actions"><button id="saveRuntimeBtn">Save runtime configuration</button></div>
+        </section>
+      </div>
+
+      <div id="pageCluster" class="page">
+        <section id="masterClusterPanel" class="panel hidden cluster-panel">
+          <div class="cluster-header">
+            <div>
+              <h2>Master node cluster diagnostics</h2>
+              <p class="panel-desc">Capacity splitting caliber: effective_capacity=min(browser_count,node_max_concurrency). The scheduling upper limit is reported by child nodes and automatically synchronized.</p>
+            </div>
+            <div class="actions">
+              <button id="rotateClusterKeyBtn" class="warn">Rotate Cluster Key</button>
+              <button id="refreshNodesBtn" class="secondary">Refresh child node list</button>
+            </div>
+          </div>
+          <div class="cluster-base">
+            <div class="field"><label>Current Cluster Key</label><input id="clusterKey" readonly /></div>
+            <div class="field"><label>Current node name</label><input id="clusterNodeName" readonly /></div>
+          </div>
+          <div class="cluster-kpis">
+            <div class="cluster-kpi"><div class="k">Total number of nodes</div><div id="clusterKpiNodeTotal" class="v">-</div><div class="s">Enabled:<span id="clusterKpiNodeEnabled">-</span></div></div>
+            <div class="cluster-kpi"><div class="k">healthy node</div><div id="clusterKpiHealthy" class="v">-</div><div class="s">abnormal:<span id="clusterKpiUnhealthy">-</span></div></div>
+            <div class="cluster-kpi"><div class="k">Effective total capacity</div><div id="clusterKpiCapacity" class="v">-</div><div class="s">Σ Effective capacity</div></div>
+            <div class="cluster-kpi"><div class="k">free capacity</div><div id="clusterKpiIdle" class="v">-</div><div class="s">Σ idle thread</div></div>
+            <div class="cluster-kpi"><div class="k">Total amount of tokens in the pool</div><div id="clusterKpiStandbyTokens" class="v">-</div><div class="s">Σ standby token</div></div>
+            <div class="cluster-kpi"><div class="k">average heartbeat delay</div><div id="clusterKpiHeartbeat" class="v">-</div><div class="s">Unit: seconds</div></div>
+          </div>
+          <div class="cluster-toolbar">
+            <div class="field"><label>Search node</label><input id="clusterSearchInput" placeholder="Filter by node name, address, exception cause, error details" /></div>
+            <div class="field"><label>health screening</label><select id="clusterHealthFilter"><option value="all">all</option><option value="healthy">only healthy</option><option value="abnormal">Exceptions only</option><option value="timeout">Timeout only</option><option value="report_failed">Only report failure</option><option value="auth_failed">Only authentication failed</option><option value="disabled">only disabled</option></select></div>
+            <div class="field"><label>Recently refreshed</label><input id="clusterLastUpdated" readonly placeholder="Not refreshed" /></div>
+          </div>
+          <div class="table-toolbar">
+            <div id="clusterTableStat" class="toolbar-badge">Number of nodes 0</div>
+            <div class="toolbar-note">Supports filtering by node name, external address and exception reason, and can directly maintain weight and activation status in the table.</div>
+          </div>
+          <div id="clusterResultHint" class="cluster-result">Showing 0/0 nodes</div>
+          <div class="table-wrap cluster-wrap"><table class="cluster-table"><thead><tr><th>ID</th><th>Node name</th><th>External address of child node</th><th>healthy</th><th>enable</th><th>Browser capacity</th><th>Node concurrency upper limit</th><th>Effective capacity</th><th>token in pool</th><th>active thread</th><th>idle thread</th><th>Heartbeat delay(s)</th><th>Abnormal cause</th><th>weight</th><th>recent heartbeat</th><th>operate</th></tr></thead><tbody id="clusterNodesTable"></tbody></table></div>
+        </section>
+      </div>
+
+      <div id="pageApiKeys" class="page">
+        <section id="masterApiKeyPanel" class="panel hidden">
+          <div class="panel-toolbar compact">
+            <div class="toolbar-copy">
+              <div class="toolbar-kicker">Service Access</div>
+              <div class="toolbar-title">Master node API Key management</div>
+              <div class="toolbar-desc">Create, start, stop and maintain the upstream call key quota, suitable as a service entrance for docking `flow2api`.</div>
+            </div>
+            <div class="toolbar-right">
+              <div id="apiKeyTableStat" class="toolbar-badge">API Key 0</div>
+            </div>
+          </div>
+          <div class="grid">
+            <div class="field"><label>Key name</label><input id="newApiKeyName" placeholder="For example: flow2api-prod" /></div>
+            <div class="field"><label>Available times (leave blank = no limit)</label><input id="newApiKeyQuota" type="number" min="0" /></div>
+          </div>
+          <div class="actions"><button id="createApiKeyBtn">Create API Key</button><button id="refreshApiKeyBtn" class="secondary">Refresh API Key list</button></div>
+          <div id="newApiKeyText" class="panel-desc"></div>
+          <div class="table-toolbar">
+            <div class="toolbar-note">Supports directly modifying the name, activation status and remaining quota in the form, which will take effect immediately after saving.</div>
+          </div>
+          <div class="table-wrap"><table><thead><tr><th>ID</th><th>name</th><th>Key prefix</th><th>enable</th><th>Remaining times</th><th>Number of times used</th><th>operate</th></tr></thead><tbody id="apiKeysTable"></tbody></table></div>
+        </section>
+      </div>
+
+      <div id="pageUsers" class="page">
+        <section id="portalUsersPanel" class="panel hidden">
+          <div class="panel-toolbar compact">
+            <div class="toolbar-copy">
+              <div class="toolbar-kicker">Portal Users</div>
+              <div class="toolbar-title">End user management</div>
+              <div class="toolbar-desc">Supports direct modification of account, display name, password, remaining times, used times and activation status.</div>
+            </div>
+            <div class="toolbar-right">
+              <div id="usersTableStat" class="toolbar-badge">Number of users 0</div>
+              <div class="actions"><button id="refreshUsersBtn" class="secondary">Refresh user</button></div>
+            </div>
+          </div>
+          <div class="inline-note">Browse by table by default, and support direct modification of remaining times, batch addition times and password reset.</div>
+          <div class="batch-toolbar">
+            <div class="toolbar-note">After selecting multiple users, you can add times in batches or delete the selected accounts at once.</div>
+            <div class="actions">
+              <input id="usersBatchQuotaDelta" class="table-mini-input quota-delta" type="number" value="100" min="1" />
+              <button id="applyUsersBatchQuotaBtn" class="secondary" type="button">Number of batch additions</button>
+              <button id="deleteUsersBatchBtn" class="secondary" type="button">Delete users in batches</button>
+            </div>
+          </div>
+          <div class="table-toolbar">
+            <div class="toolbar-note">Supports single user to directly modify the remaining times or increment times; leaving the password blank means no modification.</div>
+          </div>
+          <div class="table-wrap"><table><thead><tr><th><input id="usersSelectAll" type="checkbox" /></th><th>ID</th><th>account</th><th>display name</th><th>Register location</th><th>enable</th><th>Current remaining</th><th>Modify the rest</th><th>Number of times used</th><th>Add times</th><th>reset password</th><th>last login</th><th>operate</th></tr></thead><tbody id="portalUsersTable"></tbody></table></div>
+        </section>
+      </div>
+
+      <div id="pageCdks" class="page">
+        <section id="portalCdksPanel" class="panel hidden">
+          <div class="panel-toolbar compact">
+            <div class="toolbar-copy">
+              <div class="toolbar-kicker">Quota Issuing</div>
+              <div class="toolbar-title">CDK batch generation and management</div>
+              <div class="toolbar-desc">The number of redemptions can be customized for each CDK; after the end user redeems, the corresponding number of remaining coding times will be increased.</div>
+            </div>
+            <div class="toolbar-right">
+              <div id="cdkTableStat" class="toolbar-badge">CDK 0</div>
+            </div>
+          </div>
+          <div class="grid">
+            <div class="field"><label>Batch quantity</label><input id="cdkBatchCount" type="number" min="1" max="500" value="10" /></div>
+            <div class="field"><label>times per CDK</label><input id="cdkQuotaTimes" type="number" min="1" value="10" /></div>
+            <div class="field"><label>prefix</label><input id="cdkPrefix" value="CDK" /></div>
+            <div class="field"><label>Remark</label><input id="cdkNote" placeholder="For example: March activity batch" /></div>
+          </div>
+          <div class="actions"><button id="createCdksBtn">Generate CDK in batches</button><button id="refreshCdksBtn" class="secondary">Refresh CDK list</button></div>
+          <div id="newCdksText" class="panel-desc"></div>
+          <div class="table-toolbar">
+            <div class="toolbar-note">The form supports directly starting and stopping a single redemption code, and the batch generation results will be given through the result area and pop-up window.</div>
+          </div>
+          <div class="table-wrap"><table><thead><tr><th>ID</th><th>CDK</th><th>frequency</th><th>prefix</th><th>Remark</th><th>enable</th><th>Redeem user</th><th>Redemption time</th><th>creation time</th><th>operate</th></tr></thead><tbody id="portalCdksTable"></tbody></table></div>
+        </section>
+      </div>
+
+      <div id="pageLogs" class="page">
+        <section class="panel">
+          <div class="panel-toolbar compact">
+            <div class="toolbar-copy">
+              <div class="toolbar-kicker">Audit Logs</div>
+              <div class="toolbar-title">call log</div>
+              <div class="toolbar-desc">Used to review sessions, projects, actions and error causes by page, suitable for troubleshooting upstream call chain problems.</div>
+            </div>
+            <div class="toolbar-right">
+              <div id="logsTableStat" class="toolbar-badge">Log 0</div>
+              <div class="actions"><button id="refreshLogsBtn" class="secondary">Refresh log</button><button id="clearLogsBtn" class="secondary" type="button">Clear request log</button></div>
+            </div>
+          </div>
+          <div class="table-toolbar">
+            <div class="toolbar-note">The current page only displays the most recent record, and can be used with paging to quickly check the results of solve, finish, and error.</div>
+          </div>
+          <div class="table-wrap"><table><thead><tr><th>time</th><th>Session ID</th><th>Project ID</th><th>action</th><th>state</th><th>Error reason</th></tr></thead><tbody id="logsTable"></tbody></table></div>
+          <div class="pager">
+            <div id="logsPagerInfo" class="pager-info">Page 1</div>
+            <div class="pager-actions">
+              <button id="logsPrevBtn" class="secondary" type="button">Previous page</button>
+              <button id="logsNextBtn" class="secondary" type="button">Next page</button>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+  </div>
+
+  <div id="resultModalBackdrop" class="modal-backdrop">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="resultModalTitle">
+      <div class="modal-head">
+        <div>
+          <h3 id="resultModalTitle">Result details</h3>
+          <p id="resultModalSubtitle">Please copy and save now.</p>
+        </div>
+        <button id="closeResultModalBtn" class="secondary" type="button">closure</button>
+      </div>
+      <div class="modal-body">
+        <div id="resultModalMeta" class="modal-meta"></div>
+        <textarea id="resultModalText" class="code-preview mono" readonly></textarea>
+        <div class="modal-actions">
+          <button id="resultModalCopyBtn" type="button">Copy content</button>
+          <button id="resultModalDownloadBtn" class="secondary" type="button">Export TXT</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="nodeDetailBackdrop" class="drawer-backdrop hidden"></div>
+  <aside id="nodeDetailDrawer" class="drawer hidden" aria-hidden="true">
+    <div class="drawer-head">
+      <h3 id="nodeDetailTitle">Node details</h3>
+      <div class="actions">
+        <button id="clearNodeHeartbeatsBtn" class="secondary" type="button">clear heartbeat</button>
+        <button id="clearNodeErrorsBtn" class="secondary" type="button">clear errors</button>
+        <button id="clearNodeAllLogsBtn" class="secondary" type="button">Clear all</button>
+        <button id="closeNodeDetailBtn" class="secondary">closure</button>
+      </div>
+    </div>
+    <div class="drawer-content">
+      <section class="panel" style="margin-top:0">
+        <h2>Node snapshot</h2>
+        <div id="nodeDetailSummary" class="drawer-grid"></div>
+      </section>
+      <section class="panel" style="margin-top:0">
+        <h2>The latest heartbeat original payload</h2>
+        <div id="nodeHeartbeatList"></div>
+      </section>
+      <section class="panel" style="margin-top:0">
+        <h2>recent errors</h2>
+        <div id="nodeErrorList"></div>
+      </section>
+    </div>
+  </aside>
+
+  <script>
+    (() => {
+      const TOKEN_STORAGE_KEY = "fcs_admin_token";
+      const REVEALED_API_KEY_STORAGE_KEY = "fcs_admin_revealed_api_keys";
+      const state = {
+        token: "",
+        role: "unknown",
+        page: "overview",
+        currentNodeDetailId: 0,
+        portalUsers: [],
+        clusterNodes: [],
+        clusterSearch: "",
+        clusterHealthFilter: "all",
+        logs: {
+          limit: 30,
+          offset: 0,
+          total: 0,
+        },
+        resultModal: {
+          filename: "",
+          text: "",
+        },
+        revealedApiKeys: {},
+      };
+      const roleTextMap = { master: "master node", subnode: "subnode", standalone: "standalone", unknown: "Not logged in" };
+      const q = (id) => document.getElementById(id);
+      const toInt = (v, d) => Number.isFinite(Number(v)) ? Math.floor(Number(v)) : d;
+      const toFloat = (v, d) => Number.isFinite(Number(v)) ? Number(v) : d;
+      const esc = (v) => String(v ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+      const pageNames = ["overview", "config", "cluster", "apikeys", "users", "cdks", "logs"];
+      const pageElementMap = {
+        overview: "pageOverview",
+        config: "pageConfig",
+        cluster: "pageCluster",
+        apikeys: "pageApiKeys",
+        users: "pageUsers",
+        cdks: "pageCdks",
+        logs: "pageLogs",
+      };
+      const pageMetaMap = {
+        overview: {
+          eyebrow: "Operational overview",
+          title: "Console overview",
+          desc: "Centrally view the current role, thread capacity, session status and basic operating indicators, which is suitable for first judging whether the node is normally available.",
+          shortTitle: "Overview",
+        },
+        config: {
+          eyebrow: "System settings",
+          title: "Configuration and role management",
+          desc: "Maintain backend accounts, deployment roles, timeout parameters, and browser running configurations. After modifications, decide whether to restart based on the role to take effect.",
+          shortTitle: "System configuration",
+        },
+        cluster: {
+          eyebrow: "Cluster scheduling",
+          title: "Cluster node diagnostics",
+          desc: "Check the online status, capacity, heartbeat delay and exception reasons of child nodes to quickly locate scheduling failures or node unavailability issues.",
+          shortTitle: "Cluster diagnostics",
+        },
+        apikeys: {
+          eyebrow: "Service access",
+          title: "API key management",
+          desc: "Manage the start and stop, quota and distribution of the master node service API Key, providing a stable entrance for upstream business access.",
+          shortTitle: "API Key",
+        },
+        users: {
+          eyebrow: "User Center",
+          title: "Portal user management",
+          desc: "Viewing the portal account status, available times and account information is only available in master node mode.",
+          shortTitle: "user",
+        },
+        cdks: {
+          eyebrow: "Quota issuance",
+          title: "CDK coding center",
+          desc: "Generate, deactivate and check redemption codes in batches for portal user recharge and operational issuance.",
+          shortTitle: "CDK",
+        },
+        logs: {
+          eyebrow: "audit records",
+          title: "Call log center",
+          desc: "View solve, finish, and error related logs by page, which is suitable for tracing back the cause of failure and troubleshooting the call chain status.",
+          shortTitle: "log",
+        },
+      };
+
+      const showToast = (m, kind = "ok") => {
+        const e = document.createElement("div");
+        e.className = `toast ${kind}`;
+        e.textContent = m;
+        document.body.appendChild(e);
+        setTimeout(() => {
+          e.style.opacity = "0";
+          e.style.transition = "opacity .25s";
+          setTimeout(() => { if (e.parentNode) e.parentNode.removeChild(e); }, 250);
+        }, 2200);
+      };
+      const showNotice = (m, kind = "ok") => { const e = q("notice"); e.className = `notice ${kind}`; e.textContent = m; showToast(m, kind); };
+      const clearNotice = () => { const e = q("notice"); e.className = "notice"; e.textContent = ""; };
+      const loadRevealedApiKeys = () => {
+        try {
+          const raw = sessionStorage.getItem(REVEALED_API_KEY_STORAGE_KEY);
+          const parsed = raw ? JSON.parse(raw) : {};
+          state.revealedApiKeys = parsed && typeof parsed === "object" ? parsed : {};
+        } catch (_) {
+          state.revealedApiKeys = {};
+        }
+      };
+      const persistRevealedApiKeys = () => {
+        sessionStorage.setItem(REVEALED_API_KEY_STORAGE_KEY, JSON.stringify(state.revealedApiKeys || {}));
+      };
+      const cacheRevealedApiKey = (id, rawKey) => {
+        const normalizedId = String(id || "").trim();
+        const normalizedKey = String(rawKey || "").trim();
+        if (!normalizedId || !normalizedKey) return;
+        state.revealedApiKeys[normalizedId] = normalizedKey;
+        persistRevealedApiKeys();
+      };
+      const getCachedApiKey = (id) => {
+        const normalizedId = String(id || "").trim();
+        if (!normalizedId) return "";
+        return String(state.revealedApiKeys?.[normalizedId] || "");
+      };
+      const copyText = async (text) => {
+        const normalized = String(text || "");
+        if (!normalized) throw new Error("No content to copy");
+        if (navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(normalized);
+          return;
+        }
+        const textarea = document.createElement("textarea");
+        textarea.value = normalized;
+        textarea.setAttribute("readonly", "readonly");
+        textarea.style.position = "fixed";
+        textarea.style.opacity = "0";
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand("copy");
+        document.body.removeChild(textarea);
+      };
+      const downloadTextFile = (filename, text) => {
+        const blob = new Blob([String(text || "")], { type: "text/plain;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = filename || "export.txt";
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+      };
+      const closeResultModal = () => {
+        q("resultModalBackdrop").classList.remove("show");
+        state.resultModal = { filename: "", text: "" };
+      };
+      const openResultModal = ({ title, subtitle, meta, text, filename, copyLabel = "Copy content", downloadLabel = "Export TXT" }) => {
+        state.resultModal = {
+          filename: filename || "export.txt",
+          text: String(text || ""),
+        };
+        q("resultModalTitle").textContent = title || "Result details";
+        q("resultModalSubtitle").textContent = subtitle || "Please copy and save now.";
+        q("resultModalMeta").textContent = meta || "";
+        q("resultModalText").value = String(text || "");
+        q("resultModalCopyBtn").textContent = copyLabel;
+        q("resultModalDownloadBtn").textContent = downloadLabel;
+        q("resultModalBackdrop").classList.add("show");
+      };
+      const renderLogsPager = () => {
+        const infoEl = q("logsPagerInfo");
+        const prevEl = q("logsPrevBtn");
+        const nextEl = q("logsNextBtn");
+        const limit = Math.max(1, Number(state.logs?.limit || 30));
+        const offset = Math.max(0, Number(state.logs?.offset || 0));
+        const total = Math.max(0, Number(state.logs?.total || 0));
+        const page = Math.floor(offset / limit) + 1;
+        const totalPages = total > 0 ? Math.ceil(total / limit) : 1;
+        const from = total > 0 ? offset + 1 : 0;
+        const to = total > 0 ? Math.min(offset + limit, total) : 0;
+        infoEl.textContent = total > 0
+          ? `Page ${page}/${totalPages}, showing ${from}-${to}, total ${total} items`
+          : `Page ${page}, no more data yet`;
+        prevEl.disabled = offset <= 0;
+        nextEl.disabled = offset + limit >= total && total !== 0;
+      };
+      const setEnvNotice = (env = {}) => {
+        const keys = Object.keys(env || {});
+        const e = q("envNotice");
+        if (!keys.length) { e.className = "notice warn hidden"; e.textContent = ""; return; }
+        e.className = "notice warn";
+        e.textContent = `Environment variable override detected: ${keys.join("、")}. These items may not be changed directly from the page. `;
+      };
+
+      const setActivePage = (page) => {
+        const target = pageNames.includes(page) ? page : "overview";
+        state.page = target;
+        for (const name of pageNames) {
+          const pageEl = q(pageElementMap[name]);
+          if (!pageEl) continue;
+          pageEl.classList.toggle("active", name === target);
+        }
+        document.querySelectorAll(".nav-tab[data-page]").forEach((el) => {
+          if (!(el instanceof HTMLElement)) return;
+          el.classList.toggle("active", el.dataset.page === target);
+        });
+        const meta = pageMetaMap[target] || pageMetaMap.overview;
+        q("workspaceBreadcrumb").textContent = `Backend home page / ${meta.shortTitle}`;
+        q("workspaceEyebrow").textContent = meta.eyebrow;
+        q("workspaceTitle").textContent = meta.title;
+        q("workspaceDesc").textContent = meta.desc;
+        q("workspacePage").textContent = meta.shortTitle;
+        q("sidebarPageText").textContent = meta.shortTitle;
+      };
+      const setDashboardVisible = (visible) => {
+        q("dashboard").style.display = visible ? "grid" : "none";
+        q("loginPanel").classList.toggle("hidden", visible);
+        document.body.classList.toggle("admin-authenticated", visible);
+      };
+
+      const refreshNavByRole = () => {
+        const isMaster = state.role === "master";
+        q("navGroupMaster").classList.toggle("hidden", !isMaster);
+        q("navCluster").classList.toggle("hidden", !isMaster);
+        q("navApiKeys").classList.toggle("hidden", !isMaster);
+        q("navUsers").classList.toggle("hidden", !isMaster);
+        q("navCdks").classList.toggle("hidden", !isMaster);
+        q("clusterStatsHint").classList.toggle("hidden", !isMaster);
+        if (!isMaster && ["cluster", "apikeys", "users", "cdks"].includes(state.page)) {
+          setActivePage("overview");
+        }
+      };
+
+      const req = async (url, opt = {}) => {
+        const headers = Object.assign({}, opt.headers || {});
+        if (state.token) headers.Authorization = `Bearer ${state.token}`;
+        if (opt.body && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
+        const r = await fetch(url, { method: opt.method || "GET", headers, body: opt.body ? JSON.stringify(opt.body) : undefined });
+        let p = null; try { p = await r.json(); } catch (_) { p = null; }
+        if (r.status === 401 && state.token) {
+          state.token = ""; state.role = "unknown";
+          localStorage.removeItem(TOKEN_STORAGE_KEY);
+          closeResultModal();
+          closeNodeDetailDrawer();
+          setDashboardVisible(false);
+          applyRoleLayout("unknown");
+        }
+        if (!r.ok) throw new Error((p && p.detail) ? p.detail : `HTTP ${r.status}`);
+        return p || {};
+      };
+
+      const roleOfForm = () => q("cfgRole").value || state.role;
+      const applyRoleLayout = (role) => {
+        const real = role || "unknown";
+        q("roleBadge").textContent = `Current role: ${roleTextMap[real] || real}`;
+        q("sidebarRoleBadge").textContent = roleTextMap[real] || real;
+        q("workspaceRole").textContent = roleTextMap[real] || real;
+        q("sidebarRoleText").textContent = roleTextMap[real] || real;
+        state.role = real;
+        const isMaster = real === "master";
+        const isSubnode = real === "subnode";
+        q("runtimeConfigPanel").classList.toggle("hidden", isMaster);
+        q("masterConfigPanel").classList.toggle("hidden", !isMaster);
+        q("subnodeConfigPanel").classList.toggle("hidden", !isSubnode);
+        q("masterClusterPanel").classList.toggle("hidden", !isMaster);
+        q("masterApiKeyPanel").classList.toggle("hidden", !isMaster);
+        q("portalUsersPanel").classList.toggle("hidden", !isMaster);
+        q("portalCdksPanel").classList.toggle("hidden", !isMaster);
+        refreshNavByRole();
+      };
+      const performLogout = async () => {
+        try { if (state.token) await req("/api/admin/logout", { method: "POST" }); } catch (_) {}
+        state.token = "";
+        state.role = "unknown";
+        localStorage.removeItem(TOKEN_STORAGE_KEY);
+        closeResultModal();
+        closeNodeDetailDrawer();
+        setActivePage("overview");
+        setDashboardVisible(false);
+        applyRoleLayout("unknown");
+        clearNotice();
+      };
+
+      const renderGuide = (guide) => {
+        const panel = q("guidePanel");
+        if (!guide) { panel.classList.add("hidden"); return; }
+        panel.classList.remove("hidden");
+        const items = q("guideItems"); const steps = q("guideSteps");
+        items.innerHTML = ""; steps.innerHTML = "";
+        const roleText = roleTextMap[guide.role] || guide.role || "unknown";
+        q("guideSummary").textContent = guide.is_first_deploy ? `Currently ${roleText}, the system detects the first deployment key item, please follow the steps below to complete. ` : `Currently ${roleText}, the basic configuration is ready. `;
+        const list = Array.isArray(guide.items) ? guide.items : [];
+        if (!list.length) { const li = document.createElement("li"); li.textContent = "No blocking items found."; items.appendChild(li); }
+        else {
+          for (const it of list) {
+            const li = document.createElement("li");
+            const lv = String(it.level || "info").toLowerCase();
+            const lb = lv === "critical" ? "high risk" : (lv === "required" ? "Required" : "hint");
+            li.innerHTML = `<span class="guide-tag ${lv}">${lb}</span><strong>${it.title || "unnamed item"}</strong>：${it.detail || ""}`;
+            items.appendChild(li);
+          }
+        }
+        for (const s of (Array.isArray(guide.next_steps) ? guide.next_steps : [])) { const li = document.createElement("li"); li.textContent = s; steps.appendChild(li); }
+      };
+
+      const syncCaptchaModeFields = () => {
+        const isPersonal = q("cfgCaptchaMethod").value === "personal";
+        q("captchaPersonalBasicFields").classList.toggle("hidden", !isPersonal);
+        q("captchaPersonalAdvancedFields").classList.toggle("hidden", !isPersonal);
+      };
+
+      const fillSystemConfig = (cfg = {}) => {
+        q("cfgRole").value = cfg.cluster?.role || "standalone";
+        q("cfgNodeName").value = cfg.captcha?.node_name || "";
+        q("cfgServerHost").value = cfg.server?.host || "";
+        q("cfgServerPort").value = cfg.server?.port ?? 8060;
+        q("cfgLogLevel").value = cfg.log?.level || "INFO";
+        q("cfgLogAutoClearMinutes").value = cfg.log?.auto_clear_interval_minutes ?? 0;
+        q("cfgLogStartupClear").checked = !!cfg.log?.startup_clear_on_boot;
+        q("cfgPortalPublicBaseUrl").value = cfg.portal?.public_base_url || "";
+        q("cfgOidcEnabled").checked = !!cfg.portal?.oidc_enabled;
+        q("cfgOauthOnly").checked = !!cfg.portal?.oauth_only;
+        q("cfgOidcBaseUrl").value = cfg.portal?.oidc_base_url || "";
+        q("cfgOidcWellKnownUrl").value = cfg.portal?.oidc_well_known_url || "";
+        q("cfgOidcClientId").value = cfg.portal?.oidc_client_id || "";
+        q("cfgOidcClientSecret").value = cfg.portal?.oidc_client_secret || "";
+        q("cfgOidcScope").value = cfg.portal?.oidc_scope || "openid profile email";
+        q("cfgRegisterBonusQuota").value = cfg.portal?.register_bonus_quota ?? 0;
+        q("cfgCheckinMinQuota").value = cfg.portal?.checkin_min_quota ?? 0;
+        q("cfgCheckinMaxQuota").value = cfg.portal?.checkin_max_quota ?? 0;
+        q("cfgFlowTimeout").value = cfg.captcha?.flow_timeout ?? 300;
+        q("cfgUpsampleTimeout").value = cfg.captcha?.upsample_timeout ?? 300;
+        q("cfgSessionTtl").value = cfg.captcha?.session_ttl_seconds ?? 1200;
+        q("cfgCaptchaMethod").value = cfg.captcha?.captcha_method || "browser";
+        q("cfgPersonalProjectPoolSize").value = cfg.captcha?.personal_project_pool_size ?? 4;
+        q("cfgPersonalMaxTabs").value = cfg.captcha?.personal_max_resident_tabs ?? 5;
+        q("cfgPersonalIdleTtl").value = cfg.captcha?.personal_idle_tab_ttl_seconds ?? 600;
+        q("cfgFlowWebsiteKey").value = cfg.captcha?.browser_flow_website_key || "";
+        q("cfgAutoWarmProjectId").value = cfg.captcha?.browser_auto_warm_project_id || "";
+        q("cfgAutoWarmAction").value = cfg.captcha?.browser_auto_warmup_action || "IMAGE_GENERATION";
+        q("cfgAutoWarmWebsiteUrl").value = cfg.captcha?.browser_auto_warm_website_url || "";
+        q("cfgAutoWarmWebsiteKey").value = cfg.captcha?.browser_auto_warm_website_key || "";
+        q("cfgAutoWarmCustomAction").value = cfg.captcha?.browser_auto_warm_action || "homepage";
+        q("cfgMasterNodeStale").value = cfg.cluster?.master_node_stale_seconds ?? 120;
+        q("cfgMasterDispatchTimeout").value = cfg.cluster?.master_dispatch_timeout_seconds ?? 45;
+        q("cfgMasterBaseUrl").value = cfg.cluster?.master_base_url || "";
+        q("cfgMasterClusterKey").value = cfg.cluster?.master_cluster_key || "";
+        q("cfgNodePublicUrl").value = cfg.cluster?.node_public_base_url || "";
+        q("cfgNodeApiKey").value = cfg.cluster?.node_api_key || "";
+        q("cfgHeartbeatSeconds").value = cfg.cluster?.heartbeat_interval_seconds ?? 15;
+        q("cfgNodeWeight").value = cfg.cluster?.node_weight ?? 100;
+        q("cfgNodeMaxConcurrency").value = cfg.cluster?.node_max_concurrency ?? 1;
+        q("cfgDbPath").value = cfg.storage?.db_path || "";
+        q("cfgLaunchBg").value = String(cfg.captcha?.browser_launch_background ?? true);
+        q("cfgDomWait").value = cfg.captcha?.browser_score_dom_wait_seconds ?? 25;
+        q("cfgSettle").value = cfg.captcha?.browser_recaptcha_settle_seconds ?? 3;
+        q("cfgWarmup").value = cfg.captcha?.browser_score_test_warmup_seconds ?? 12;
+        q("cfgScoreTestSettle").value = cfg.captcha?.browser_score_test_settle_seconds ?? 2.5;
+        q("cfgPersonalRecreateThreshold").value = cfg.captcha?.browser_personal_recreate_threshold ?? 2;
+        q("cfgPersonalRestartThreshold").value = cfg.captcha?.browser_personal_restart_threshold ?? 3;
+        syncCaptchaModeFields();
+        applyRoleLayout(roleOfForm());
+      };
+
+      const fillRuntimeConfig = (cfg = {}) => {
+        q("rtCaptchaMethod").value = cfg.captcha_method || "browser";
+        q("rtBrowserCount").value = cfg.browser_count ?? 1;
+        q("rtProxyEnabled").checked = !!cfg.browser_proxy_enabled;
+        q("rtProxyUrl").value = cfg.browser_proxy_url || "";
+        q("rtPersonalProjectPoolSize").value = cfg.personal_project_pool_size ?? 4;
+        q("rtPersonalMaxTabs").value = cfg.personal_max_resident_tabs ?? 5;
+        q("rtPersonalIdleTtl").value = cfg.personal_idle_tab_ttl_seconds ?? 600;
+        const poolSize = Number(cfg.browser_proxy_pool_size || 0);
+        q("rtProxyPoolHint").textContent = poolSize > 0 ? `Current proxy pool entry: ${poolSize}` : "No agent pool is currently configured.";
+      };
+
+      const fillClusterBase = (cfg = {}) => {
+        q("clusterNodeName").value = cfg.node_name || "";
+        q("clusterKey").value = cfg.cluster_key || "";
+      };
+
+      const collectSystemPayload = () => {
+        const role = roleOfForm();
+        const payload = {
+          server: { host: q("cfgServerHost").value.trim(), port: toInt(q("cfgServerPort").value, 8060) },
+          storage: { db_path: q("cfgDbPath").value.trim() },
+          portal: {
+            public_base_url: q("cfgPortalPublicBaseUrl").value.trim(),
+            oidc_enabled: q("cfgOidcEnabled").checked,
+            oauth_only: q("cfgOauthOnly").checked,
+            oidc_base_url: q("cfgOidcBaseUrl").value.trim(),
+            oidc_well_known_url: q("cfgOidcWellKnownUrl").value.trim(),
+            oidc_client_id: q("cfgOidcClientId").value.trim(),
+            oidc_client_secret: q("cfgOidcClientSecret").value.trim(),
+            oidc_scope: q("cfgOidcScope").value.trim() || "openid profile email",
+            register_bonus_quota: toInt(q("cfgRegisterBonusQuota").value, 0),
+            checkin_min_quota: toInt(q("cfgCheckinMinQuota").value, 0),
+            checkin_max_quota: toInt(q("cfgCheckinMaxQuota").value, 0),
+          },
+          captcha: {
+            node_name: q("cfgNodeName").value.trim(),
+            flow_timeout: toInt(q("cfgFlowTimeout").value, 300),
+            upsample_timeout: toInt(q("cfgUpsampleTimeout").value, 300),
+            session_ttl_seconds: toInt(q("cfgSessionTtl").value, 1200),
+            captcha_method: q("cfgCaptchaMethod").value,
+            personal_project_pool_size: toInt(q("cfgPersonalProjectPoolSize").value, 4),
+            personal_max_resident_tabs: toInt(q("cfgPersonalMaxTabs").value, 5),
+            personal_idle_tab_ttl_seconds: toInt(q("cfgPersonalIdleTtl").value, 600),
+            browser_flow_website_key: q("cfgFlowWebsiteKey").value.trim(),
+            browser_auto_warm_project_id: q("cfgAutoWarmProjectId").value.trim(),
+            browser_auto_warmup_action: q("cfgAutoWarmAction").value,
+            browser_auto_warm_website_url: q("cfgAutoWarmWebsiteUrl").value.trim(),
+            browser_auto_warm_website_key: q("cfgAutoWarmWebsiteKey").value.trim(),
+            browser_auto_warm_action: q("cfgAutoWarmCustomAction").value.trim(),
+            browser_launch_background: q("cfgLaunchBg").value === "true",
+            browser_score_dom_wait_seconds: toFloat(q("cfgDomWait").value, 25),
+            browser_recaptcha_settle_seconds: toFloat(q("cfgSettle").value, 3),
+            browser_score_test_warmup_seconds: toFloat(q("cfgWarmup").value, 12),
+            browser_score_test_settle_seconds: toFloat(q("cfgScoreTestSettle").value, 2.5),
+            browser_personal_recreate_threshold: toInt(q("cfgPersonalRecreateThreshold").value, 2),
+            browser_personal_restart_threshold: toInt(q("cfgPersonalRestartThreshold").value, 3),
+          },
+          log: {
+            level: q("cfgLogLevel").value,
+            startup_clear_on_boot: q("cfgLogStartupClear").checked,
+            auto_clear_interval_minutes: toInt(q("cfgLogAutoClearMinutes").value, 0),
+          },
+          cluster: { role },
+        };
+
+        if (role === "master") {
+          payload.cluster.master_node_stale_seconds = toInt(q("cfgMasterNodeStale").value, 120);
+          payload.cluster.master_dispatch_timeout_seconds = toInt(q("cfgMasterDispatchTimeout").value, 45);
+        }
+        if (role === "subnode") {
+          payload.cluster.master_base_url = q("cfgMasterBaseUrl").value.trim();
+          payload.cluster.master_cluster_key = q("cfgMasterClusterKey").value.trim();
+          payload.cluster.node_public_base_url = q("cfgNodePublicUrl").value.trim();
+          payload.cluster.node_api_key = q("cfgNodeApiKey").value.trim();
+          payload.cluster.heartbeat_interval_seconds = toInt(q("cfgHeartbeatSeconds").value, 15);
+          payload.cluster.node_weight = toInt(q("cfgNodeWeight").value, 100);
+          payload.cluster.node_max_concurrency = toInt(q("cfgNodeMaxConcurrency").value, 1);
+        }
+        if (role !== "subnode") {
+          delete payload.cluster.master_base_url;
+          delete payload.cluster.master_cluster_key;
+          delete payload.cluster.node_public_base_url;
+          delete payload.cluster.node_api_key;
+          delete payload.cluster.heartbeat_interval_seconds;
+          delete payload.cluster.node_weight;
+          delete payload.cluster.node_max_concurrency;
+        }
+        if (role !== "master") {
+          delete payload.cluster.master_node_stale_seconds;
+          delete payload.cluster.master_dispatch_timeout_seconds;
+        }
+        return payload;
+      };
+
+      const loadProfile = async () => {
+        const r = await req("/api/admin/profile");
+        q("adminCurrentUser").value = r.profile?.username || "";
+      };
+      const loadStats = async () => {
+        const r = await req("/api/admin/stats");
+        q("statActive").textContent = String(r.runtime?.active_sessions ?? "-");
+        q("statCached").textContent = String(r.runtime?.cached_sessions ?? "-");
+        q("statTotal").textContent = String(r.db?.jobs_total ?? "-");
+        q("statEnabledKey").textContent = String(r.db?.api_key_enabled_total ?? "-");
+        if (state.role === "master") {
+          q("statStandbyTokenLabel").textContent = "Cluster pool token";
+          q("statThreadTotalLabel").textContent = "Cluster coding thread (solve effective capacity)";
+          q("statThreadIdleLabel").textContent = "Cluster idle coding thread (solve effective capacity - active)";
+          q("statStandbyTokenCount").textContent = String(r.cluster?.total_standby_token_count ?? "-");
+          q("statThreadTotal").textContent = String(r.cluster?.total_thread_capacity ?? "-");
+          q("statThreadIdle").textContent = String(r.cluster?.total_idle_capacity ?? "-");
+        } else {
+          q("statStandbyTokenLabel").textContent = "native pool token";
+          q("statThreadTotalLabel").textContent = "Native coding thread (solve effective capacity)";
+          q("statThreadIdleLabel").textContent = "Local idle coding thread (solve effective capacity - active)";
+          q("statStandbyTokenCount").textContent = String(r.runtime?.browser?.standby_token_count ?? "-");
+          q("statThreadTotal").textContent = String(r.runtime?.browser?.thread_total ?? "-");
+          q("statThreadIdle").textContent = String(r.runtime?.browser?.thread_idle ?? "-");
+        }
+      };
+      const loadSystem = async () => {
+        const r = await req("/api/admin/system-config");
+        state.role = r.role || "unknown";
+        fillSystemConfig(r.config || {});
+        setEnvNotice(r.env_overrides || {});
+        renderGuide(r.setup_guide || null);
+        applyRoleLayout(state.role);
+      };
+      const loadRuntime = async () => {
+        if (state.role === "master") return;
+        const r = await req("/api/admin/captcha-config");
+        fillRuntimeConfig(r || {});
+      };
+      const loadClusterConfig = async () => { const r = await req("/api/admin/cluster/config"); fillClusterBase(r || {}); };
+      const loadLogs = async () => {
+        const limit = Math.max(1, Number(state.logs?.limit || 30));
+        const offset = Math.max(0, Number(state.logs?.offset || 0));
+        const r = await req(`/api/admin/logs?limit=${limit}&offset=${offset}`);
+        const items = Array.isArray(r.items) ? r.items : [];
+        const totalCandidate = Number(r.total);
+        const total = Number.isFinite(totalCandidate)
+          ? totalCandidate
+          : (items.length >= limit ? offset + items.length + 1 : offset + items.length);
+        state.logs.limit = Number(r.limit || limit) || limit;
+        state.logs.offset = Number(r.offset || offset) || 0;
+        state.logs.total = Math.max(0, total);
+        const b = q("logsTable"); b.innerHTML = "";
+        for (const it of items) {
+          const tr = document.createElement("tr");
+          tr.innerHTML = `<td>${it.created_at || "-"}</td><td>${it.session_id || "-"}</td><td>${it.project_id || "-"}</td><td>${it.action || "-"}</td><td>${it.status || "-"}</td><td>${it.error_reason || ""}</td>`;
+          b.appendChild(tr);
+        }
+        if (!items.length) {
+          const tr = document.createElement("tr");
+          tr.innerHTML = `<td colspan="6" style="text-align:center;color:#64748b;padding:16px 8px">No log records yet</td>`;
+          b.appendChild(tr);
+        }
+        q("logsTableStat").textContent = `Current ${items.length} / Total ${state.logs.total}`;
+        renderLogsPager();
+      };
+      const loadApiKeys = async () => {
+        if (state.role !== "master") return;
+        const r = await req("/api/admin/apikeys");
+        const items = Array.isArray(r.items) ? r.items : [];
+        const b = q("apiKeysTable"); b.innerHTML = "";
+        for (const it of items) {
+          const rawKey = getCachedApiKey(it.id);
+          const copyTextLabel = rawKey ? "Copy Key" : "Copy prefix";
+          const tr = document.createElement("tr");
+          tr.innerHTML = `<td>${it.id}</td><td><input data-ak-id="${it.id}" data-ak-key="name" value="${it.name || ""}" /></td><td>${it.key_prefix || "-"}</td><td><input type="checkbox" data-ak-id="${it.id}" data-ak-key="enabled" ${it.enabled ? "checked" : ""} /></td><td><input data-ak-id="${it.id}" data-ak-key="quota_remaining" value="${it.quota_remaining ?? ""}" /></td><td>${it.quota_used ?? 0}</td><td><div class="action-row"><button class="secondary" data-action="save-api-key" data-id="${it.id}">Save</button><button class="secondary" data-action="copy-api-key" data-id="${it.id}" data-prefix="${esc(it.key_prefix || "")}">${copyTextLabel}</button></div></td>`;
+          b.appendChild(tr);
+        }
+        if (!items.length) {
+          const tr = document.createElement("tr");
+          tr.innerHTML = `<td colspan="7" style="text-align:center;color:#64748b;padding:16px 8px">No API Key</td>`;
+          b.appendChild(tr);
+        }
+        q("apiKeyTableStat").textContent = `API Key ${items.length}`;
+      };
+      const loadPortalUsers = async () => {
+        if (state.role !== "master") return;
+        const r = await req("/api/admin/users");
+        const items = Array.isArray(r.items) ? r.items : [];
+        state.portalUsers = items;
+        const b = q("portalUsersTable"); b.innerHTML = "";
+        for (const it of items) {
+          const tr = document.createElement("tr");
+          tr.innerHTML = `<td><input type="checkbox" data-user-select="1" data-user-id="${it.id}" /></td><td>${it.id}</td><td><div class="cell-stack"><span class="cell-main">${esc(it.username || "-")}</span></div></td><td><div class="cell-stack"><span class="cell-main">${esc(it.display_name || "-")}</span></div></td><td>${esc(it.register_location || "-")}</td><td><input type="checkbox" data-user-id="${it.id}" data-user-key="enabled" ${it.enabled ? "checked" : ""} /></td><td><span class="quota-badge">${it.quota_remaining ?? 0}</span></td><td><input class="table-mini-input quota-delta" type="number" min="0" value="${it.quota_remaining ?? 0}" data-user-id="${it.id}" data-user-key="quota_remaining" /></td><td><span class="quota-badge">${it.quota_used ?? 0}</span></td><td><input class="table-mini-input quota-delta" type="number" value="0" data-user-id="${it.id}" data-user-key="quota_remaining_delta" /></td><td><input class="table-mini-input table-pass-input" type="password" data-user-id="${it.id}" data-user-key="new_password" placeholder="Leave blank and do not modify" /></td><td>${it.last_login_at || "-"}</td><td><div class="action-row"><button class="secondary" data-action="save-user" data-id="${it.id}">Save</button><button class="secondary" data-action="delete-user" data-id="${it.id}">Delete</button></div></td>`;
+          b.appendChild(tr);
+        }
+        if (!items.length) {
+          const tr = document.createElement("tr");
+          tr.innerHTML = `<td colspan="13" style="text-align:center;color:#64748b;padding:16px 8px">No user record yet</td>`;
+          b.appendChild(tr);
+        }
+        q("usersSelectAll").checked = false;
+        q("usersTableStat").textContent = `Number of users ${items.length}`;
+      };
+      const loadPortalCdks = async () => {
+        if (state.role !== "master") return;
+        const r = await req("/api/admin/cdks");
+        const items = Array.isArray(r.items) ? r.items : [];
+        const b = q("portalCdksTable"); b.innerHTML = "";
+        for (const it of items) {
+          const tr = document.createElement("tr");
+          tr.innerHTML = `<td>${it.id}</td><td>${esc(it.code || "-")}</td><td>${it.quota_times ?? 0}</td><td>${esc(it.batch_prefix || "-")}</td><td>${esc(it.note || "")}</td><td><input type="checkbox" data-cdk-id="${it.id}" data-cdk-key="enabled" ${it.enabled ? "checked" : ""} /></td><td>${esc(it.redeemed_username || "-")}</td><td>${it.redeemed_at || "-"}</td><td>${it.created_at || "-"}</td><td><button class="secondary" data-action="save-cdk" data-id="${it.id}">Save</button></td>`;
+          b.appendChild(tr);
+        }
+        if (!items.length) {
+          const tr = document.createElement("tr");
+          tr.innerHTML = `<td colspan="10" style="text-align:center;color:#64748b;padding:16px 8px">No CDK record yet</td>`;
+          b.appendChild(tr);
+        }
+        q("cdkTableStat").textContent = `CDK ${items.length}`;
+      };
+      const closeNodeDetailDrawer = () => {
+        q("nodeDetailBackdrop").classList.add("hidden");
+        q("nodeDetailBackdrop").classList.remove("show");
+        q("nodeDetailDrawer").classList.add("hidden");
+        q("nodeDetailDrawer").classList.remove("show");
+      };
+      const openNodeDetailDrawer = () => {
+        q("nodeDetailBackdrop").classList.remove("hidden");
+        q("nodeDetailBackdrop").classList.add("show");
+        q("nodeDetailDrawer").classList.remove("hidden");
+        q("nodeDetailDrawer").classList.add("show");
+      };
+      const renderNodeDetail = (detail = {}) => {
+        const item = detail.item || {};
+        state.currentNodeDetailId = Number(item.id || 0);
+        q("nodeDetailTitle").textContent = `Node details #${item.id ?? "-"}`;
+        const summary = q("nodeDetailSummary");
+        summary.innerHTML = "";
+        const summaryFields = [
+          ["Node name", item.node_name || "-"],
+          ["address", item.base_url || "-"],
+          ["health status", item.is_healthy ? "healthy" : "abnormal"],
+          ["Abnormal cause", item.health_reason || "-"],
+          ["recent errors", item.last_error || "-"],
+          ["Heartbeat delay(s)", item.heartbeat_age_seconds ?? "-"],
+          ["browser_count", item.browser_count ?? "-"],
+          ["node_max_concurrency", item.node_max_concurrency ?? "-"],
+          ["effective_capacity", item.effective_capacity ?? "-"],
+          ["Current pool token", item.standby_token_count ?? "-"],
+          ["active thread", item.thread_active ?? "-"],
+          ["idle thread", item.thread_idle ?? "-"],
+        ];
+        for (const [k, v] of summaryFields) {
+          const wrap = document.createElement("div");
+          wrap.className = "field";
+          wrap.innerHTML = `<label>${esc(k)}</label><input value="${esc(v)}" readonly />`;
+          summary.appendChild(wrap);
+        }
+
+        const heartbeatList = q("nodeHeartbeatList");
+        heartbeatList.innerHTML = "";
+        const heartbeats = Array.isArray(detail.heartbeats) ? detail.heartbeats : [];
+        if (!heartbeats.length) {
+          const empty = document.createElement("div");
+          empty.className = "panel-desc";
+          empty.textContent = "There is no heartbeat history.";
+          heartbeatList.appendChild(empty);
+        } else {
+          for (const hb of heartbeats) {
+            const itemEl = document.createElement("div");
+            itemEl.className = "timeline-item";
+            const payloadText = JSON.stringify(hb.payload || {}, null, 2);
+            const reasonText = hb.reason ? ` · Reason: ${hb.reason}` : "";
+            itemEl.innerHTML = `<div><strong>${esc(hb.event_type || "-")}</strong> · ${esc(hb.created_at || "-")} · ${hb.healthy ? "healthy" : "unhealthy"}${esc(reasonText)}</div><pre class="payload-box mono">${esc(payloadText)}</pre>`;
+            heartbeatList.appendChild(itemEl);
+          }
+        }
+
+        const errorList = q("nodeErrorList");
+        errorList.innerHTML = "";
+        const errors = Array.isArray(detail.errors) ? detail.errors : [];
+        if (!errors.length) {
+          const empty = document.createElement("div");
+          empty.className = "panel-desc";
+          empty.textContent = "No error records yet.";
+          errorList.appendChild(empty);
+        } else {
+          for (const err of errors) {
+            const itemEl = document.createElement("div");
+            itemEl.className = "timeline-item";
+            itemEl.innerHTML = `<div><strong>${esc(err.error_type || "runtime")}</strong> · ${esc(err.created_at || "-")}</div><div class="panel-desc mono" style="margin-top:6px">${esc(err.error_message || "")}</div>`;
+            errorList.appendChild(itemEl);
+          }
+        }
+      };
+      const loadNodeDetail = async (nodeId) => {
+        const detail = await req(`/api/admin/cluster/nodes/${nodeId}/detail?heartbeat_limit=20&error_limit=20`);
+        renderNodeDetail(detail || {});
+        openNodeDetailDrawer();
+      };
+      const getSelectedUserIds = () => Array.from(document.querySelectorAll('input[data-user-select="1"]:checked'))
+        .map((el) => Number(el.getAttribute("data-user-id")))
+        .filter((id) => Number.isFinite(id) && id > 0);
+      const clearNodeLogs = async (scopes) => {
+        const nodeId = Number(state.currentNodeDetailId || 0);
+        if (!Number.isFinite(nodeId) || nodeId <= 0) throw new Error("There are currently no operable child nodes.");
+        const labels = Array.isArray(scopes) ? scopes : [];
+        const scopeText = labels.includes("heartbeats") && labels.includes("errors")
+          ? "Heartbeat and error log"
+          : (labels.includes("heartbeats") ? "Heartbeat log" : "error log");
+        if (!window.confirm(`Are you sure to clear the ${scopeText} of the child node #${nodeId}?`)) return;
+        const result = await req(`/api/admin/cluster/nodes/${nodeId}/logs/clear`, { method: "POST", body: { scopes: labels } });
+        await loadNodeDetail(nodeId);
+        showNotice(result.message || `${scopeText} of child node #${nodeId} has been cleared.`, "ok");
+      };
+      const resolveReasonBadgeClass = (reasonCode) => {
+        const code = String(reasonCode || "").toLowerCase();
+        if (code === "ok") return "ok";
+        if (code === "timeout" || code === "disabled") return "warn";
+        if (code === "report_failed" || code === "auth_failed") return "err";
+        return "warn";
+      };
+      const resolveHeartbeatBadgeClass = (seconds) => {
+        if (!Number.isFinite(seconds)) return "warn";
+        if (seconds <= 20) return "ok";
+        if (seconds <= 60) return "warn";
+        return "err";
+      };
+      const passClusterFilter = (item) => {
+        const filter = String(state.clusterHealthFilter || "all");
+        const reasonCode = String(item.health_reason_code || "");
+        if (filter === "healthy" && !item.is_healthy) return false;
+        if (filter === "abnormal" && item.is_healthy) return false;
+        if (filter !== "all" && filter !== "healthy" && filter !== "abnormal" && filter !== reasonCode) return false;
+
+        const keyword = String(state.clusterSearch || "").trim().toLowerCase();
+        if (!keyword) return true;
+        const haystack = [
+          item.node_name,
+          item.base_url,
+          item.health_reason,
+          item.health_reason_code,
+          item.last_error,
+        ].map((x) => String(x || "").toLowerCase()).join(" ");
+        return haystack.includes(keyword);
+      };
+      const renderClusterKpis = (items) => {
+        const list = Array.isArray(items) ? items : [];
+        const total = list.length;
+        const enabled = list.filter((x) => !!x.enabled).length;
+        const healthy = list.filter((x) => !!x.is_healthy).length;
+        const unhealthy = Math.max(total - healthy, 0);
+        const totalCapacity = list.reduce((sum, x) => sum + toInt(x.effective_capacity ?? x.thread_total, 0), 0);
+        const idleCapacity = list.reduce((sum, x) => sum + toInt(x.thread_idle, 0), 0);
+        const standbyTokens = list.reduce((sum, x) => sum + toInt(x.standby_token_count, 0), 0);
+        const hbAges = list.map((x) => Number(x.heartbeat_age_seconds)).filter((x) => Number.isFinite(x));
+        const avgHeartbeat = hbAges.length ? Math.round(hbAges.reduce((a, b) => a + b, 0) / hbAges.length) : null;
+
+        q("clusterKpiNodeTotal").textContent = String(total);
+        q("clusterKpiNodeEnabled").textContent = String(enabled);
+        q("clusterKpiHealthy").textContent = String(healthy);
+        q("clusterKpiUnhealthy").textContent = String(unhealthy);
+        q("clusterKpiCapacity").textContent = String(totalCapacity);
+        q("clusterKpiIdle").textContent = String(idleCapacity);
+        q("clusterKpiStandbyTokens").textContent = String(standbyTokens);
+        q("clusterKpiHeartbeat").textContent = avgHeartbeat === null ? "-" : String(avgHeartbeat);
+      };
+      const renderClusterNodes = () => {
+        const allItems = Array.isArray(state.clusterNodes) ? state.clusterNodes : [];
+        const filtered = allItems
+          .filter(passClusterFilter)
+          .sort((a, b) => {
+            const aHealthy = a.is_healthy ? 1 : 0;
+            const bHealthy = b.is_healthy ? 1 : 0;
+            if (aHealthy !== bHealthy) return aHealthy - bHealthy;
+            const aDelay = Number(a.heartbeat_age_seconds);
+            const bDelay = Number(b.heartbeat_age_seconds);
+            if (Number.isFinite(aDelay) && Number.isFinite(bDelay) && aDelay !== bDelay) return bDelay - aDelay;
+            return toInt(a.id, 0) - toInt(b.id, 0);
+          });
+        renderClusterKpis(allItems);
+        q("clusterResultHint").textContent = `Display ${filtered.length}/${allItems.length} nodes`;
+        q("clusterTableStat").textContent = `Node ${filtered.length}/${allItems.length}`;
+
+        const b = q("clusterNodesTable");
+        b.innerHTML = "";
+        if (!filtered.length) {
+          const tr = document.createElement("tr");
+          tr.innerHTML = `<td colspan="16" style="text-align:center;color:#64748b;padding:16px 8px">No nodes under the current filter conditions</td>`;
+          b.appendChild(tr);
+          return;
+        }
+        for (const it of filtered) {
+          const tr = document.createElement("tr");
+          const healthClass = it.is_healthy ? "ok" : "err";
+          const healthText = it.is_healthy ? "healthy" : "abnormal";
+          const reasonClass = resolveReasonBadgeClass(it.health_reason_code);
+          const ageNumber = Number(it.heartbeat_age_seconds);
+          const ageClass = resolveHeartbeatBadgeClass(ageNumber);
+          const ageText = Number.isFinite(ageNumber) ? String(ageNumber) : "-";
+          const effectiveCapacity = it.effective_capacity ?? it.thread_total ?? "-";
+          const standbyTokenCount = it.standby_token_count ?? "-";
+          const threadActive = it.thread_active ?? "-";
+          const threadIdle = it.thread_idle ?? "-";
+          const lastHeartbeatText = esc(it.last_heartbeat_at || "-");
+          const lastHeartbeatHtml = lastHeartbeatText === "-" ? "-" : lastHeartbeatText.replace(" ", "<br/>");
+          const reasonTitle = esc(it.last_error || it.health_reason || "-");
+          tr.innerHTML = `<td><span class="node-id mono">#${it.id}</span></td><td><div class="node-name">${esc(it.node_name || "-")}</div></td><td class="mono node-url">${esc(it.base_url || "-")}</td><td><span class="status-badge ${healthClass}">${healthText}</span></td><td><input type="checkbox" data-node-id="${it.id}" data-node-key="enabled" ${it.enabled ? "checked" : ""} /></td><td><span class="metric-chip mono">${it.browser_count ?? "-"}</span></td><td><span class="metric-chip mono">${it.node_max_concurrency ?? "-"}</span></td><td><span class="metric-chip strong mono">${effectiveCapacity}</span></td><td><span class="metric-chip mono">${standbyTokenCount}</span></td><td><span class="metric-chip active mono">${threadActive}</span></td><td><span class="metric-chip idle mono">${threadIdle}</span></td><td><span class="status-badge ${ageClass}">${ageText}</span></td><td><span class="status-badge ${reasonClass} reason-badge" title="${reasonTitle}">${esc(it.health_reason || "-")}</span></td><td><input class="input-mini mono" data-node-id="${it.id}" data-node-key="weight" value="${it.weight ?? 100}" /></td><td><div class="time-cell">${lastHeartbeatHtml}</div></td><td><div class="cluster-actions"><button class="secondary" data-action="detail-node" data-id="${it.id}">Details</button><button class="secondary" data-action="save-node" data-id="${it.id}">Save</button><button class="warn" data-action="delete-node" data-id="${it.id}">Delete</button></div></td>`;
+          b.appendChild(tr);
+        }
+      };
+      const loadClusterNodes = async () => {
+        if (state.role !== "master") return;
+        const r = await req("/api/admin/cluster/nodes");
+        state.clusterNodes = Array.isArray(r.items) ? r.items : [];
+        q("clusterLastUpdated").value = new Date().toLocaleString("zh-CN", { hour12: false });
+        renderClusterNodes();
+      };
+      const tryRestoreLogin = async () => {
+        const cachedToken = localStorage.getItem(TOKEN_STORAGE_KEY);
+        if (!cachedToken) return;
+        state.token = cachedToken;
+        try {
+          setActivePage("overview");
+          setDashboardVisible(true);
+          await loadAll();
+          clearNotice();
+        } catch (_) {
+          state.token = "";
+          state.role = "unknown";
+          localStorage.removeItem(TOKEN_STORAGE_KEY);
+          setDashboardVisible(false);
+          applyRoleLayout("unknown");
+        }
+      };
+      const loadAll = async () => {
+        clearNotice();
+        await loadProfile();
+        await loadSystem();
+        await loadStats();
+        await loadClusterConfig();
+        await loadRuntime();
+        await loadLogs();
+        await loadApiKeys();
+        await loadPortalUsers();
+        await loadPortalCdks();
+        await loadClusterNodes();
+      };
+      q("loginBtn").addEventListener("click", async () => {
+        clearNotice();
+        try {
+          const r = await req("/api/admin/login", { method: "POST", body: { username: q("loginUsername").value.trim(), password: q("loginPassword").value } });
+          state.token = r.token; state.role = r.role || "unknown";
+          localStorage.setItem(TOKEN_STORAGE_KEY, state.token);
+          setActivePage("overview");
+          setDashboardVisible(true);
+          await loadAll();
+          showNotice("The login is successful and the background is loaded.", "ok");
+        } catch (err) { showNotice(`Login failed: ${err.message}`, "err"); }
+      });
+
+      q("logoutBtn").addEventListener("click", performLogout);
+      q("sidebarLogoutBtn").addEventListener("click", performLogout);
+      q("refreshAllBtn").addEventListener("click", async () => { try { await loadAll(); showNotice("All data has been refreshed.", "ok"); } catch (err) { showNotice(`Refresh failed: ${err.message}`, "err"); } });
+      q("usersSelectAll").addEventListener("change", (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLInputElement)) return;
+        document.querySelectorAll('input[data-user-select="1"]').forEach((el) => {
+          if (el instanceof HTMLInputElement) el.checked = target.checked;
+        });
+      });
+      q("applyUsersBatchQuotaBtn").addEventListener("click", async () => {
+        try {
+          const delta = toInt(q("usersBatchQuotaDelta").value, 0);
+          if (delta <= 0) throw new Error("The number of batch additions must be greater than 0.");
+          const ids = Array.from(document.querySelectorAll('input[data-user-select="1"]:checked'))
+            .map((el) => Number(el.getAttribute("data-user-id")))
+            .filter((id) => Number.isFinite(id) && id > 0);
+          if (!ids.length) throw new Error("Please check at least 1 user first.");
+          for (const id of ids) {
+            await req(`/api/admin/users/${id}`, { method: "PATCH", body: { quota_remaining_delta: delta } });
+          }
+          await loadPortalUsers();
+          await loadStats();
+          showNotice(`Batch added ${delta} times for ${ids.length} users.`, "ok");
+        } catch (err) { showNotice(`Failed to add batch number of times: ${err.message}`, "err"); }
+      });
+      q("deleteUsersBatchBtn").addEventListener("click", async () => {
+        try {
+          const ids = getSelectedUserIds();
+          if (!ids.length) throw new Error("Please check at least 1 user first.");
+          if (!window.confirm(`Are you sure you want to delete the selected ${ids.length} users? After deletion, the related user logs and personal API Keys will also be cleared together.`)) return;
+          const result = await req("/api/admin/users/batch-delete", { method: "POST", body: { user_ids: ids } });
+          await loadPortalUsers();
+          await loadStats();
+          showNotice(result.message || `${ids.length} users have been deleted.`, "ok");
+        } catch (err) { showNotice(`Failed to delete users in batches: ${err.message}`, "err"); }
+      });
+      q("refreshLogsBtn").addEventListener("click", async () => {
+        try {
+          state.logs.offset = 0;
+          await loadLogs();
+          showNotice("The log has been refreshed.", "ok");
+        } catch (err) { showNotice(`Log refresh failed: ${err.message}`, "err"); }
+      });
+      q("clearLogsBtn").addEventListener("click", async () => {
+        try {
+          if (!window.confirm("Are you sure you want to clear all request logs? This action cannot be undone.")) return;
+          const result = await req("/api/admin/logs/clear", { method: "POST" });
+          state.logs.offset = 0;
+          await loadLogs();
+          await loadStats();
+          showNotice(result.message || "The request log has been cleared.", "ok");
+        } catch (err) { showNotice(`Failed to clear request log: ${err.message}`, "err"); }
+      });
+      q("cfgRole").addEventListener("change", () => applyRoleLayout(roleOfForm()));
+      q("cfgCaptchaMethod").addEventListener("change", syncCaptchaModeFields);
+      q("dashboardNav").addEventListener("click", (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLElement)) return;
+        const navTab = target.closest(".nav-tab[data-page]");
+        if (!(navTab instanceof HTMLElement)) return;
+        const page = navTab.dataset.page;
+        if (!page) return;
+        setActivePage(page);
+      });
+      q("clusterSearchInput").addEventListener("input", (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLInputElement)) return;
+        state.clusterSearch = target.value || "";
+        renderClusterNodes();
+      });
+      q("clusterHealthFilter").addEventListener("change", (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLSelectElement)) return;
+        state.clusterHealthFilter = target.value || "all";
+        renderClusterNodes();
+      });
+      q("closeNodeDetailBtn").addEventListener("click", closeNodeDetailDrawer);
+      q("nodeDetailBackdrop").addEventListener("click", closeNodeDetailDrawer);
+      q("clearNodeHeartbeatsBtn").addEventListener("click", async () => {
+        try { await clearNodeLogs(["heartbeats"]); } catch (err) { showNotice(`Failed to clear heartbeat log: ${err.message}`, "err"); }
+      });
+      q("clearNodeErrorsBtn").addEventListener("click", async () => {
+        try { await clearNodeLogs(["errors"]); } catch (err) { showNotice(`Failed to clear error log: ${err.message}`, "err"); }
+      });
+      q("clearNodeAllLogsBtn").addEventListener("click", async () => {
+        try { await clearNodeLogs(["heartbeats", "errors"]); } catch (err) { showNotice(`Failed to clear node log: ${err.message}`, "err"); }
+      });
+      q("closeResultModalBtn").addEventListener("click", closeResultModal);
+      q("resultModalBackdrop").addEventListener("click", (event) => {
+        if (event.target === q("resultModalBackdrop")) closeResultModal();
+      });
+      q("resultModalCopyBtn").addEventListener("click", async () => {
+        try {
+          await copyText(state.resultModal?.text || "");
+          showNotice("Content copied.", "ok");
+        } catch (err) {
+          showNotice(`Copy failed: ${err.message}`, "err");
+        }
+      });
+      q("resultModalDownloadBtn").addEventListener("click", () => {
+        downloadTextFile(state.resultModal?.filename || "export.txt", state.resultModal?.text || "");
+        showNotice("The file has been exported.", "ok");
+      });
+      q("logsPrevBtn").addEventListener("click", async () => {
+        if (state.logs.offset <= 0) return;
+        state.logs.offset = Math.max(0, state.logs.offset - state.logs.limit);
+        try {
+          await loadLogs();
+        } catch (err) {
+          showNotice(`Previous page failed to load: ${err.message}`, "err");
+        }
+      });
+      q("logsNextBtn").addEventListener("click", async () => {
+        if (state.logs.total && state.logs.offset + state.logs.limit >= state.logs.total) return;
+        state.logs.offset += state.logs.limit;
+        try {
+          await loadLogs();
+        } catch (err) {
+          state.logs.offset = Math.max(0, state.logs.offset - state.logs.limit);
+          showNotice(`Next page failed to load: ${err.message}`, "err");
+        }
+      });
+
+      q("saveAdminBtn").addEventListener("click", async () => {
+        try {
+          const body = { current_password: q("adminOldPassword").value, new_username: q("adminNewUser").value.trim() || null, new_password: q("adminNewPassword").value || null };
+          const r = await req("/api/admin/credentials", { method: "POST", body });
+          q("adminOldPassword").value = ""; q("adminNewUser").value = ""; q("adminNewPassword").value = "";
+          q("adminCurrentUser").value = r.profile?.username || q("adminCurrentUser").value;
+          await loadSystem();
+          showNotice(r.message || "Administrator account has been updated.", "ok");
+        } catch (err) { showNotice(`Failed to save administrator account: ${err.message}`, "err"); }
+      });
+
+      q("saveSystemBtn").addEventListener("click", async () => {
+        try {
+          const payload = collectSystemPayload();
+          if (payload.portal?.oidc_enabled) {
+            const mustHave = [
+              ["Portal external address", payload.portal.public_base_url],
+              ["OIDC Client ID", payload.portal.oidc_client_id],
+              ["OIDC Client Secret", payload.portal.oidc_client_secret],
+            ];
+            if (!String(payload.portal.oidc_base_url || "").trim() && !String(payload.portal.oidc_well_known_url || "").trim()) {
+              mustHave.push(["OIDC base address or Well-Known URL", ""]);
+            }
+            const missing = mustHave.filter((x) => !String(x[1] || "").trim()).map((x) => x[0]);
+            if (missing. length > 0) {
+              throw new Error(`OIDC configuration missing: ${missing.join("、")}`);
+            }
+          }
+          if (payload.portal?.oauth_only && !payload.portal?.oidc_enabled) {
+            throw new Error("When only OAuth login is enabled, OIDC login must also be enabled.");
+          }
+          if ((payload.portal?.checkin_max_quota ?? 0) < (payload.portal?.checkin_min_quota ?? 0)) {
+            throw new Error("The maximum sign-in reward cannot be less than the minimum sign-in reward.");
+          }
+          if (payload.cluster?.role === "subnode") {
+            const mustHave = [
+              ["Master node address", payload.cluster.master_base_url],
+              ["cluster key", payload.cluster.master_cluster_key],
+              ["External address of child node", payload.cluster.node_public_base_url],
+              ["Child node API Key", payload.cluster.node_api_key],
+            ];
+            const missing = mustHave.filter((x) => !String(x[1] || "").trim()).map((x) => x[0]);
+            if (missing. length > 0) {
+              throw new Error(`Required items for child nodes are missing: ${missing.join("、")}`);
+            }
+            const lowered = String(payload.cluster.node_public_base_url || "").toLowerCase();
+            if (lowered.includes("0.0.0.0") || lowered.includes("127.0.0.1") || lowered.includes("localhost")) {
+              throw new Error("The external address of the subnode cannot be filled in 0.0.0.0 / 127.0.0.1 / localhost");
+            }
+          }
+
+          const r = await req("/api/admin/system-config", { method: "POST", body: payload });
+          state.role = r.role || roleOfForm();
+          fillSystemConfig(r.config || {}); renderGuide(r.setup_guide || null); setEnvNotice(r.env_overrides || {});
+          showNotice(r.restart_required ? `${r.message || "System configuration saved"}; It is recommended to restart the service now. ` : (r.message || "System configuration saved."), r.restart_required ? "warn" : "ok");
+          await loadClusterConfig(); await loadStats(); if (state.role !== "master") await loadRuntime(); if (state.role === "master") { await loadApiKeys(); await loadPortalUsers(); await loadPortalCdks(); await loadClusterNodes(); }
+        } catch (err) { showNotice(`Failed to save system configuration: ${err.message}`, "err"); }
+      });
+
+      q("saveRuntimeBtn").addEventListener("click", async () => {
+        try {
+          const enabled = q("rtProxyEnabled").checked; const proxyUrl = q("rtProxyUrl").value.trim();
+          if (enabled && !proxyUrl) throw new Error("Browser proxy is enabled, but proxy address is empty.");
+          const r = await req("/api/admin/captcha-config", {
+            method: "POST",
+            body: {
+              captcha_method: q("rtCaptchaMethod").value,
+              browser_count: toInt(q("rtBrowserCount").value, 1),
+              browser_proxy_enabled: enabled,
+              browser_proxy_url: proxyUrl,
+              personal_project_pool_size: toInt(q("rtPersonalProjectPoolSize").value, 4),
+              personal_max_resident_tabs: toInt(q("rtPersonalMaxTabs").value, 5),
+              personal_idle_tab_ttl_seconds: toInt(q("rtPersonalIdleTtl").value, 600),
+            }
+          });
+          fillRuntimeConfig(r || {});
+          await loadSystem();
+          await loadStats();
+          showNotice(r.message || "The runtime coding configuration has been saved.", "ok");
+        } catch (err) { showNotice(`Failed to save runtime configuration: ${err.message}`, "err"); }
+      });
+
+      q("rotateClusterKeyBtn").addEventListener("click", async () => {
+        try { const r = await req("/api/admin/cluster/config/rotate-key", { method: "POST" }); q("clusterKey").value = r.cluster_key || ""; showNotice("The Cluster Key has been rotated, please update all child nodes simultaneously.", "warn"); }
+        catch (err) { showNotice(`Rotation failed: ${err.message}`, "err"); }
+      });
+      q("refreshNodesBtn").addEventListener("click", async () => { try { await loadClusterNodes(); showNotice("The list of child nodes has been refreshed.", "ok"); } catch (err) { showNotice(`Failed to refresh child nodes: ${err.message}`, "err"); } });
+      q("refreshApiKeyBtn").addEventListener("click", async () => { try { await loadApiKeys(); showNotice("The API Key list has been refreshed.", "ok"); } catch (err) { showNotice(`Failed to refresh API Key: ${err.message}`, "err"); } });
+      q("refreshUsersBtn").addEventListener("click", async () => { try { await loadPortalUsers(); showNotice("The user list has been refreshed.", "ok"); } catch (err) { showNotice(`Failed to refresh user: ${err.message}`, "err"); } });
+      q("refreshCdksBtn").addEventListener("click", async () => { try { await loadPortalCdks(); showNotice("The CDK list has been refreshed.", "ok"); } catch (err) { showNotice(`Failed to refresh CDK: ${err.message}`, "err"); } });
+
+      q("createApiKeyBtn").addEventListener("click", async () => {
+        try {
+          const name = q("newApiKeyName").value.trim();
+          if (!name) throw new Error("Please fill in the Key name.");
+          const quotaRaw = q("newApiKeyQuota").value.trim();
+          const r = await req("/api/admin/apikeys", { method: "POST", body: { name, quota_remaining: quotaRaw === "" ? null : toInt(quotaRaw, 0) } });
+          cacheRevealedApiKey(r.item?.id, r.api_key || "");
+          q("newApiKeyText").textContent = `API Key #${r.item?.id || "-"} has been generated and can be copied in the pop-up window. `;
+          q("newApiKeyName").value = ""; q("newApiKeyQuota").value = "";
+          await loadApiKeys(); await loadSystem();
+          openResultModal({
+            title: "API Key created successfully",
+            subtitle: "The complete Key will only be returned this time, please copy and save it immediately.",
+            meta: `Name: ${r.item?.name || name}\nID: ${r.item?.id || "-"}\nPrefix: ${r.item?.key_prefix || "-"}`,
+            text: r.api_key || "",
+            filename: `service-api-key-${r.item?.id || "new"}.txt`,
+            copyLabel: "Copy complete Key",
+            downloadLabel: "Export Key file",
+          });
+          showNotice("API Key created successfully.", "ok");
+        } catch (err) { showNotice(`Failed to create API Key: ${err.message}`, "err"); }
+      });
+
+      q("createCdksBtn").addEventListener("click", async () => {
+        try {
+          const count = toInt(q("cdkBatchCount").value, 10);
+          const quotaTimes = toInt(q("cdkQuotaTimes").value, 1);
+          const prefix = q("cdkPrefix").value.trim() || "CDK";
+          const note = q("cdkNote").value.trim() || null;
+          const r = await req("/api/admin/cdks/batch", { method: "POST", body: { count, quota_times: quotaTimes, prefix, note } });
+          const cdkText = (r.items || []).map((it) => `${it.code || ""}`).join("\n");
+          q("newCdksText").textContent = `${(r.items || []).length} CDKs have been generated, which can be copied or exported with one click in the pop-up window. `;
+          await loadPortalCdks();
+          openResultModal({
+            title: "CDK batch generation completed",
+            subtitle: "One CDK per line, which can be issued directly to users.",
+            meta: `Generated quantity: ${(r.items || []).length}\nEach number of times: ${quotaTimes}\nPrefix: ${prefix}${note ? `\nRemark: ${note}`: ""}`,
+            text: cdkText,
+            filename: `portal-cdks-${Date.now()}.txt`,
+            copyLabel: "Copy all CDK",
+            downloadLabel: "Export TXT",
+          });
+          showNotice(r.message || "CDK has been generated.", "ok");
+        } catch (err) { showNotice(`Failed to generate CDK: ${err.message}`, "err"); }
+      });
+
+      document.addEventListener("click", async (event) => {
+        const target = event.target; if (!(target instanceof HTMLElement)) return;
+        if (target.dataset.action === "save-api-key") {
+          const id = Number(target.dataset.id);
+          try {
+            const nameEl = document.querySelector(`input[data-ak-id="${id}"][data-ak-key="name"]`);
+            const enabledEl = document.querySelector(`input[data-ak-id="${id}"][data-ak-key="enabled"]`);
+            const quotaEl = document.querySelector(`input[data-ak-id="${id}"][data-ak-key="quota_remaining"]`);
+            const name = String(nameEl?.value || "").trim(); const enabled = !!enabledEl?.checked; const quotaRaw = String(quotaEl?.value || "").trim();
+            await req(`/api/admin/apikeys/${id}`, { method: "PATCH", body: { name, enabled, quota_remaining: quotaRaw === "" ? null : toInt(quotaRaw, 0) } });
+            await loadApiKeys(); showNotice(`API Key #${id} saved.`, "ok");
+          } catch (err) { showNotice(`Failed to save API Key: ${err.message}`, "err"); }
+        }
+
+        if (target.dataset.action === "copy-api-key") {
+          const id = Number(target.dataset.id);
+          const rawKey = getCachedApiKey(id);
+          const prefix = String(target.dataset.prefix || "").trim();
+          try {
+            if (rawKey) {
+              await copyText(rawKey);
+              showNotice(`API Key #${id} copied.`, "ok");
+            } else if (prefix) {
+              await copyText(prefix);
+              showNotice(`Full Key not cached, prefix ${prefix} copied.`, "warn");
+            } else {
+              throw new Error("There is currently no Key content to copy");
+            }
+          } catch (err) {
+            showNotice(`Failed to copy API Key: ${err.message}`, "err");
+          }
+        }
+
+        if (target.dataset.action === "detail-node") {
+          const id = Number(target.dataset.id);
+          if (!Number.isFinite(id) || id <= 0) return;
+          try {
+            await loadNodeDetail(id);
+          } catch (err) {
+            showNotice(`Failed to load node details: ${err.message}`, "err");
+          }
+        }
+
+        if (target.dataset.action === "save-node") {
+          const id = Number(target.dataset.id);
+          try {
+            const enabledEl = document.querySelector(`input[data-node-id="${id}"][data-node-key="enabled"]`);
+            const weightEl = document.querySelector(`input[data-node-id="${id}"][data-node-key="weight"]`);
+            await req(`/api/admin/cluster/nodes/${id}`, { method: "PATCH", body: { enabled: !!enabledEl?.checked, weight: toInt(weightEl?.value, 100) } });
+            await loadClusterNodes(); showNotice(`Child node #${id} has been saved.`, "ok");
+          } catch (err) { showNotice(`Failed to save child node: ${err.message}`, "err"); }
+        }
+
+        if (target.dataset.action === "save-user") {
+          const id = Number(target.dataset.id);
+          try {
+            const passwordEl = document.querySelector(`input[data-user-id="${id}"][data-user-key="new_password"]`);
+            const enabledEl = document.querySelector(`input[data-user-id="${id}"][data-user-key="enabled"]`);
+            const quotaEl = document.querySelector(`input[data-user-id="${id}"][data-user-key="quota_remaining"]`);
+            const quotaDeltaEl = document.querySelector(`input[data-user-id="${id}"][data-user-key="quota_remaining_delta"]`);
+            const quotaRaw = String(quotaEl?.value || "").trim();
+            const quotaDeltaRaw = String(quotaDeltaEl?.value || "").trim();
+            await req(`/api/admin/users/${id}`, {
+              method: "PATCH",
+              body: {
+                new_password: String(passwordEl?.value || "").trim() || null,
+                enabled: !!enabledEl?.checked,
+                quota_remaining: quotaRaw === "" ? null : toInt(quotaRaw, 0),
+                quota_remaining_delta: quotaDeltaRaw === "" ? 0: toInt(quotaDeltaRaw, 0),
+              },
+            });
+            await loadPortalUsers();
+            await loadStats();
+            showNotice(`User #${id} has been saved.`, "ok");
+          } catch (err) {
+            showNotice(`Failed to save user: ${err.message}`, "err");
+          }
+        }
+
+        if (target.dataset.action === "save-cdk") {
+          const id = Number(target.dataset.id);
+          try {
+            const enabledEl = document.querySelector(`input[data-cdk-id="${id}"][data-cdk-key="enabled"]`);
+            await req(`/api/admin/cdks/${id}`, { method: "PATCH", body: { enabled: !!enabledEl?.checked } });
+            await loadPortalCdks();
+            showNotice(`CDK #${id} ????`, "ok");
+          } catch (err) {
+            showNotice(`?? CDK ???${err.message}`, "err");
+          }
+        }
+
+        if (target.dataset.action === "delete-user") {
+          const id = Number(target.dataset.id);
+          const ok = window.confirm(`??????? #${id} ?????????????????????`);
+          if (!ok) return;
+          try {
+            await req(`/api/admin/users/${id}`, { method: "DELETE" });
+            await loadPortalUsers();
+            await loadStats();
+            showNotice(`?? #${id} ?????`, "ok");
+          } catch (err) {
+            showNotice(`????????${err.message}`, "err");
+          }
+        }
+
+        if (target.dataset.action === "delete-cdk") {
+          const id = Number(target.dataset.id);
+          const ok = window.confirm(`????? CDK #${id} ??????? CDK ????????????`);
+          if (!ok) return;
+          try {
+            await req(`/api/admin/cdks/${id}`, { method: "DELETE" });
+            await loadPortalCdks();
+            showNotice(`CDK #${id} ?????`, "ok");
+          } catch (err) {
+            showNotice(`??? CDK ???${err.message}`, "err");
+          }
+        }
+
+        if (target.dataset.action === "delete-node") {
+          const id = Number(target.dataset.id);
+          if (!Number.isFinite(id) || id <= 0) return;
+          const ok = window.confirm(`Are you sure to delete the child node #${id}? After deletion, it will be removed from the main node list.`);
+          if (!ok) return;
+
+          try {
+            await req(`/api/admin/cluster/nodes/${id}`, { method: "DELETE" });
+            await loadClusterNodes();
+            await loadStats();
+            showNotice(`Subnode #${id} has been deleted.`, "ok");
+          } catch (err) {
+            showNotice(`Failed to delete child node: ${err.message}`, "err");
+          }
+        }
+      });
+      loadRevealedApiKeys();
+      renderLogsPager();
+      setDashboardVisible(false);
+      syncCaptchaModeFields();
+      tryRestoreLogin();
+    })();
+  </script>
+</body>
+</html>

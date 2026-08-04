@@ -22,6 +22,25 @@ public sealed partial class BatchImageGenPage : Page
     {
         ViewModel = App.Services.GetRequiredService<BatchImageGenViewModel>();
         InitializeComponent();
+
+        // Display the resolved Google Flow Local launcher path so the user can
+        // confirm where the auto-launcher expects main.py to live.
+        try
+        {
+            var config = App.Services.GetService<Core.Interfaces.IConfigService>();
+            if (config != null)
+            {
+                var path = config.CurrentSettings.GoogleFlow2RootPath;
+                if (!string.IsNullOrWhiteSpace(path))
+                {
+                    TxtGoogleFlow2RootPath.Text = $"📂 Launcher path: {path}";
+                }
+            }
+        }
+        catch
+        {
+            // best-effort display only
+        }
     }
 
     private async void BtnBrowseProjectsDir_Click(object sender, RoutedEventArgs e)

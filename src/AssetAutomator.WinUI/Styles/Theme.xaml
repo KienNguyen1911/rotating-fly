@@ -3,9 +3,6 @@
   Theme.xaml
   Stable semantic colour tokens. Themes (Theme.Light.xaml / Theme.Dark.xaml)
   provide the SolidColorBrush values for these keys.
-
-  Ported from WPF: src/AssetAutomator.UI/Resources/Styles/Colors.xaml +
-  src/AssetAutomator.UI/Resources/Styles/Themes/{Light,Dark}.xaml.
 -->
 <ResourceDictionary
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"

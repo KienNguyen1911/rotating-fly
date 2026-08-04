@@ -2,21 +2,22 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using AssetAutomator.Core.Models;
 
-namespace AssetAutomator.Application.Services.Providers
+namespace AssetAutomator.Core.Interfaces
 {
     /// <summary>
-    /// Strategy interface for Image Generation Providers (e.g. G-Labs, Flow Local).
-    /// Enforces decoupled implementation for each API backend.
+    /// Strategy interface for the Image Generation Provider.
+    /// The application uses a single concrete strategy
+    /// (<c>FlowLocalImageGenProvider</c>) backed by Google Flow Local API.
     /// </summary>
     public interface IImageGenProvider
     {
         /// <summary>
-        /// Unique key identifying the provider (e.g. "glabs", "flow_local").
+        /// Unique key identifying the provider. Always <c>"flow_local"</c>.
         /// </summary>
         string ProviderKey { get; }
 
         /// <summary>
-        /// Executes single image generation request using the provider's API logic.
+        /// Executes a single image generation request using the Google Flow Local API.
         /// </summary>
         Task ProcessSingleItemAsync(
             BatchImageItem item,

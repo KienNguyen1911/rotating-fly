@@ -125,7 +125,7 @@
                                                        FontSize="16"
                                                        FontWeight="Bold"
                                                        TextTrimming="CharacterEllipsis" />
-                                            <TextBlock Text="{x:Bind CreatedAt, Mode=OneWay}"
+                                            <TextBlock Text="{x:Bind CreatedAt}"
                                                        FontSize="11"
                                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                                         </StackPanel>
@@ -409,46 +409,37 @@
                                           Margin="0,4,0,0">
                                     <StackPanel Spacing="10" Padding="0,8">
 
-                                        <!-- Provider Radio Buttons -->
+                                        <!-- Provider (Google Flow Local is the only backend) -->
                                         <TextBlock Text="API Provider:" FontSize="11" FontWeight="SemiBold" />
-                                        <RadioButton Content="G-Labs Webhook API (:8765)"
-                                                     GroupName="ProviderGroup"
-                                                     IsChecked="True"
-                                                     Tag="glabs"
-                                                     Checked="RadProvider_Checked" />
-                                        <RadioButton Content="Flow Image Local API (:8787)"
-                                                     GroupName="ProviderGroup"
-                                                     Tag="flow_local"
-                                                     Checked="RadProvider_Checked" />
+                                        <TextBlock Text="🌐 Google Flow Local API (D:\Dev\google-flow-2.0.0 — :8787)"
+                                                   FontSize="11"
+                                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                   Margin="0,2,0,4" />
+                                        <TextBlock x:Name="TxtGoogleFlow2RootPath"
+                                                   Text="(đường dẫn launcher sẽ tự động khởi động khi mở ứng dụng)"
+                                                   FontSize="10"
+                                                   Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                                                   TextWrapping="Wrap"
+                                                   Margin="0,0,0,6" />
 
-                                        <!-- Engine ComboBox -->
+                                        <!-- Engine (always "flow" for Google Flow Local) -->
                                         <TextBlock Text="Engine:" FontSize="11" FontWeight="SemiBold" Margin="0,4,0,0" />
                                         <ComboBox x:Name="CboxEngine"
                                                   SelectedIndex="0"
                                                   SelectionChanged="CboxEngine_SelectionChanged"
                                                   HorizontalAlignment="Stretch">
                                             <ComboBoxItem Content="Flow" Tag="flow" />
-                                            <ComboBoxItem Content="Meta" Tag="meta" />
-                                            <ComboBoxItem Content="Grok" Tag="grok" />
                                         </ComboBox>
 
                                         <!-- Models Panel -->
                                         <StackPanel Visibility="{x:Bind ViewModel.FlowOptionsVisibility, Mode=OneWay}" Spacing="8">
-                                            <!-- G-Labs Models -->
-                                            <StackPanel Visibility="{x:Bind ViewModel.GlabsModelsVisibility, Mode=OneWay}" Spacing="4">
-                                                <TextBlock Text="Model (G-Labs):" FontSize="11" FontWeight="SemiBold" />
-                                                <RadioButton Content="Nano Banana 2" GroupName="GlabsModelGroup" Tag="nano_banana_2" Checked="RadModel_Checked" IsChecked="True" />
-                                                <RadioButton Content="Nano Banana Pro" GroupName="GlabsModelGroup" Tag="nano_banana_pro" Checked="RadModel_Checked" />
-                                                <RadioButton Content="Nano Banana 2 Lite" GroupName="GlabsModelGroup" Tag="nano_banana_2_lite" Checked="RadModel_Checked" />
-                                            </StackPanel>
-
                                             <!-- Flow Local Models -->
-                                            <StackPanel Visibility="{x:Bind ViewModel.FlowLocalModelsVisibility, Mode=OneWay}" Spacing="4">
+                                            <StackPanel Spacing="4">
                                                 <TextBlock Text="Model (Flow Local):" FontSize="11" FontWeight="SemiBold" />
                                                 <RadioButton Content="Gemini 3.1 Flash" GroupName="FlowLocalModelGroup" Tag="gemini-3.1-flash-image" Checked="RadModel_Checked" />
                                                 <RadioButton Content="Gemini 3.0 Pro" GroupName="FlowLocalModelGroup" Tag="gemini-3.0-pro-image" Checked="RadModel_Checked" />
                                                 <RadioButton Content="Imagen 4 Preview" GroupName="FlowLocalModelGroup" Tag="imagen-4.0-generate-preview" Checked="RadModel_Checked" />
-                                                <RadioButton Content="Nano Banana 2 Flow" GroupName="FlowLocalModelGroup" Tag="nano-banana-2" Checked="RadModel_Checked" />
+                                                <RadioButton Content="Nano Banana 2 Flow" GroupName="FlowLocalModelGroup" Tag="nano-banana-2" Checked="RadModel_Checked" IsChecked="True" />
                                                 <RadioButton Content="Nano Banana Pro Flow" GroupName="FlowLocalModelGroup" Tag="nano-banana-pro" Checked="RadModel_Checked" />
                                             </StackPanel>
 

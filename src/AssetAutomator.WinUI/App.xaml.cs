@@ -2,6 +2,10 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.UI.Xaml;
 using System;
+using System.Diagnostics;
+using System.IO;
+using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using AssetAutomator.Core;
 using AssetAutomator.Core.Interfaces;
@@ -67,6 +71,7 @@ public partial class App : Microsoft.UI.Xaml.Application
                 services.AddSingleton<GeminiApiService>();
                 services.AddSingleton<BatchImageGenService>();
                 services.AddSingleton<Infrastructure.Helpers.PythonServerManager>();
+                services.AddSingleton<Infrastructure.Helpers.GoogleFlow2ServerLauncher>();
                 services.AddSingleton<YoutubeTopicSuggestionStep>();
 
                 services.AddSingleton<GeminiCreatorService>(sp =>
@@ -148,6 +153,193 @@ public partial class App : Microsoft.UI.Xaml.Application
         _window = Services.GetRequiredService<MainWindow>();
         MainWindowInstance = _window;
         _window.Activate();
+
+        // Surface WinUI 3 UI-thread exceptions (XAML framework, binding fails, etc.)
+        // that would otherwise silently terminate the process. WinUI 3 Application
+        // class exposes UnhandledException; setting Handled=true prevents the
+        // native runtime from tearing down the process.
+        this.UnhandledException += (s, e) =>
+        {
+            System.Diagnostics.Debug.WriteLine($"[UI UnhandledException] {e.Message}");
+            e.Handled = true;
+        };
+
+        // Fire-and-forget: ensure google-flow-2.0.0 launcher is up so the
+        // Google Flow Local image-gen API is available without manual setup.
+        // Failures are surfaced via UI dialog and ILogService, not silently.
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                // Bảo đảm Python embedded + bundled source đã sẵn sàng (1 lần đầu).
+                // Setup script tải Python 3.11 embed, cài deps (playwright, nodriver, Pillow...),
+                // mirror google_flow/ + google_flow_ext/ vào tools/PythonSource/.
+                // Đánh dấu hoàn thành bằng `.installed-marker`. Khi marker tồn tại → skip.
+                // Check marker (không chỉ python.exe) vì python.exe có thể có sẵn nhưng
+                // dependencies (playwright, Pillow, nodriver, ...) lại thiếu.
+                string embeddedPython = Path.Combine(AppContext.BaseDirectory, "tools", "PythonEmbed", "python.exe");
+                string embeddedMarker = Path.Combine(AppContext.BaseDirectory, "tools", "PythonEmbed", ".installed-marker");
+                string setupScript = Path.Combine(AppContext.BaseDirectory, "tools", "Scripts", "Setup-PythonEmbed.ps1");
+                if ((!File.Exists(embeddedPython) || !File.Exists(embeddedMarker)) && File.Exists(setupScript))
+                {
+                    System.Diagnostics.Debug.WriteLine("[Flow Local] Python embedded not fully set up → running Setup-PythonEmbed.ps1 ...");
+                    await RunSetupScriptAsync(setupScript);
+                }
+
+                var launcher = Services.GetService<Infrastructure.Helpers.GoogleFlow2ServerLauncher>();
+                if (launcher == null)
+                {
+                    System.Diagnostics.Debug.WriteLine("[Flow Local] launcher service not registered.");
+                    return;
+                }
+                var (ok, diag) = await launcher.EnsureRunningAsync();
+                if (!ok)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[Flow Local] auto-launch failed: {diag}");
+                    // Dispatch to UI thread → ContentDialog
+                    if (_window?.DispatcherQueue is { } dq)
+                    {
+                        var tcs = new TaskCompletionSource();
+                        dq.TryEnqueue(async () =>
+                        {
+                            try { await ShowFlowLocalStartupFailureDialogAsync(diag); }
+                            finally { tcs.SetResult(); }
+                        });
+                        await tcs.Task;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[Flow Local] auto-launch threw: {ex.Message}");
+            }
+        });
+    }
+
+    /// <summary>
+    /// Chạy Setup-PythonEmbed.ps1 ở background để download Python Embedded + cài deps + mirror
+    /// google_flow + google_flow_ext. PowerShell Core (pwsh) ưu tiên, fallback Windows PowerShell 5.1.
+    /// </summary>
+    private async Task RunSetupScriptAsync(string setupScriptPath)
+    {
+        string pwsh = TryFindPwsh() ?? "powershell";
+        try
+        {
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = pwsh,
+                Arguments = $"-NoProfile -ExecutionPolicy Bypass -File \"{setupScriptPath}\"",
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true
+            };
+
+            using var proc = Process.Start(startInfo);
+            if (proc == null)
+            {
+                System.Diagnostics.Debug.WriteLine($"[Setup] Không spawn được '{pwsh}' — bỏ qua auto-setup.");
+                return;
+            }
+
+            proc.OutputDataReceived += (_, e) =>
+            {
+                if (!string.IsNullOrEmpty(e.Data))
+                    System.Diagnostics.Debug.WriteLine($"[setup] {e.Data}");
+            };
+            proc.ErrorDataReceived += (_, e) =>
+            {
+                if (!string.IsNullOrEmpty(e.Data))
+                    System.Diagnostics.Debug.WriteLine($"[setup:err] {e.Data}");
+            };
+            proc.BeginOutputReadLine();
+            proc.BeginErrorReadLine();
+
+            await proc.WaitForExitAsync();
+
+            if (proc.ExitCode != 0)
+            {
+                System.Diagnostics.Debug.WriteLine($"[Setup] Setup-PythonEmbed.ps1 exited with code {proc.ExitCode}");
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[Setup] Failed to launch setup script: {ex.Message}");
+        }
+    }
+
+    private static string? TryFindPwsh()
+    {
+        // Where.exe lookup (PowerShell Core SDK installs here).
+        var paths = new[]
+        {
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "PowerShell", "7", "pwsh.exe"),
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "pwsh.exe"),
+            "pwsh"
+        };
+        foreach (var p in paths)
+        {
+            try
+            {
+                if (File.Exists(p)) return p;
+            }
+            catch { /* keep searching */ }
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// B2: ContentDialog cảnh báo khi launch Flow Local thất bại.
+    /// Cho phép user nhảy thẳng vào SettingsPage để sửa path/config.
+    /// </summary>
+    private async Task ShowFlowLocalStartupFailureDialogAsync(string diagnostics)
+    {
+        try
+        {
+            if (_window?.Content is not Microsoft.UI.Xaml.FrameworkElement root) return;
+            var dialog = new Microsoft.UI.Xaml.Controls.ContentDialog
+            {
+                Title = "⚠️ Google Flow Local không khởi động được",
+                Content = $"Không bật được Google Flow Local server.\n\n"
+                          + $"Chi tiết: {diagnostics}\n\n"
+                          + "Bạn có thể tạo ảnh bằng provider khác (G-Labs) hoặc cấu hình lại đường dẫn repo trong Settings.",
+                CloseButtonText = "Đóng",
+                PrimaryButtonText = "Mở Settings",
+                DefaultButton = Microsoft.UI.Xaml.Controls.ContentDialogButton.Primary,
+                XamlRoot = root.XamlRoot
+            };
+            dialog.PrimaryButtonClick += (_, _) =>
+            {
+                if (_window?.Content is Microsoft.UI.Xaml.Controls.Grid grid)
+                {
+                    var navView = FindVisualChild<Microsoft.UI.Xaml.Controls.NavigationView>(grid);
+                    if (navView != null)
+                    {
+                        navView.SelectedItem = navView.FooterMenuItems
+                            .OfType<Microsoft.UI.Xaml.Controls.NavigationViewItem>()
+                            .FirstOrDefault(i => (i.Tag as string) == "settings");
+                    }
+                }
+            };
+            await dialog.ShowAsync();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[ShowFlowLocalStartupFailureDialogAsync] {ex.Message}");
+        }
+    }
+
+    private static T? FindVisualChild<T>(Microsoft.UI.Xaml.DependencyObject parent) where T : Microsoft.UI.Xaml.DependencyObject
+    {
+        int count = Microsoft.UI.Xaml.Media.VisualTreeHelper.GetChildrenCount(parent);
+        for (int i = 0; i < count; i++)
+        {
+            var child = Microsoft.UI.Xaml.Media.VisualTreeHelper.GetChild(parent, i);
+            if (child is T match) return match;
+            var deeper = FindVisualChild<T>(child);
+            if (deeper != null) return deeper;
+        }
+        return null;
     }
 
     public async Task ShutdownAsync()

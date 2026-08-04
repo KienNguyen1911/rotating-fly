@@ -51,20 +51,22 @@ namespace AssetAutomator.Application.Steps
                 throw new InvalidOperationException("[STEP 5] No valid scenes found in scenes.json.");
             }
 
-            string provider = string.IsNullOrWhiteSpace(providerKey) ? (_configService.CurrentSettings.DefaultImageGenProvider ?? "flow_local") : providerKey;
-            // flow_local: pass empty strings to let FlowLocalImageGenProvider use its built-in defaults
-            // (http://127.0.0.1:8787/v1 + flow-local-key). Other providers read from config.
-            string serverUrl = provider.Equals("flow_local", StringComparison.OrdinalIgnoreCase)
-                ? ""
-                : _configService.CurrentSettings.ImageApiUrl;
-            string apiKey = provider.Equals("flow_local", StringComparison.OrdinalIgnoreCase)
-                ? ""
-                : _configService.CurrentSettings.ImageApiKey;
+            string provider = string.IsNullOrWhiteSpace(providerKey)
+                ? (_configService.CurrentSettings.DefaultImageGenProvider ?? "flow_local")
+                : providerKey;
+            // Legacy projects may have provider="glabs" - silently remap to flow_local.
+            if (!string.Equals(provider, "flow_local", StringComparison.OrdinalIgnoreCase))
+            {
+                provider = "flow_local";
+            }
 
-            // Determine default model based on provider (must match Flow Local API naming: hyphens, not underscores)
-            string defaultModel = provider.Equals("flow_local", StringComparison.OrdinalIgnoreCase)
-                ? "nano-banana-2"   // Flow Local uses hyphens (nano-banana-2-landscape)
-                : "nano_banana_2";   // Glabs uses underscores
+            // Pass empty strings so FlowLocalImageGenProvider uses its built-in defaults
+            // (http://127.0.0.1:8787/v1 + flow-local-key) when settings are missing.
+            string serverUrl = "";
+            string apiKey = "";
+
+            // Default model name must match Google Flow Local API naming (hyphens, not underscores).
+            string defaultModel = "nano-banana-2";
 
             string imgDir = Path.Combine(outputDir, "img");
             Directory.CreateDirectory(imgDir);
@@ -105,7 +107,7 @@ namespace AssetAutomator.Application.Steps
                     Transcript = scene.transcript,
                     SceneTitle = $"Scene #{scene.scene}: {sceneId}",
                     Provider = provider,
-                    Engine = provider.Equals("flow_local", StringComparison.OrdinalIgnoreCase) ? "flow" : "glabs",
+                    Engine = "flow",
                     Model = defaultModel,
                     AspectRatio = "16:9",
                     Status = "Processing"

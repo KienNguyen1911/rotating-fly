@@ -8,6 +8,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using AssetAutomator.Core.Interfaces;
 using AssetAutomator.Core.Models;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.UI.Xaml.Controls;
 using Windows.Storage;
 using Windows.Storage.Pickers;
@@ -54,6 +55,17 @@ public partial class SettingsViewModel : ObservableObject
     [ObservableProperty]
     private string _subtitleApiUrl = string.Empty;
 
+    // B4: Google Flow Local server fields (đã có trong AppSettings, giờ exposed trong UI)
+    [ObservableProperty]
+    private string _googleFlow2RootPath = Path.Combine(
+        AppContext.BaseDirectory, "tools", "PythonSource");
+
+    [ObservableProperty]
+    private int _googleFlow2Port = 8787;
+
+    [ObservableProperty]
+    private bool _googleFlow2AutoLaunch = true;
+
     // Directories (Sprint 1 A12)
     [ObservableProperty]
     private string _chromeProfilesDir = string.Empty;
@@ -78,6 +90,11 @@ public partial class SettingsViewModel : ObservableObject
             SubtitleApiUrl = settings.SubtitleApiUrl ?? string.Empty;
             OutputPath = settings.OutputsDir ?? @"C:\AssetAutomator\Outputs";
             MaxConcurrentThreads = settings.MaxConcurrentTasks > 0 ? settings.MaxConcurrentTasks : 3;
+            // B4: Đọc 3 fields GoogleFlow2* từ AppSettings
+            GoogleFlow2RootPath = settings.GoogleFlow2RootPath ?? Path.Combine(
+                AppContext.BaseDirectory, "tools", "PythonSource");
+            GoogleFlow2Port = settings.GoogleFlow2Port > 0 ? settings.GoogleFlow2Port : 8787;
+            GoogleFlow2AutoLaunch = settings.GoogleFlow2AutoLaunch;
         }
     }
 
@@ -96,6 +113,10 @@ public partial class SettingsViewModel : ObservableObject
             settings.SupabaseDbUrl = SupabaseDbUrl;
             settings.ChromeProfilesDir = ChromeProfilesDir;
             settings.SubtitleApiUrl = SubtitleApiUrl;
+            // B4: Lưu 3 fields GoogleFlow2*
+            settings.GoogleFlow2RootPath = GoogleFlow2RootPath;
+            settings.GoogleFlow2Port = GoogleFlow2Port;
+            settings.GoogleFlow2AutoLaunch = GoogleFlow2AutoLaunch;
             _configService.SaveSettings(settings);
         }
 
@@ -258,6 +279,96 @@ public partial class SettingsViewModel : ObservableObject
         catch (Exception ex)
         {
             StatusMessage = $"Lỗi kết nối tới AI84 API: {ex.Message} ❌";
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // B4: Google Flow Local server commands
+    // ─────────────────────────────────────────────────────────
+
+    [RelayCommand]
+    private void BrowseFlow2Root()
+    {
+        try
+        {
+            var picker = new FolderPicker();
+            picker.SuggestedStartLocation = PickerLocationId.Desktop;
+            picker.FileTypeFilter.Add("*");
+
+            var hwnd = WindowNative.GetWindowHandle(App.MainWindowInstance);
+            InitializeWithWindow.Initialize(picker, hwnd);
+
+            var folder = picker.PickSingleFolderAsync().AsTask().GetAwaiter().GetResult();
+            if (folder != null)
+            {
+                GoogleFlow2RootPath = folder.Path;
+                StatusMessage = $"Đã chọn Google Flow Local root: {folder.Path}";
+            }
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Lỗi mở Folder Picker: {ex.Message}";
+        }
+    }
+
+    [RelayCommand]
+    private async Task RestartFlow2Async()
+    {
+        if (_configService == null)
+        {
+            StatusMessage = "⚠️ ConfigService chưa sẵn sàng — restart lại app.";
+            return;
+        }
+
+        // Save trước để path mới (nếu có) được persist
+        SaveSettings();
+
+        var launcher = App.Services.GetService<AssetAutomator.Infrastructure.Helpers.GoogleFlow2ServerLauncher>();
+        if (launcher == null)
+        {
+            StatusMessage = "❌ GoogleFlow2ServerLauncher chưa được đăng ký trong DI.";
+            return;
+        }
+
+        StatusMessage = "🔄 Restarting Google Flow Local...";
+        try
+        {
+            // Kill process cũ (nếu còn) trước khi spawn lại
+            launcher.Stop();
+            await Task.Delay(1500); // đợi socket release
+
+            var (ok, diag) = await launcher.EnsureRunningAsync();
+            StatusMessage = ok
+                ? $"✅ Google Flow Local restarted — {diag}"
+                : $"❌ Restart failed: {diag}";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"❌ Exception khi restart: {ex.Message}";
+        }
+    }
+
+    [RelayCommand]
+    private async Task TestFlow2Async()
+    {
+        var launcher = App.Services.GetService<AssetAutomator.Infrastructure.Helpers.GoogleFlow2ServerLauncher>();
+        if (launcher == null)
+        {
+            StatusMessage = "⚠️ Launcher service không có sẵn.";
+            return;
+        }
+
+        StatusMessage = "🔍 Đang test kết nối Google Flow Local...";
+        try
+        {
+            var (ok, diag) = await launcher.IsRunningAsync();
+            StatusMessage = ok
+                ? $"✅ Google Flow Local OK — {diag}"
+                : $"❌ {diag}";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"❌ Lỗi: {ex.Message}";
         }
     }
 }

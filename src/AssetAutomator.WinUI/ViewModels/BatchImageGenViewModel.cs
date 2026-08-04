@@ -98,18 +98,19 @@ public partial class BatchImageGenViewModel : ObservableObject
     public Microsoft.UI.Xaml.Visibility EmptyRefImageVisibility => HasRefImage ? Microsoft.UI.Xaml.Visibility.Collapsed : Microsoft.UI.Xaml.Visibility.Visible;
     public Microsoft.UI.Xaml.Visibility HasRefImageVisibility => HasRefImage ? Microsoft.UI.Xaml.Visibility.Visible : Microsoft.UI.Xaml.Visibility.Collapsed;
 
-    // Config & Engine properties
+    // Config & Engine properties (Google Flow Local is the only provider).
     [ObservableProperty]
     private string _selectedAspect = "16:9";
 
     [ObservableProperty]
     private string _selectedEngine = "flow";
 
+    /// <summary>Always <c>flow_local</c>. Kept for backward-compat binding.</summary>
     [ObservableProperty]
-    private string _selectedProvider = "glabs";
+    private string _selectedProvider = "flow_local";
 
     [ObservableProperty]
-    private string _selectedModel = "nano_banana_2";
+    private string _selectedModel = "nano-banana-2";
 
     [ObservableProperty]
     private string _selectedUpscale = "none";
@@ -134,23 +135,7 @@ public partial class BatchImageGenViewModel : ObservableObject
 
     public string GenerateButtonText => $"⚡ Tạo hàng loạt ({SelectedConcurrency} ảnh song song)";
 
-    public Microsoft.UI.Xaml.Visibility GlabsModelsVisibility => SelectedProvider == "glabs" ? Microsoft.UI.Xaml.Visibility.Visible : Microsoft.UI.Xaml.Visibility.Collapsed;
-    public Microsoft.UI.Xaml.Visibility FlowLocalModelsVisibility => SelectedProvider == "flow_local" ? Microsoft.UI.Xaml.Visibility.Visible : Microsoft.UI.Xaml.Visibility.Collapsed;
     public Microsoft.UI.Xaml.Visibility FlowOptionsVisibility => SelectedEngine == "flow" ? Microsoft.UI.Xaml.Visibility.Visible : Microsoft.UI.Xaml.Visibility.Collapsed;
-
-    partial void OnSelectedProviderChanged(string value)
-    {
-        OnPropertyChanged(nameof(GlabsModelsVisibility));
-        OnPropertyChanged(nameof(FlowLocalModelsVisibility));
-        if (value == "flow_local" && SelectedModel.StartsWith("nano_banana"))
-        {
-            SelectedModel = "gemini-3.1-flash-image";
-        }
-        else if (value == "glabs" && !SelectedModel.StartsWith("nano_banana"))
-        {
-            SelectedModel = "nano_banana_2";
-        }
-    }
 
     partial void OnSelectedEngineChanged(string value)
     {
@@ -213,8 +198,9 @@ public partial class BatchImageGenViewModel : ObservableObject
         ScriptJson = string.IsNullOrWhiteSpace(project.ScriptJson) ? GetDefaultScriptJson() : project.ScriptJson;
         SelectedAspect = string.IsNullOrWhiteSpace(project.AspectRatio) ? "16:9" : project.AspectRatio;
         SelectedEngine = string.IsNullOrWhiteSpace(project.Engine) ? "flow" : project.Engine;
-        SelectedProvider = string.IsNullOrWhiteSpace(project.Provider) ? "glabs" : project.Provider;
-        SelectedModel = string.IsNullOrWhiteSpace(project.Model) ? "nano_banana_2" : project.Model;
+        // Legacy projects may have provider="glabs". Normalize silently.
+        SelectedProvider = ImageGenProviderFactory.FlowLocalProviderKey;
+        SelectedModel = string.IsNullOrWhiteSpace(project.Model) ? "nano-banana-2" : project.Model;
         SelectedUpscale = string.IsNullOrWhiteSpace(project.Upscale) ? "none" : project.Upscale;
         SelectedConcurrency = project.Concurrency > 0 ? project.Concurrency : 4;
 
@@ -312,13 +298,17 @@ public partial class BatchImageGenViewModel : ObservableObject
         item.ErrorMessage = string.Empty;
         item.ImagePath = string.Empty;
 
-        string provider = SelectedProvider;
-        string serverUrl = provider == "flow_local"
-            ? "http://127.0.0.1:8787/v1"
-            : (_configService?.CurrentSettings.ImageApiUrl ?? "http://127.0.0.1:8765");
-        string apiKey = provider == "flow_local"
-            ? "flow-local-key"
-            : (_configService?.CurrentSettings.ImageApiKey ?? string.Empty);
+        // Google Flow Local API is the only image-gen backend now.
+        string serverUrl = _configService?.CurrentSettings.ImageApiUrl ?? "http://127.0.0.1:8787/v1";
+        if (string.IsNullOrWhiteSpace(serverUrl))
+        {
+            serverUrl = "http://127.0.0.1:8787/v1";
+        }
+        string apiKey = _configService?.CurrentSettings.ImageApiKey ?? "flow-local-key";
+        if (string.IsNullOrWhiteSpace(apiKey))
+        {
+            apiKey = "flow-local-key";
+        }
 
         string outputDir = OutputDir;
         if (string.IsNullOrWhiteSpace(outputDir))
@@ -385,7 +375,7 @@ public partial class BatchImageGenViewModel : ObservableObject
         ActiveProject.OutputDir = OutputDir;
         ActiveProject.AspectRatio = SelectedAspect;
         ActiveProject.Engine = SelectedEngine;
-        ActiveProject.Provider = SelectedProvider;
+        ActiveProject.Provider = ImageGenProviderFactory.FlowLocalProviderKey;
         ActiveProject.Model = SelectedModel;
         ActiveProject.Upscale = SelectedUpscale;
         ActiveProject.Concurrency = SelectedConcurrency;
@@ -628,20 +618,17 @@ public partial class BatchImageGenViewModel : ObservableObject
 
         IsGenerating = true;
 
-        string provider = SelectedProvider;
-        string serverUrl;
-        string apiKey;
-
-        if (provider == "flow_local")
+        // Google Flow Local API is the only image-gen backend now.
+        string provider = ImageGenProviderFactory.FlowLocalProviderKey;
+        string serverUrl = _configService?.CurrentSettings.ImageApiUrl ?? "http://127.0.0.1:8787/v1";
+        if (string.IsNullOrWhiteSpace(serverUrl))
         {
             serverUrl = "http://127.0.0.1:8787/v1";
-            apiKey = "flow-local-key";
         }
-        else
+        string apiKey = _configService?.CurrentSettings.ImageApiKey ?? "flow-local-key";
+        if (string.IsNullOrWhiteSpace(apiKey))
         {
-            serverUrl = _configService?.CurrentSettings.ImageApiUrl ?? string.Empty;
-            if (string.IsNullOrWhiteSpace(serverUrl)) serverUrl = "http://127.0.0.1:8765";
-            apiKey = _configService?.CurrentSettings.ImageApiKey ?? string.Empty;
+            apiKey = "flow-local-key";
         }
 
         string engine = SelectedEngine;
@@ -671,65 +658,53 @@ public partial class BatchImageGenViewModel : ObservableObject
             return;
         }
 
-        if (provider == "flow_local")
-        {
-            string projectTitle = !string.IsNullOrWhiteSpace(ActiveProject?.ProjectName)
-                ? ActiveProject.ProjectName
-                : (!string.IsNullOrWhiteSpace(ProjectTitle) ? ProjectTitle : "Batch Project");
+        // Single backend: Google Flow Local.
+        string projectTitle = !string.IsNullOrWhiteSpace(ActiveProject?.ProjectName)
+            ? ActiveProject.ProjectName
+            : (!string.IsNullOrWhiteSpace(ProjectTitle) ? ProjectTitle : "Batch Project");
 
-            string? flowProjId = ActiveProject?.FlowProjectId;
-            if (string.IsNullOrEmpty(flowProjId))
+        string? flowProjId = ActiveProject?.FlowProjectId;
+        if (string.IsNullOrEmpty(flowProjId))
+        {
+            var (pId, pUrl, _) = await FlowLocalImageGenProvider.CreateProjectAsync(serverUrl, apiKey, projectTitle);
+            if (!string.IsNullOrEmpty(pId))
             {
-                var (pId, pUrl, _) = await FlowLocalImageGenProvider.CreateProjectAsync(serverUrl, apiKey, projectTitle);
-                if (!string.IsNullOrEmpty(pId))
+                flowProjId = pId;
+                if (ActiveProject != null)
                 {
-                    flowProjId = pId;
-                    if (ActiveProject != null)
-                    {
-                        ActiveProject.FlowProjectId = pId;
-                        ActiveProject.FlowProjectUrl = pUrl;
-                        await SaveCurrentProjectStateAsync();
-                    }
+                    ActiveProject.FlowProjectId = pId;
+                    ActiveProject.FlowProjectUrl = pUrl;
+                    await SaveCurrentProjectStateAsync();
                 }
             }
-
-            foreach (var item in itemsToGenerate)
-            {
-                item.Provider = provider;
-                item.Engine = engine;
-                item.Model = model;
-                item.AspectRatio = aspectRatio;
-                item.Upscale = upscale;
-                item.Status = "Waiting";
-                item.ErrorMessage = string.Empty;
-                item.ImagePath = string.Empty;
-                item.FlowProjectId = flowProjId;
-                item.FlowProjectTitle = projectTitle;
-            }
         }
-        else
+
+        foreach (var item in itemsToGenerate)
         {
-            foreach (var item in itemsToGenerate)
-            {
-                item.Provider = provider;
-                item.Engine = engine;
-                item.Model = model;
-                item.AspectRatio = aspectRatio;
-                item.Upscale = upscale;
-                item.Status = "Waiting";
-                item.ErrorMessage = string.Empty;
-                item.ImagePath = string.Empty;
-            }
+            item.Provider = provider;
+            item.Engine = engine;
+            item.Model = model;
+            item.AspectRatio = aspectRatio;
+            item.Upscale = upscale;
+            item.Status = "Waiting";
+            item.ErrorMessage = string.Empty;
+            item.ImagePath = string.Empty;
+            item.FlowProjectId = flowProjId;
+            item.FlowProjectTitle = projectTitle;
         }
 
         FlowLocalImageGenProvider.ClearReferenceMediaCache();
 
-        await Task.Run(async () =>
+        // Run batch inline on UI thread: HttpClient.SendAsync is async I/O and
+        // does not block the dispatcher. Running inside Task.Run previously caused
+        // RPC_E_WRONG_THREAD crashes when the provider set ObservableCollection
+        // item properties from a thread-pool thread.
+        using var semaphore = new SemaphoreSlim(maxConcurrency, maxConcurrency);
+        var tasks = itemsToGenerate.Select(async item =>
         {
-            using var semaphore = new SemaphoreSlim(maxConcurrency, maxConcurrency);
-            var tasks = itemsToGenerate.Select(async item =>
+            await semaphore.WaitAsync();
+            try
             {
-                await semaphore.WaitAsync();
                 try
                 {
                     if (_batchImageGenService != null)
@@ -742,21 +717,28 @@ public partial class BatchImageGenViewModel : ObservableObject
                             outputDir
                         );
                     }
-
-                    UpdateProgressUI();
-                    if (ActiveProject != null)
-                    {
-                        await SaveCurrentProjectStateAsync();
-                    }
                 }
-                finally
+                catch (Exception itemEx)
                 {
-                    semaphore.Release();
+                    item.Status = "Failed";
+                    item.ErrorMessage = $"Error: {itemEx.Message}";
+                    item.FinishedAt = DateTime.Now;
+                    System.Diagnostics.Debug.WriteLine($"[Batch] item {item.Index} failed: {itemEx.Message}");
                 }
-            });
 
-            await Task.WhenAll(tasks);
+                UpdateProgressUI();
+                if (ActiveProject != null)
+                {
+                    await SaveCurrentProjectStateAsync();
+                }
+            }
+            finally
+            {
+                semaphore.Release();
+            }
         });
+
+        await Task.WhenAll(tasks);
 
         UpdateProgressUI();
         if (ActiveProject != null)

@@ -16,7 +16,7 @@
 
   <ItemGroup>
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
-    <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.7.250310001" />
+    <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.3.1" />
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="9.0.0" />
   </ItemGroup>
 
@@ -24,5 +24,17 @@
     <ProjectReference Include="..\AssetAutomator.Core\AssetAutomator.Core.csproj" />
     <ProjectReference Include="..\AssetAutomator.Infrastructure\AssetAutomator.Infrastructure.csproj" />
     <ProjectReference Include="..\AssetAutomator.Application\AssetAutomator.Application.csproj" />
+  </ItemGroup>
+
+  <!-- Bundle Python embedded runtime + Google Flow source so end-user can run without Python system install. -->
+  <ItemGroup>
+    <None Include="..\..\tools\PythonEmbed\**\*.*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>tools\PythonEmbed\%(RecursiveDir)%(Filename)%(Extension)</Link>
+    </None>
+    <None Include="..\..\tools\PythonSource\**\*.*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>tools\PythonSource\%(RecursiveDir)%(Filename)%(Extension)</Link>
+    </None>
   </ItemGroup>
 </Project>

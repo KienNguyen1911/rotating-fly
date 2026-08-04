@@ -45,13 +45,10 @@ public partial class GeminiViewModel : ObservableObject
     public ObservableCollection<GeminiTaskModel> GeminiTasks { get; } = new();
     public ObservableCollection<GemOptionItem> AvailableScriptwriterGems { get; } = new();
     public ObservableCollection<GemOptionItem> AvailableSceneCreatorGems { get; } = new();
-    public ObservableCollection<string> AvailableImageProviders { get; } = new() { "flow_local", "glabs" };
+    public ObservableCollection<string> AvailableImageProviders { get; } = new() { "flow_local" };
 
     public ObservableCollection<string> AvailableAiModels { get; } = new()
     {
-        "gemini-3-flash",
-        "gemini-3-pro",
-        "gemini-3-flash-thinking",
         "gemini-3-flash-plus",
         "gemini-3-pro-plus",
         "gemini-3-flash-thinking-plus",
@@ -365,51 +362,35 @@ public partial class GeminiViewModel : ObservableObject
         var xamlRoot = App.MainWindowInstance?.Content?.XamlRoot;
         if (xamlRoot == null) return;
 
-        var referenceTask = SelectedTask ?? new GeminiTaskModel();
-
-        var dialog = new AssetAutomator.WinUI.Views.Dialogs.BulkTaskWizardDialog(
-            referenceTask,
-            AvailableScriptwriterGems,
-            AvailableSceneCreatorGems,
-            AvailableAiModels,
-            AvailableImageProviders)
+        // Pass existing tasks as templates for user to choose from
+        var dialog = new AssetAutomator.WinUI.Views.Dialogs.BulkTaskWizardDialog(GeminiTasks)
         {
             XamlRoot = xamlRoot
         };
 
         var result = await dialog.ShowAsync();
-        if (result == ContentDialogResult.Primary && dialog.Topics.Any())
+        if (result == ContentDialogResult.Primary)
         {
-            int count = 0;
-            var configuredTask = dialog.TemplateTask;
-
-            foreach (var topicItem in dialog.Topics)
+            var topics = dialog.GetTopics();
+            if (topics.Count == 0)
             {
-                if (string.IsNullOrWhiteSpace(topicItem.Topic)) continue;
+                StatusLog = "⚠️ Không có topic nào được nhập.";
+                return;
+            }
 
-                var newTask = _geminiCreatorService.CreateDefaultTask(
-                    AvailableScriptwriterGems,
-                    AvailableSceneCreatorGems,
-                    topicItem.Topic);
-
-                // Apply config from the wizard's template task
-                newTask.ScriptwriterModel = configuredTask.ScriptwriterModel;
-                newTask.SceneCreatorModel = configuredTask.SceneCreatorModel;
-                newTask.SelectedScriptwriterGem = configuredTask.SelectedScriptwriterGem;
-                newTask.SelectedSceneCreatorGem = configuredTask.SelectedSceneCreatorGem;
-                newTask.EnableDeepResearch = configuredTask.EnableDeepResearch;
-                newTask.UseApiStreamForSceneCreator = configuredTask.UseApiStreamForSceneCreator;
-                newTask.SelectedImageProvider = configuredTask.SelectedImageProvider;
-                newTask.TargetLanguage = configuredTask.TargetLanguage;
-                newTask.CharacterRef = configuredTask.CharacterRef;
-                newTask.VoiceId = configuredTask.VoiceId;
-
+            int count = 0;
+            foreach (var topic in topics)
+            {
+                var newTask = dialog.CreateTaskFromTemplate(topic);
                 GeminiTasks.Add(newTask);
                 count++;
             }
 
-            StatusLog = $"[INFO] Đã tạo thành công {count} tasks mới.";
-            _logService?.Info(LogCategory.GeminiCreator, $"Bulk added {count} tasks via wizard.");
+            if (count > 0)
+            {
+                StatusLog = $"[INFO] Đã tạo thành công {count} task(s) mới.";
+                _logService?.Info(LogCategory.GeminiCreator, $"Bulk added {count} tasks via single-step dialog.");
+            }
         }
     }
 

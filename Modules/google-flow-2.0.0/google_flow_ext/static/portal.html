@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Google Flow Extended - User Console</title>
+  <link rel="stylesheet" href="/ext-static/skeuo.css" />
+</head>
+<body>
+
+  <!-- Top Console Header -->
+  <header class="top-console">
+    <div class="top-console-inner">
+      <div class="brand-badge">
+        <div class="brand-icon-plate">FX</div>
+        <div>
+          <div class="brand-title">GOOGLE FLOW EXTENDED</div>
+          <div class="brand-sub">Commercial User Console</div>
+        </div>
+      </div>
+
+      <nav class="nav-tabs">
+        <a href="/" class="nav-btn">📊 Dashboard</a>
+        <a href="/setup" class="nav-btn">⚙️ Setup Wizard</a>
+        <a href="/admin" class="nav-btn">🛡️ Captcha Admin</a>
+        <a href="/portal" class="nav-btn active">🔑 User Console</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="container">
+
+    <!-- Account Details Card -->
+    <section class="skeuo-card">
+      <div class="card-header">
+        <div class="card-title">
+          <span class="led led-cyan active"></span>
+          User Account & API Credentials Console
+        </div>
+      </div>
+
+      <div class="inset-panel" style="margin-bottom: 24px;">
+        <div class="form-group">
+          <label class="form-label">LOCAL API SERVER BASE URL</label>
+          <input type="text" class="skeuo-input" value="http://127.0.0.1:8787/v1" readonly />
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">YOUR OPENAI-COMPATIBLE API KEY</label>
+          <div style="display: flex; gap: 10px;">
+            <input id="displayApiKey" type="text" class="skeuo-input" value="sk-flow-local-key" readonly />
+            <button class="skeuo-btn skeuo-btn-primary" onclick="copyApiKey()">📋 Copy</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <div class="metric-box">
+          <div class="metric-label">Account Paygate Tier</div>
+          <div class="metric-value" style="color: var(--accent-cyan);">FREE / UNLIMITED</div>
+          <div style="font-size: 11px; color: var(--text-dim); margin-top: 4px;">Local Execution Mode</div>
+        </div>
+
+        <div class="metric-box">
+          <div class="metric-label">Image Models Supported</div>
+          <div class="metric-value" style="color: var(--accent-emerald);">14 MODELS</div>
+          <div style="font-size: 11px; color: var(--text-dim); margin-top: 4px;">Gemini 3.1, Imagen 4.0, Nano Banana</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Quick API Test Snippet Card -->
+    <section class="skeuo-card">
+      <div class="card-header">
+        <div class="card-title">💻 cURL Command Quick Test Snippet</div>
+      </div>
+
+      <div class="crt-screen" style="max-height: 200px;">
+curl http://127.0.0.1:8787/v1/images/generations \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer sk-flow-local-key" \
+  -d '{
+    "prompt": "A futuristic glowing crystal sphere on a metallic pedestal",
+    "model": "gemini-3.1-flash-image-landscape",
+    "quality": "standard"
+  }'
+      </div>
+    </section>
+
+    <footer class="footer-bar">
+      Google Flow Extended Commercial Console &copy; 2026
+    </footer>
+
+  </main>
+
+  <script src="/ext-static/app.js"></script>
+  <script>
+    function copyApiKey() {
+      const input = document.getElementById('displayApiKey');
+      input.select();
+      document.execCommand('copy');
+      alert('API Key copied to clipboard!');
+    }
+  </script>
+</body>
+</html>

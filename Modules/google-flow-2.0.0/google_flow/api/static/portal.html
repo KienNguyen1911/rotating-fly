@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>flow_captcha_service Commercial User Center</title>
+  <link rel="stylesheet" href="/static/portal.css" />
+</head>
+<body>
+  <main class="portal-shell">
+    <section id="guestView" class="guest-view">
+      <div class="guest-layout">
+        <div class="guest-copy">
+          <span class="brand-chip solid">User console</span>
+          <p id="authModeHint" class="mini-hint hidden-block"></p>
+        </div>
+
+        <div id="guestAuthCard" class="auth-card">
+          <div class="auth-tabs">
+            <button id="tabLoginBtn" class="auth-tab active" type="button" data-auth-tab="login">Log in</button>
+            <button id="tabRegisterBtn" class="auth-tab" type="button" data-auth-tab="register">register</button>
+          </div>
+
+          <div id="guestNotice" class="notice info">Please enter your account information to continue.</div>
+
+          <section id="loginPane" class="auth-pane active">
+            <form id="loginForm" class="stack-form">
+              <label class="field">
+                <span>username</span>
+                <input id="loginUsername" autocomplete="username" placeholder="Please enter username" />
+              </label>
+              <label class="field">
+                <span>password</span>
+                <input id="loginPassword" type="password" autocomplete="current-password" placeholder="Please enter password" />
+              </label>
+              <button class="btn primary wide" type="submit">Login account</button>
+            </form>
+            <div id="oidcLoginWrap" class="stack-form hidden-block auth-divider">
+              <button id="oidcLoginBtn" class="btn ghost wide" type="button">Login using OAuth2/OIDC</button>
+              <p id="oidcLoginHint" class="mini-hint">Standard OAuth2/OIDC login enabled.</p>
+            </div>
+          </section>
+
+          <section id="registerPane" class="auth-pane">
+            <form id="registerForm" class="stack-form">
+              <label class="field">
+                <span>username</span>
+                <input id="registerUsername" autocomplete="username" placeholder="Create a username" />
+              </label>
+              <p id="registerCheckHint" class="mini-hint">After entering the username, it will automatically check whether it has been registered.</p>
+              <label class="field">
+                <span>password</span>
+                <input id="registerPassword" type="password" autocomplete="new-password" placeholder="At least 6 people" />
+              </label>
+              <p id="registerLocationHint" class="mini-hint">Currently checks are being made to register from the master node portal.</p>
+              <button id="registerSubmitBtn" class="btn primary wide" type="submit">Register and log in</button>
+            </form>
+          </section>
+        </div>
+      </div>
+    </section>
+
+    <section id="appView" class="app-screen hidden-block">
+      <header class="mobile-header">
+        <div class="mobile-brand">
+          <span class="brand-chip">User console</span>
+          <strong>flow_captcha_service</strong>
+        </div>
+        <button id="portalMenuBtn" class="btn ghost mini-btn" type="button" aria-expanded="false" aria-controls="portalSidebar">menu</button>
+      </header>
+
+      <div id="portalMenuBackdrop" class="mobile-backdrop hidden-block" aria-hidden="true"></div>
+
+      <aside id="portalSidebar" class="app-sidebar">
+        <div class="sidebar-shell">
+          <div class="sidebar-brand">
+            <span class="brand-chip">User console</span>
+            <h1 id="headerTitle">welcome back</h1>
+            <p id="headerSubtitle" class="header-subtitle">Only the information and operations of the current account are displayed here.</p>
+          </div>
+
+          <div class="sidebar-user">
+            <span class="sidebar-user-label">Current account</span>
+            <strong id="headerUsername" title="--">--</strong>
+            <small id="headerQuota">Remaining times --</small>
+          </div>
+
+          <nav class="app-nav">
+            <button class="nav-btn active" type="button" data-page="dashboard"><span class="nav-main">Overview</span><span class="nav-meta">Views, success rate and recent redemptions</span></button>
+            <button class="nav-btn" type="button" data-page="leaderboard"><span class="nav-main">Ranking list</span><span class="nav-meta">View current site user rankings</span></button>
+            <button class="nav-btn" type="button" data-page="apiKeys"><span class="nav-main">API Key</span><span class="nav-meta">Request, copy and manage personal keys</span></button>
+            <button class="nav-btn" type="button" data-page="redeem"><span class="nav-main">Recharge Center</span><span class="nav-meta">Redeem CDK and view balance changes</span></button>
+            <button class="nav-btn" type="button" data-page="logs"><span class="nav-main">call record</span><span class="nav-meta">Review the interface call status and failure reasons</span></button>
+            <button class="nav-btn" type="button" data-page="account"><span class="nav-main">Account information</span><span class="nav-meta">View current account and quota information</span></button>
+          </nav>
+
+          <div class="sidebar-footer">
+            <button id="logoutBtn" class="btn ghost wide" type="button">Log out</button>
+          </div>
+        </div>
+      </aside>
+
+      <main class="app-main">
+        <section class="workspace-panel">
+          <div class="workspace-copy">
+            <div id="workspaceEyebrow" class="section-eyebrow">Overview</div>
+            <h2 id="workspaceTitle">My times and usage</h2>
+            <p id="workspaceDesc" class="workspace-desc">Centrally check the remaining times of the current account, the call success rate and the latest recharge result.</p>
+          </div>
+          <div class="workspace-stats">
+            <div class="workspace-stat">
+              <span>Current account</span>
+              <strong id="workspaceUser">--</strong>
+            </div>
+            <div class="workspace-stat">
+              <span>current module</span>
+              <strong id="workspacePage">Overview</strong>
+            </div>
+          </div>
+        </section>
+
+        <div id="appNotice" class="notice info hidden-block"></div>
+
+        <section id="pageDashboard" class="page active">
+          <div class="section-head">
+            <div>
+              <div class="section-eyebrow">Overview</div>
+              <h2>My times and usage</h2>
+            </div>
+            <button id="refreshUserBtn" class="btn subtle" type="button">Refresh data</button>
+          </div>
+
+          <div class="stats-grid">
+            <article class="stat-card"><div class="stat-k">Remaining times</div><div id="statQuotaRemaining" class="stat-v">--</div></article>
+            <article class="stat-card"><div class="stat-k">Number of times used</div><div id="statQuotaUsed" class="stat-v">--</div></article>
+            <article class="stat-card"><div class="stat-k">Number of successes</div><div id="statSolveSuccess" class="stat-v">--</div></article>
+            <article class="stat-card"><div class="stat-k">Number of failures</div><div id="statSolveFailed" class="stat-v">--</div></article>
+            <article class="stat-card"><div class="stat-k">success rate</div><div id="statSuccessRate" class="stat-v">--</div></article>
+            <article class="stat-card"><div class="stat-k">recent requests</div><div id="statLastRequest" class="stat-v small">--</div></article>
+          </div>
+
+          <div class="info-band">
+            <span class="tag">Deduction rules</span>
+            <span id="usageRuleText">Only one time will be deducted if the final generation is successful; the number of times will be refunded if it fails, cancels or reports an error.</span>
+          </div>
+
+          <section class="content-card">
+            <div class="section-head compact">
+              <div>
+                <div class="section-eyebrow">Daily check-in</div>
+                <h2>Sign-in rewards</h2>
+              </div>
+              <button id="checkinBtn" class="btn subtle" type="button">Sign in now</button>
+            </div>
+            <div id="checkinNotice" class="notice info">Haven't signed in today.</div>
+          </section>
+
+          <section class="content-card">
+            <div class="section-head compact">
+              <div>
+                <div class="section-eyebrow">Recently redeemed</div>
+                <h2>The latest redemption result</h2>
+              </div>
+            </div>
+            <div id="latestRedeemEmpty" class="empty-state">You have no redemption record yet.</div>
+            <div id="latestRedeemCard" class="redeem-summary hidden-block">
+              <div class="summary-item"><span>Redeem code</span><strong id="latestRedeemCode">--</strong></div>
+              <div class="summary-item"><span>Number of arrivals</span><strong id="latestRedeemQuota">--</strong></div>
+              <div class="summary-item"><span>Redemption time</span><strong id="latestRedeemTime">--</strong></div>
+            </div>
+          </section>
+        </section>
+
+        <section id="pageLeaderboard" class="page">
+          <div class="section-head">
+            <div>
+              <div class="section-eyebrow">Ranking list</div>
+              <h2>Use the leaderboard</h2>
+            </div>
+          </div>
+
+          <section class="content-card">
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr><th>Ranking</th><th>user</th><th>Number of requests</th><th>Number of successes</th><th>last 7 days</th><th>Used credit</th></tr>
+                </thead>
+                <tbody id="leaderboardTableBody">
+                  <tr><td colspan="6" class="empty-cell">No ranking data yet.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </section>
+
+        <section id="pageApiKeys" class="page">
+          <div class="section-head">
+            <div>
+              <div class="section-eyebrow">API Key</div>
+              <h2>My API Key</h2>
+            </div>
+            <button id="refreshApiKeysBtn" class="btn subtle" type="button">Refresh Key</button>
+          </div>
+
+          <div class="content-card">
+            <form id="createApiKeyForm" class="stack-form narrow-form">
+              <label class="field">
+                <span>Key name</span>
+                <input id="newApiKeyName" placeholder="For example: prod-key" />
+              </label>
+              <button class="btn primary" type="submit">Apply for API Key</button>
+            </form>
+            <div id="apiKeyNotice" class="notice info">Users can apply for their own API Key by themselves. The complete Key is only returned when created, and can be copied again after this page is cached.</div>
+          </div>
+
+          <div class="table-wrap content-card">
+            <table>
+              <thead>
+                <tr><th>name</th><th>prefix</th><th>enable</th><th>Number of times used</th><th>last used</th><th>operate</th></tr>
+              </thead>
+              <tbody id="apiKeysTableBody">
+                <tr><td colspan="6" class="empty-cell">There is no API Key yet.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="pageRedeem" class="page">
+          <div class="section-head">
+            <div>
+              <div class="section-eyebrow">Recharge Center</div>
+              <h2>Recharge and consumption records</h2>
+            </div>
+          </div>
+
+          <div class="content-card">
+            <form id="redeemForm" class="stack-form narrow-form">
+              <label class="field">
+                <span>Redemption code/CDK</span>
+                <input id="redeemCodeInput" placeholder="Enter the redemption code issued by the administrator" autocomplete="off" />
+              </label>
+              <button class="btn primary" type="submit">Redeem now</button>
+            </form>
+            <div id="redeemNotice" class="notice info">After the redemption is successful, the current user's remaining times will be automatically refreshed.</div>
+          </div>
+
+          <section class="content-card">
+            <div class="section-head compact">
+              <div>
+                <div class="section-eyebrow">Exchange record</div>
+                <h2>Recent redemption list</h2>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr><th>Redeem code</th><th>frequency</th><th>Redemption time</th><th>Remark</th></tr>
+                </thead>
+                <tbody id="redeemTableBody">
+                  <tr><td colspan="4" class="empty-cell">There is no redemption record yet.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <section class="content-card">
+            <div class="section-head compact">
+              <div>
+                <div class="section-eyebrow">Consumption record</div>
+                <h2>Details of changes in times</h2>
+              </div>
+              <div class="inline-actions">
+                <button id="copyTransactionsBtn" class="btn subtle" type="button">Copy current page</button>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr><th>time</th><th>change</th><th>balance</th><th>source</th><th>illustrate</th></tr>
+                </thead>
+                <tbody id="transactionsTableBody">
+                  <tr><td colspan="5" class="empty-cell">There is no consumption record yet.</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="pager">
+              <div id="transactionsPagerInfo" class="pager-info">There is no consumption record yet.</div>
+              <div class="pager-actions">
+                <button id="transactionsPrevBtn" class="btn ghost mini-btn" type="button">Previous page</button>
+                <button id="transactionsNextBtn" class="btn ghost mini-btn" type="button">Next page</button>
+              </div>
+            </div>
+          </section>
+        </section>
+
+        <section id="pageLogs" class="page">
+          <div class="section-head">
+            <div>
+              <div class="section-eyebrow">call record</div>
+              <h2>My API call history</h2>
+            </div>
+            <button id="refreshLogsBtn" class="btn subtle" type="button">Refresh log</button>
+          </div>
+
+          <div class="filters-bar">
+            <label class="field"><span>status filter</span><select id="logStatusFilter"><option value="">All status</option><option value="success">success</option><option value="success_master_dispatch">success_master_dispatch</option><option value="failed">failed</option><option value="finish:success">finish:success</option><option value="finish:failed">finish:failed</option><option value="finish:cancelled">finish:cancelled</option><option value="error_reported">error_reported</option></select></label>
+            <label class="field"><span>Project filtering</span><input id="logProjectFilter" placeholder="Enter project_id" /></label>
+          </div>
+
+          <div class="table-wrap content-card">
+            <table>
+              <thead>
+                <tr><th>time</th><th>state</th><th>project</th><th>action</th><th>Key</th><th>Error reason</th></tr>
+              </thead>
+              <tbody id="logsTableBody">
+                <tr><td colspan="6" class="empty-cell">There are no log records yet.</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="pager">
+            <div id="logsPagerInfo" class="pager-info">There are no log records yet.</div>
+            <div class="pager-actions">
+              <button id="logsPrevBtn" class="btn ghost mini-btn" type="button">Previous page</button>
+              <button id="logsNextBtn" class="btn ghost mini-btn" type="button">Next page</button>
+            </div>
+          </div>
+        </section>
+
+        <section id="pageAccount" class="page">
+          <div class="section-head">
+            <div>
+              <div class="section-eyebrow">Account information</div>
+              <h2>Current login account</h2>
+            </div>
+          </div>
+
+          <div class="account-grid">
+            <article class="account-card"><span>username</span><strong id="accountUsernameValue">--</strong></article>
+            <article class="account-card"><span>Registration status</span><strong id="accountRegisteredValue">Registered</strong></article>
+            <article class="account-card"><span>Register location</span><strong id="accountLocationValue">--</strong></article>
+            <article class="account-card"><span>Account status</span><strong id="accountEnabledValue">--</strong></article>
+            <article class="account-card"><span>creation time</span><strong id="accountCreatedAtValue">--</strong></article>
+            <article class="account-card"><span>last login</span><strong id="accountLastLoginValue">--</strong></article>
+          </div>
+        </section>
+      </main>
+    </section>
+  </main>
+
+  <div id="apiKeyModal" class="modal-backdrop hidden-block" aria-hidden="true">
+    <div class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="apiKeyModalTitle">
+      <div class="modal-head">
+        <div>
+          <div class="section-eyebrow">API Key</div>
+          <h2 id="apiKeyModalTitle">Complete Key</h2>
+        </div>
+        <button id="apiKeyModalCloseBtn" class="btn ghost mini-btn" type="button">closure</button>
+      </div>
+      <div class="modal-body">
+        <p id="apiKeyModalHint" class="modal-desc">The complete Key is only returned when created and can be copied again within this browser session.</p>
+        <div class="summary-item">
+          <span>name</span>
+          <strong id="apiKeyModalName">--</strong>
+        </div>
+        <div class="secret-box" id="apiKeyModalValue">--</div>
+      </div>
+      <div class="modal-actions">
+        <button id="apiKeyModalCopyBtn" class="btn primary" type="button">Copy complete Key</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/portal.js"></script>
+</body>
+</html>
