@@ -70,6 +70,15 @@ public partial class SettingsViewModel : ObservableObject
     [ObservableProperty]
     private string _chromeProfilesDir = string.Empty;
 
+    /// <summary>
+    /// Folder where Batch Image Gen project metadata (.json) is stored.
+    /// Different from <see cref="OutputPath"/> which holds rendered assets for
+    /// Gemini/Automation tasks. Managed centrally here so the Batch Image Gen
+    /// tab doesn't need its own folder picker.
+    /// </summary>
+    [ObservableProperty]
+    private string _projectsStorageDir = string.Empty;
+
     public SettingsViewModel(IConfigService? configService = null)
     {
         _configService = configService;
@@ -89,6 +98,7 @@ public partial class SettingsViewModel : ObservableObject
             ChromeProfilesDir = settings.ChromeProfilesDir ?? string.Empty;
             SubtitleApiUrl = settings.SubtitleApiUrl ?? string.Empty;
             OutputPath = settings.OutputsDir ?? @"C:\AssetAutomator\Outputs";
+            ProjectsStorageDir = settings.ProjectsStorageDir ?? string.Empty;
             MaxConcurrentThreads = settings.MaxConcurrentTasks > 0 ? settings.MaxConcurrentTasks : 3;
             // B4: Đọc 3 fields GoogleFlow2* từ AppSettings
             GoogleFlow2RootPath = settings.GoogleFlow2RootPath ?? Path.Combine(
@@ -113,6 +123,7 @@ public partial class SettingsViewModel : ObservableObject
             settings.SupabaseDbUrl = SupabaseDbUrl;
             settings.ChromeProfilesDir = ChromeProfilesDir;
             settings.SubtitleApiUrl = SubtitleApiUrl;
+            settings.ProjectsStorageDir = ProjectsStorageDir;
             // B4: Lưu 3 fields GoogleFlow2*
             settings.GoogleFlow2RootPath = GoogleFlow2RootPath;
             settings.GoogleFlow2Port = GoogleFlow2Port;
@@ -141,6 +152,33 @@ public partial class SettingsViewModel : ObservableObject
             if (folder != null)
             {
                 OutputPath = folder.Path;
+            }
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Lỗi mở Folder Picker: {ex.Message}";
+        }
+    }
+
+    [RelayCommand]
+    private void BrowseProjectsStorageDir()
+    {
+        // Folder picker for Batch Image Gen projects storage. Same UX as OutputPath /
+        // ChromeProfilesDir pickers — Folder Picker needs an HWND on WinUI 3 unpackaged.
+        try
+        {
+            var picker = new FolderPicker();
+            picker.SuggestedStartLocation = PickerLocationId.DocumentsLibrary;
+            picker.FileTypeFilter.Add("*");
+
+            var hwnd = WindowNative.GetWindowHandle(App.MainWindowInstance);
+            InitializeWithWindow.Initialize(picker, hwnd);
+
+            var folder = picker.PickSingleFolderAsync().AsTask().GetAwaiter().GetResult();
+            if (folder != null)
+            {
+                ProjectsStorageDir = folder.Path;
+                StatusMessage = $"Đã chọn thư mục Projects Batch Image Gen: {folder.Path}";
             }
         }
         catch (Exception ex)

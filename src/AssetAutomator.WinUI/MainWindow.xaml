@@ -88,7 +88,15 @@
                 </NavigationViewItem>
             </NavigationView.FooterMenuItems>
 
-            <Frame x:Name="ContentFrame" />
+            <!--
+                CacheSize lớn để cache nhiều page khi user chuyển tab qua lại.
+                Mỗi page cần set NavigationCacheMode="Required" trên root <Page>
+                để giữ instance (xem GeminiPage.xaml). Frame mặc định cache
+                NavigationCacheMode=Disabled, nghĩa là mỗi lần Navigate sẽ tạo
+                page mới — đây chính là nguyên nhân user bị mất task list khi
+                chuyển sang tab khác rồi quay lại Gemini AI Creator.
+            -->
+            <Frame x:Name="ContentFrame" CacheSize="10" />
         </NavigationView>
 
         <!-- Q3: BottomBar indicator cho Flow Local status -->

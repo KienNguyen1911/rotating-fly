@@ -87,6 +87,7 @@ public partial class App : Microsoft.UI.Xaml.Application
                 services.AddSingleton<VoiceoverGenerationStep>();
                 services.AddSingleton<GeminiPlaywrightSceneBreakdownStep>();
                 services.AddSingleton<GeminiTopicResearchStep>();
+                services.AddSingleton<SceneImageBatchStep>();
 
                 // Orchestrator
                 services.AddSingleton<PipelineOrchestrator>();
@@ -127,12 +128,11 @@ public partial class App : Microsoft.UI.Xaml.Application
                     sp.GetRequiredService<IConfigService>()
                 ));
 
-                // GeminiViewModel needs explicit factory wiring — its constructor
-                // accepts nullable params (legacy pattern) which makes MS.DI inject
-                // null into every dependency. The factory below resolves each
-                // dependency via GetRequiredService so the VM actually gets the
-                // real services instead of silent nulls (see StackOverflow #60379123).
-                services.AddTransient<ViewModels.GeminiViewModel>(sp => new ViewModels.GeminiViewModel(
+                // GeminiViewModel is registered as Singleton so its state (GeminiTasks,
+                // SelectedTask, AvailableScriptwriterGems, ConsoleLogs, ...) survives
+                // page navigation. Without this, every Navigate(typeof(GeminiPage))
+                // would re-construct the VM and the user's tasks would disappear.
+                services.AddSingleton<ViewModels.GeminiViewModel>(sp => new ViewModels.GeminiViewModel(
                     sp.GetRequiredService<GeminiCreatorService>(),
                     sp.GetRequiredService<PipelineOrchestrator>(),
                     sp.GetRequiredService<YoutubeTopicSuggestionStep>(),

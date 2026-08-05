@@ -81,9 +81,6 @@ public partial class GeminiViewModel : ObservableObject
     [ObservableProperty]
     private bool _isSuggestingTopics;
 
-    [ObservableProperty]
-    private int _videoDurationMinutes = 1;
-
     // ─────────────────────────────────────────────────────
     //  Task Live Logs Drawer & Console Log Control
     // ─────────────────────────────────────────────────────
@@ -563,11 +560,6 @@ public partial class GeminiViewModel : ObservableObject
                     IsChecked = true,
                     Margin = new Thickness(0, 4, 0, 2)
                 };
-                var modeRadioAuto = new RadioButton
-                {
-                    Content = "⚡ Tự động quét tất cả Chrome Profiles (Không mở trình duyệt)",
-                    Margin = new Thickness(0, 2, 0, 2)
-                };
                 var modeRadioFile = new RadioButton
                 {
                     Content = "📁 Chọn file cookies.json thủ công từ máy tính",
@@ -584,7 +576,6 @@ public partial class GeminiViewModel : ObservableObject
                 });
                 stack.Children.Add(modeRadioProfile);
                 stack.Children.Add(profileCombo);
-                stack.Children.Add(modeRadioAuto);
                 stack.Children.Add(modeRadioFile);
 
                 var dialog = new ContentDialog
@@ -607,42 +598,6 @@ public partial class GeminiViewModel : ObservableObject
                 {
                     var selectedProfile = profileCombo.SelectedItem as ChromeProfileItem;
                     await RunPlaywrightLoginAsync(selectedProfile?.FullPath);
-                }
-                else if (modeRadioAuto.IsChecked == true)
-                {
-                    _logService?.Info(LogCategory.CookieSync, "⏳ Đang tự động quét & trích xuất Cookies Gemini từ các Chrome Profiles...");
-                    var (success, message) = await _geminiCreatorService.ImportCookiesAsync(
-                        GeminiCreatorService.CookieImportMode.Auto,
-                        _browserService,
-                        onStatus: msg => _logService?.Info(LogCategory.CookieSync, msg));
-
-                    if (success)
-                    {
-                        _logService?.Success(LogCategory.CookieSync, $"🎉 {message}");
-                        StatusLog = $"[COOKIE] ✅ {message}";
-                        await LoadGemsAsync();
-                    }
-                    else
-                    {
-                        _logService?.Warning(LogCategory.CookieSync, $"⚠️ Quét tự động thất bại: {message}");
-                        StatusLog = $"[COOKIE] ⚠️ Quét tự động thất bại.";
-
-                        var selectedProfile = profileCombo.SelectedItem as ChromeProfileItem;
-                        var fallbackDialog = new ContentDialog
-                        {
-                            Title = "🌐 Mở Chrome Đăng Nhập Gemini",
-                            Content = $"Tự động quét không tìm thấy session Gemini hợp lệ.\n({message})\n\nBạn có muốn mở Chrome với Profile '{selectedProfile?.DisplayName ?? "GeminiProfile"}' để đăng nhập Gemini không?",
-                            PrimaryButtonText = "🌐 Mở Chrome ngay",
-                            CloseButtonText = "Bỏ qua",
-                            DefaultButton = ContentDialogButton.Primary,
-                            XamlRoot = App.MainWindowInstance.Content.XamlRoot
-                        };
-
-                        if (await fallbackDialog.ShowAsync() == ContentDialogResult.Primary)
-                        {
-                            await RunPlaywrightLoginAsync(selectedProfile?.FullPath);
-                        }
-                    }
                 }
                 else if (modeRadioFile.IsChecked == true)
                 {

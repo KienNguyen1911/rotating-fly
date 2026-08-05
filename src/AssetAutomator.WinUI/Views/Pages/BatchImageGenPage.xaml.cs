@@ -43,28 +43,51 @@ public sealed partial class BatchImageGenPage : Page
         }
     }
 
-    private async void BtnBrowseProjectsDir_Click(object sender, RoutedEventArgs e)
+    private async void BtnOpenProjectsFolder_Click(object sender, RoutedEventArgs e)
     {
-        var picker = new FolderPicker();
-        picker.FileTypeFilter.Add("*");
-
-        if (App.MainWindowInstance != null)
+        // The folder is centrally managed in Settings → Projects Storage Dir, so the
+        // Batch tab only exposes a quick-open shortcut. If the user wants to move
+        // the folder they have to do it from Settings (single source of truth).
+        string path = ViewModel.ProjectsStoragePath;
+        if (string.IsNullOrWhiteSpace(path))
         {
-            var hwnd = WindowNative.GetWindowHandle(App.MainWindowInstance);
-            InitializeWithWindow.Initialize(picker, hwnd);
+            path = App.Services.GetService<Core.Interfaces.IConfigService>()
+                ?.CurrentSettings?.ProjectsStorageDir ?? string.Empty;
         }
 
-        var folder = await picker.PickSingleFolderAsync();
-        if (folder != null)
+        if (string.IsNullOrWhiteSpace(path))
         {
-            ViewModel.ProjectsStoragePath = folder.Path;
-            var configService = App.Services.GetService<Core.Interfaces.IConfigService>();
-            if (configService != null)
+            var dlg = new ContentDialog
             {
-                configService.CurrentSettings.ProjectsStorageDir = folder.Path;
-                configService.SaveSettings(configService.CurrentSettings);
-            }
-            await ViewModel.LoadProjectsListAsync();
+                Title = "Chưa cấu hình thư mục lưu trữ dự án",
+                Content = "Vui lòng vào Settings → Directories → 'Thư mục lưu Projects Batch Image Gen' để chọn thư mục.",
+                CloseButtonText = "Đóng",
+                XamlRoot = Content.XamlRoot
+            };
+            await dlg.ShowAsync();
+            return;
+        }
+
+        try
+        {
+            System.IO.Directory.CreateDirectory(path);
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = path,
+                UseShellExecute = true,
+                Verb = "open"
+            });
+        }
+        catch (Exception ex)
+        {
+            var dlg = new ContentDialog
+            {
+                Title = "Không thể mở thư mục",
+                Content = ex.Message,
+                CloseButtonText = "Đóng",
+                XamlRoot = Content.XamlRoot
+            };
+            await dlg.ShowAsync();
         }
     }
 

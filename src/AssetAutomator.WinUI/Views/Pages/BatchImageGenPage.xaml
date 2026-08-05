@@ -60,9 +60,10 @@
                                      FontSize="12"
                                      IsReadOnly="True"
                                      VerticalContentAlignment="Center" />
-                            <Button Content="Browse..."
+                            <Button Content="📂 Mở Folder"
                                     Height="32"
-                                    Click="BtnBrowseProjectsDir_Click" />
+                                    Click="BtnOpenProjectsFolder_Click"
+                                    ToolTipService.ToolTip="Mở thư mục lưu trữ dự án bằng File Explorer. Để chọn thư mục khác, vào Settings." />
                         </StackPanel>
                     </StackPanel>
 

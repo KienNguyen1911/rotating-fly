@@ -42,3 +42,20 @@ test-stderr.log
 Modules/*/venv/
 Modules/*/__pycache__/
 Modules/*/.pytest_cache/
+
+# Runtime authentication/session data — never commit
+Modules/*/cookies.json
+Modules/*/*cookies*.json
+Modules/*/profiles/
+
+# Generated module outputs
+Modules/*/output/
+Modules/*/screenshots/
+
+# Local runtime and diagnostic artifacts
+logs/
+*.out.txt
+*.err.txt
+*_debug.png
+appsettings.json
+free-proxies.json
