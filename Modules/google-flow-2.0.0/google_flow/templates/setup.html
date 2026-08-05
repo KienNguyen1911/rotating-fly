@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>إعداد Flow المحلي</title>
+  <style>
+    :root { --bg:#f5f7fb; --card:#ffffff; --text:#111827; --muted:#6b7280; --border:#e5e7eb; --accent:#111827; --soft:#eef2ff; --ok:#0f766e; --warn:#b45309; --err:#b91c1c; }
+    * { box-sizing:border-box; }
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; background:linear-gradient(180deg,#eef2ff 0%,#f8fafc 36%,#f5f7fb 100%); color:var(--text); margin:0; }
+    .wrap { max-width: 980px; margin: 28px auto; padding: 0 18px 28px; }
+    .hero { background:var(--card); border-radius:20px; padding:28px; box-shadow:0 14px 40px rgba(15,23,42,.08); border:1px solid rgba(229,231,235,.8); }
+    h1 { margin:0 0 10px; font-size:32px; }
+    .sub { color:var(--muted); margin:0; line-height:1.6; }
+    .grid { display:grid; grid-template-columns: 1.2fr .8fr; gap:18px; margin-top:18px; }
+    .card { background:var(--card); border:1px solid var(--border); border-radius:16px; padding:20px; box-shadow:0 8px 24px rgba(15,23,42,.04); }
+    .title { font-size:18px; font-weight:700; margin:0 0 14px; }
+    .step { display:flex; gap:12px; margin:12px 0; align-items:flex-start; }
+    .num { width:28px; height:28px; border-radius:999px; background:var(--soft); display:flex; align-items:center; justify-content:center; font-weight:700; flex:none; }
+    .step p { margin:2px 0 0; color:var(--muted); line-height:1.5; }
+    .buttons { display:flex; flex-wrap:wrap; gap:10px; margin-top:16px; }
+    button { border:none; border-radius:12px; padding:12px 16px; cursor:pointer; background:var(--accent); color:#fff; font-size:14px; font-weight:600; }
+    button.secondary { background:#eef2f7; color:#111827; }
+    button.warn { background:#f59e0b; }
+    button.danger { background:#dc2626; }
+    button:disabled { opacity:.55; cursor:not-allowed; }
+    .status-grid { display:grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap:10px; }
+    .pill { border:1px solid var(--border); border-radius:14px; padding:12px 14px; background:#fafafa; }
+    .pill .label { font-size:12px; color:var(--muted); margin-bottom:6px; }
+    .pill .value { font-weight:700; }
+    .good { color:var(--ok); }
+    .bad { color:var(--err); }
+    .note { margin-top:14px; color:var(--muted); font-size:13px; line-height:1.6; }
+    .api-box { display:grid; gap:12px; margin-top:8px; }
+    .api-item { border:1px solid var(--border); background:#fafafa; border-radius:14px; padding:14px; }
+    .api-item .label { font-size:12px; color:var(--muted); margin-bottom:8px; text-transform:uppercase; letter-spacing:.04em; }
+    code { background:#f3f4f6; border-radius:8px; padding:2px 6px; word-break:break-all; }
+    .models { display:flex; flex-wrap:wrap; gap:8px; }
+    .model-chip { background:#eef2ff; color:#312e81; border-radius:999px; padding:7px 10px; font-size:13px; }
+    ul { margin: 10px 0 0 0; padding-right: 20px; color: var(--muted); }
+    .banner { border-radius:14px; padding:12px 14px; margin-top:14px; display:none; }
+    .banner.ok { display:block; background:#ecfdf5; color:#065f46; }
+    .banner.warn { display:block; background:#fff7ed; color:#9a3412; }
+    .banner.err { display:block; background:#fef2f2; color:#991b1b; }
+    .json { background:#0f172a; color:#e2e8f0; border-radius:14px; padding:16px; white-space:pre-wrap; font-size:12px; max-height:240px; overflow:auto; }
+    @media (max-width: 860px) { .grid { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="hero">
+      <h1>الإعداد التلقائي المحلي لـ Flow</h1>
+      <p class="sub">يحتاج المستخدم فقط إلى تسجيل الدخول إلى Google Flow. بمجرد اكتمال تسجيل الدخول، سيقوم النظام تلقائيًا بمزامنة الرمز المميز (Token)، والتحقق من الحساب، وتهيئة المشروع، وتقديم معلومات API النهائية القابلة للاستخدام.</p>
+      <div id="banner" class="banner"></div>
+    </div>
+    <div class="grid">
+      <div class="card">
+        <div class="title">خطوات الاستخدام</div>
+        <div class="step"><div class="num">1</div><div><strong>افتح صفحة تسجيل الدخول</strong><p>سيقوم النظام بفتح صفحة تسجيل دخول Flow تلقائيًا. إذا لم تظهر، يمكنك النقر يدويًا على الزر أدناه لإعادة فتحها.</p></div></div>
+        <div class="step"><div class="num">2</div><div><strong>سجل الدخول إلى Google Flow</strong><p>سجل الدخول إلى حساب Google الخاص بك في المتصفح المنبثق. بمجرد اكتمال تسجيل الدخول، لا يلزم اتخاذ أي إجراء إضافي.</p></div></div>
+        <div class="step"><div class="num">3</div><div><strong>إكمال الإعداد تلقائيًا</strong><p>ستقوم الصفحة تلقائيًا باكتشاف حالة تسجيل الدخول وإكمال الإعداد. يمكنك أيضًا النقر يدويًا على "إعادة المزامنة" إذا لزم الأمر.</p></div></div>
+        <div class="step"><div class="num">4</div><div><strong>عند تعذر الإعداد التلقائي</strong><p>إذا واجهت مشكلة في الإعداد التلقائي، يرجى التحقق من اتصال الشبكة/الوكيل (VPN)، ويوصى باستخدام وضع VPN شامل (Global + TUN).</p></div></div>
+        <div class="buttons">
+          <button onclick="relogin()">إعادة تسجيل الدخول</button>
+          <button class="secondary" onclick="toggleBrowserWindow()">إخفاء/إظهار المتصفح</button>
+          <button class="secondary" onclick="finalizeSetup()">إعادة المزامنة</button>
+          <button class="secondary" onclick="refreshStatus()">تحديث الحالة</button>
+          <button class="danger" onclick="resetSetup()">إعادة تعيين الإعدادات</button>
+        </div>
+        <div class="note">الممارسة الموصى بها: يسجل المستخدم الدخول مرة واحدة فقط. بعد النجاح، ما عليك سوى تقديم عنوان URL ومفتاح API ومعلومات النموذج المعروضة على اليمين للمستخدم.</div>
+      </div>
+      <div class="card">
+        <div class="title">الحالة الحالية</div>
+        <div class="status-grid">
+          <div class="pill"><div class="label">نافذة المتصفح</div><div class="value" id="browser_state">جاري التحقق</div></div>
+          <div class="pill"><div class="label">حالة تسجيل الدخول</div><div class="value" id="login_state">جاري التحقق</div></div>
+          <div class="pill"><div class="label">رمز الجلسة (ST)</div><div class="value" id="st_state">جاري التحقق</div></div>
+          <div class="pill"><div class="label">المشروع (Project)</div><div class="value" id="project_state">جاري التحقق</div></div>
+        </div>
+        <div class="note">إذا تغيرت "حالة تسجيل الدخول" إلى تم الكشف عنها ولكن لم تظهر معلومات API بعد، يمكنك النقر على "إعادة المزامنة".</div>
+      </div>
+    </div>
+    <div class="grid">
+      <div class="card">
+        <div class="title">معلومات API بعد الاكتمال</div>
+        <div id="api_result">
+          <div class="note">لم يتم إكمال الإعداد التلقائي بعد.</div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="title">معلومات تصحيح الأخطاء</div>
+        <div id="debug_json" class="json">جاري التحميل...</div>
+      </div>
+    </div>
+  </div>
+  <script>
+    let finalized = false;
+    function setBanner(type, text) {
+      const el = document.getElementById('banner');
+      if (!text) { el.className = 'banner'; el.textContent = ''; return; }
+      el.className = `banner ${type}`;
+      el.textContent = text;
+    }
+    function yn(value, okText = 'جاهز', badText = 'غير جاهز') {
+      return value ? `<span class="good">${okText}</span>` : `<span class="bad">${badText}</span>`;
+    }
+    function renderStatus(data) {
+      const browserText = data.browser_open ? (data.browser_visible ? 'معروض' : 'مخفي') : 'غير مفتوح';
+      document.getElementById('browser_state').innerHTML = data.browser_open ? `<span class="good">${browserText}</span>` : `<span class="bad">${browserText}</span>`;
+      document.getElementById('login_state').innerHTML = yn(data.login_detected, 'تم الكشف', 'لم يتم الكشف');
+      document.getElementById('st_state').innerHTML = yn(data.has_st, 'تم الحفظ', 'لم يتم الحفظ');
+      document.getElementById('project_state').innerHTML = yn(data.project_ready, 'تم التهيئة', 'لم يتم التهيئة');
+      document.getElementById('debug_json').textContent = JSON.stringify(data, null, 2);
+      if (data.login_detected && !data.has_st) {
+        setBanner('warn', 'تم اكتشاف تسجيل الدخول إلى Flow، في انتظار المزامنة التلقائية أو انقر يدويًا على "إعادة المزامنة".');
+      } else if (data.has_st && data.project_ready) {
+        setBanner('ok', 'اكتمل الإعداد، يمكنك نسخ معلومات API مباشرة على اليمين للمستخدم.');
+      } else if (data.login_error) {
+        setBanner('warn', `واجه اكتشاف تسجيل الدخول مشكلة: ${data.login_error}`);
+      } else {
+        setBanner('warn', 'يرجى تسجيل الدخول إلى Google Flow أولاً، وسيقوم النظام بالإعداد تلقائيًا بعد الانتهاء.');
+      }
+    }
+    function renderResult(data) {
+      const api = data.api || {};
+      const models = (api.recommended_models || []).map(m => `<span class="model-chip">${m}</span>`).join('');
+      const notes = (api.notes || []).map(n => `<li>${n}</li>`).join('');
+      document.getElementById('api_result').innerHTML = `
+        <div class="api-box">
+          <div class="api-item"><div class="label">الرابط (URL)</div><code>${api.url || ''}</code></div>
+          <div class="api-item"><div class="label">مفتاح API</div><code>${api.api_key || ''}</code></div>
+          <div class="api-item"><div class="label">النماذج الموصى بها</div><div class="models">${models}</div></div>
+          <div class="api-item"><div class="label">معلومات الحساب</div><div>الرصيد: <strong>${data.credits ?? '-'}</strong><br/>المستوى: <strong>${data.tier ?? '-'}</strong></div></div>
+          <div class="api-item"><div class="label">ملاحظات هامة</div><ul>${notes}</ul></div>
+        </div>`;
+    }
+    async function refreshStatus() {
+      const res = await fetch('/setup/status');
+      const data = await res.json();
+      renderStatus(data);
+      if (!finalized && data.login_detected) {
+        finalized = true;
+        await finalizeSetup();
+      }
+    }
+    async function relogin() {
+      finalized = false;
+      document.getElementById('api_result').innerHTML = '<div class="note">جاري تسجيل الخروج من حالة تسجيل دخول المتصفح الحالي وإعادة فتح نافذة تسجيل الدخول...</div>';
+      const res = await fetch('/setup/relogin', { method: 'POST' });
+      const data = await res.json();
+      setBanner(data.success ? 'ok' : 'err', data.message || 'تم إعادة فتح صفحة تسجيل الدخول.');
+      await refreshStatus();
+    }
+    async function toggleBrowserWindow() {
+      const res = await fetch('/setup/toggle-browser', { method: 'POST' });
+      const data = await res.json();
+      setBanner(data.success ? 'ok' : 'err', data.message || 'تم تحديث حالة نافذة المتصفح.');
+      await refreshStatus();
+    }
+    async function finalizeSetup() {
+      document.getElementById('api_result').innerHTML = '<div class="note">جاري الإعداد التلقائي، يرجى الانتظار...</div>';
+      const res = await fetch('/setup/finalize', { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        renderResult(data);
+        setBanner('ok', 'اكتمل الإعداد التلقائي. يمكنك الآن تقديم عنوان URL ومفتاح API ومعلومات النموذج للمستخدم.');
+      } else {
+        document.getElementById('api_result').innerHTML = `<div class="note">فشل الإعداد: ${data.message || 'Unknown error'}<br/><br/>${data.detail || ''}</div>`;
+        setBanner('err', data.message || 'فشل الإعداد التلقائي، يرجى التحقق من حالة تسجيل الدخول والمحاولة مرة أخرى.');
+      }
+      await refreshStatus();
+    }
+    async function resetSetup() {
+      finalized = false;
+      const res = await fetch('/setup/reset', { method: 'POST' });
+      const data = await res.json();
+      document.getElementById('api_result').innerHTML = '<div class="note">تم إعادة تعيين الإعدادات.</div>';
+      setBanner(data.success ? 'ok' : 'err', data.message || 'تم إعادة تعيين الإعدادات.');
+      await refreshStatus();
+    }
+    refreshStatus();
+    setInterval(refreshStatus, 4000);
+  </script>
+</body>
+</html>

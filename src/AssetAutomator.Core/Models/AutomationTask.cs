@@ -207,14 +207,18 @@ namespace AssetAutomator.Core.Models
             set { _outputFolderOverride = value; OnPropertyChanged(); }
         }
 
+        public static System.Func<string>? BaseOutputsDirProvider { get; set; }
+
         public string OutputDir => GetOutputDir(OutputFolderOverride ?? VideoId);
 
         private static string GetOutputDir(string videoId)
         {
-            // Resolved at runtime via IConfigService injection in the Infrastructure layer.
-            // Core falls back to a simple Desktop/Outputs/<videoId> layout.
-            string baseDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "Outputs");
-            return Path.Combine(baseDir, videoId);
+            string? baseDir = BaseOutputsDirProvider?.Invoke();
+            if (string.IsNullOrWhiteSpace(baseDir))
+            {
+                baseDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Outputs");
+            }
+            return Path.Combine(baseDir, "Gemini", videoId);
         }
 
         public event PropertyChangedEventHandler? PropertyChanged;

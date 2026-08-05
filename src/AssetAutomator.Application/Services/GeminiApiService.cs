@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
 using AssetAutomator.Core.Interfaces;
 using AssetAutomator.Infrastructure.Helpers;
@@ -118,7 +120,8 @@ namespace AssetAutomator.Application.Services
             bool deepResearch = false,
             string? sessionId = null,
             bool temporary = false,
-            List<string>? filePaths = null)
+            List<string>? filePaths = null,
+            bool enableExtendedThinking = true)
         {
             await EnsureConnectedAsync();
 
@@ -136,7 +139,8 @@ namespace AssetAutomator.Application.Services
                 { "message", message },
                 { "deep_research", deepResearch },
                 { "temporary", temporary },
-                { "model", resolvedModel }
+                { "model", resolvedModel },
+                { "enable_thinking", enableExtendedThinking }
             };
 
             if (!string.IsNullOrWhiteSpace(gemId))
@@ -173,6 +177,175 @@ namespace AssetAutomator.Application.Services
             }
 
             return result;
+        }
+
+        /// <summary>
+        /// Streams chat response from the Python REST server with realtime
+        /// <c>thoughts_delta</c> (extended thinking) + <c>text_delta</c> callbacks.
+        /// Mirrors <c>GeminiClient.generate_content_stream()</c> used in
+        /// <c>test_gem_and_thinking.py</c>. Use this for the Scene Breakdown step
+        /// to surface the thinking process to the user without waiting for the
+        /// full response.
+        /// </summary>
+        public async Task<GeminiChatStreamResult> SendChatStreamAsync(
+            string message,
+            List<string> filePaths,
+            string? gemId = null,
+            string? model = null,
+            string? sessionId = null,
+            bool enableExtendedThinking = true,
+            Action<string>? onThoughtsDelta = null,
+            Action<string>? onTextDelta = null,
+            CancellationToken cancellationToken = default)
+        {
+            await EnsureConnectedAsync();
+
+            string resolvedModel = ResolveModelName(model);
+
+            var payload = new Dictionary<string, object>
+            {
+                { "message", message },
+                { "files", filePaths },
+                { "deep_research", false },
+                { "temporary", false },
+                { "model", resolvedModel },
+                { "enable_thinking", enableExtendedThinking }
+            };
+            if (!string.IsNullOrWhiteSpace(gemId)) payload["gem_id"] = gemId;
+            if (!string.IsNullOrWhiteSpace(sessionId)) payload["session_id"] = sessionId;
+
+            string url = $"{_baseUrl}/api/chat/stream-extended";
+            string json = JsonSerializer.Serialize(payload);
+
+            // SSE streams need ResponseHeadersRead so we don't buffer the whole response.
+            using var request = new HttpRequestMessage(HttpMethod.Post, url)
+            {
+                Content = new StringContent(json, Encoding.UTF8, "application/json")
+            };
+
+            using var response = await _httpClient.SendAsync(
+                request,
+                HttpCompletionOption.ResponseHeadersRead,
+                cancellationToken);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                string err = await response.Content.ReadAsStringAsync();
+                throw new InvalidOperationException(
+                    $"Gemini stream API error ({response.StatusCode}): {err}");
+            }
+
+            using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+            using var reader = new StreamReader(stream, Encoding.UTF8);
+
+            var result = new GeminiChatStreamResult();
+            var pending = new StringBuilder();
+            char[] buf = new char[4096];
+
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                int read = await reader.ReadAsync(buf, 0, buf.Length);
+                if (read == 0) break;
+                pending.Append(buf, 0, read);
+
+                string text = pending.ToString();
+                int sep;
+                while ((sep = text.IndexOf("\n\n", StringComparison.Ordinal)) >= 0)
+                {
+                    string block = text.Substring(0, sep);
+                    text = text.Substring(sep + 2);
+                    pending.Clear();
+                    pending.Append(text);
+
+                    ProcessSseBlock(block, result, onThoughtsDelta, onTextDelta);
+                }
+            }
+
+            // Flush any trailing data not terminated by \n\n
+            if (pending.Length > 0)
+            {
+                ProcessSseBlock(pending.ToString(), result, onThoughtsDelta, onTextDelta);
+            }
+
+            if (!string.IsNullOrEmpty(result.Error))
+            {
+                throw new InvalidOperationException($"Stream error: {result.Error}");
+            }
+
+            result.Completed = true;
+            return result;
+        }
+
+        /// <summary>
+        /// Parses one SSE event block (one or more <c>data: ...</c> lines) and
+        /// dispatches to the appropriate <see cref="GeminiChatStreamResult"/>
+        /// field or callback. Tolerant to malformed lines so a single bad event
+        /// doesn't kill the whole stream.
+        /// </summary>
+        private static void ProcessSseBlock(
+            string block,
+            GeminiChatStreamResult result,
+            Action<string>? onThoughtsDelta,
+            Action<string>? onTextDelta)
+        {
+            foreach (var rawLine in block.Split('\n'))
+            {
+                var line = rawLine.TrimEnd('\r');
+                if (!line.StartsWith("data: ", StringComparison.Ordinal)) continue;
+                string dataJson = line.Substring(6).Trim();
+                if (string.IsNullOrEmpty(dataJson)) continue;
+
+                try
+                {
+                    using var doc = JsonDocument.Parse(dataJson);
+                    var root = doc.RootElement;
+                    if (!root.TryGetProperty("event", out var ev)) continue;
+
+                    switch (ev.GetString())
+                    {
+                        case "start":
+                            if (root.TryGetProperty("session_id", out var sid))
+                                result.SessionId = sid.GetString() ?? string.Empty;
+                            break;
+                        case "thoughts_delta":
+                            string td = root.TryGetProperty("delta", out var tdv) && tdv.ValueKind == JsonValueKind.String
+                                ? tdv.GetString() ?? string.Empty
+                                : string.Empty;
+                            if (!string.IsNullOrEmpty(td))
+                            {
+                                result.Thoughts += td;
+                                onThoughtsDelta?.Invoke(td);
+                            }
+                            break;
+                        case "text_delta":
+                            string xd = root.TryGetProperty("delta", out var xdv) && xdv.ValueKind == JsonValueKind.String
+                                ? xdv.GetString() ?? string.Empty
+                                : string.Empty;
+                            if (!string.IsNullOrEmpty(xd))
+                            {
+                                result.Text += xd;
+                                onTextDelta?.Invoke(xd);
+                            }
+                            break;
+                        case "done":
+                            if (root.TryGetProperty("text", out var ft) && ft.ValueKind == JsonValueKind.String)
+                                result.Text = ft.GetString() ?? result.Text;
+                            if (root.TryGetProperty("thoughts", out var fth) && fth.ValueKind == JsonValueKind.String)
+                                result.Thoughts = fth.GetString() ?? result.Thoughts;
+                            if (root.TryGetProperty("session_id", out var dsid))
+                                result.SessionId = dsid.GetString() ?? result.SessionId;
+                            break;
+                        case "error":
+                            string det = root.TryGetProperty("detail", out var dv) ? dv.GetString() ?? "unknown" : "unknown";
+                            result.Error = det;
+                            break;
+                    }
+                }
+                catch (JsonException)
+                {
+                    // skip malformed event — SSE stream should not die on one bad event
+                }
+            }
         }
 
         /// <summary>

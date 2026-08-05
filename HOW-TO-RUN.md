@@ -1,281 +1,222 @@
-# AssetAutomator – Hướng dẫn chạy & vận hành
+# AssetAutomator — Hướng dẫn build, chạy và vận hành
 
-Tài liệu này mô tả cách dự án **AssetAutomator** hoạt động sau khi hoàn tất phase tái cấu trúc (P1–P4) + migrate UI, và cách build/run trên máy Windows.
+> Cập nhật theo mã nguồn ngày 05/08/2026. Ứng dụng chính là **WinUI 3**, project `src/AssetAutomator.WinUI/AssetAutomator.WinUI.csproj`.
 
----
+## 1. Yêu cầu
 
-## 1. Tổng quan
-
-**AssetAutomator** là ứng dụng WPF (.NET 10) phục vụ cho quy trình tạo video tự động với sự hỗ trợ của nhiều AI providers (Gemini, ChatGPT, G-Labs, Flow Local, ElevenLabs…). Ứng dụng có 5 tab chính:
-
-| Tab | Chức năng |
-| --- | --- |
-| **Quản lý Tab** | Tab Tổng hợp – quản lý dự án (Task), điều phối pipeline cũ (`LegacyVideoPipelineService`) |
-| **Kịch bản & Video** | Công cụ tái sử dụng script/video YouTube, rewrite bằng ChatGPT, voice-over, thumbnail |
-| **Hình ảnh** | Tạo ảnh theo lô với nhiều provider (G-Labs webhook :8765, Flow Local :8787) |
-| **Gemini Creator** | Đồ thị node kéo-thả, tạo video end-to-end từ Gemini (Topic → Voiceover → Scene → Image) |
-| **Lịch sử** | Xem lại các task đã chạy |
-
----
-
-## 2. Kiến trúc solution
-
-```
-AssetAutomator.sln
-│
-├── src/
-│   ├── AssetAutomator.Core/              ← Domain models, interfaces, constants
-│   │   ├── Constants/                    (AppConstants, AppLanguageList, TimingConstants…)
-│   │   ├── Interfaces/                   (IConfigService, ILogService, IBrowserService…)
-│   │   ├── Models/                       (AppSettings, BatchProjectModel, GeminiTaskModel…)
-│   │   └── AssetAutomator.Core.csproj
-│   │
-│   ├── AssetAutomator.Infrastructure/    ← Triển khai kỹ thuật (I/O, network, OS helpers)
-│   │   ├── Helpers/                      (ConfigService, PythonServerManager, YoutubeHelper…)
-│   │   ├── Logging/                      (LogService)
-│   │   ├── Services/                     (BrowserService ở đây vì cần WPF)
-│   │   └── AssetAutomator.Infrastructure.csproj
-│   │
-│   ├── AssetAutomator.Application/       ← Business logic + Pipeline orchestration
-│   │   ├── Services/                     (GeminiApiService, GeminiCreatorService,
-│   │   │                                  PipelineOrchestrator, HistoryService, LicenseService…)
-│   │   ├── Steps/                        (Voiceover, SceneBreakdown, ImageGen, Transcript…)
-│   │   └── AssetAutomator.Application.csproj
-│   │
-│   └── AssetAutomator.UI/                ← WPF UI (presentation layer)
-│       ├── App.xaml(.cs)                 ← Composition root, DI bootstrap
-│       ├── MainWindow.xaml(.cs)          ← Cửa sổ chính + 6 partial classes:
-│       │                                  MainWindow.{Tasks,AutomationSteps,History,
-│       │                                  BatchImageGen,GeminiCreator,Profiles}.cs
-│       ├── ConfigService.cs              ← Static bridge → IConfigService (cho field initializers)
-│       ├── Converters/                   (YoutubeUrlConverter, NodeStatusToBrushConverter…)
-│       ├── Models/                       (ProxyTestResultItem, Nodes/…)
-│       ├── Windows/                      (NewProjectWindow, LicenseWindow, BulkTaskWindow,
-│       │                                  ScenesViewerWindow, ProxyTestResultWindow,
-│       │                                  VoiceSelectorWindow, UpdateWindow, WebViewLoginWindow)
-│       ├── Resources/                    (app_logo.png + Styles/{Colors,Metrics,Typography,
-│       │                                  Buttons,Controls,Components,Themes/{Light,Dark}}.xaml)
-│       └── AssetAutomator.UI.csproj
-│
-├── Resources/                            ← Logo gốc (.ico/.png) – tham chiếu bởi csproj
-├── tools/                                ← (PythonEmbed, Scripts…) copy khi build UI
-├── improve-docs/                         ← Tài liệu cải tiến P1–P4
-├── AssetAutomator.csproj                 ← Project top-level (build cả solution nhanh)
-└── HOW-TO-RUN.md                         ← File bạn đang đọc
-```
-
-### Layer dependencies
-
-```
-UI ──► Application ──► Core
- │           │
- │           └────► Infrastructure ──► Core
- └──► Infrastructure (BrowserService có WPF)
-```
-
-- **Core**: không tham chiếu project nào khác, chỉ chứa POCO + interfaces + constants.
-- **Infrastructure**: tham chiếu Core. Cài implementations cho OS, HTTP, proxy, Python embedded.
-- **Application**: tham chiếu Core + Infrastructure. Chứa business logic, pipeline steps.
-- **UI**: tham chiếu cả 3. Composition root (App.xaml.cs) đăng ký DI ở đây.
-
----
-
-## 3. Yêu cầu môi trường
-
-| Thành phần | Yêu cầu |
-| --- | --- |
-| **OS** | Windows 10/11 (64-bit) – do dùng WPF + WebView2 |
-| **.NET SDK** | .NET 10 SDK (preview) – tải từ https://dot.net |
-| **WebView2 Runtime** | Đã cài sẵn trên Windows 10/11 (Edge) |
-| **Chrome / Chromium** | Bắt buộc – phục vụ `BrowserService` (Playwright/puppeteer) |
-| **Python Embedded** | Đặt ở `tools/PythonEmbed/` – app tự khởi động server Python khi cần |
-| **RAM tối thiểu** | 8 GB |
+- Windows 10/11 x64.
+- .NET 10 SDK.
+- Windows App Runtime và WebView2 Runtime tương thích WinUI project.
+- PowerShell 7 (`pwsh`) được ưu tiên; Windows PowerShell là fallback cho setup script.
+- Kết nối mạng ở lần đầu nếu Python embedded/Chromium chưa được bundle.
+- Chrome/Chromium và account/session hợp lệ cho các flow dùng browser automation.
 
 Kiểm tra SDK:
-```bash
+
+```powershell
+dotnet --info
 dotnet --list-sdks
-# cần thấy 10.0.x
 ```
 
----
+## 2. Restore và build
 
-## 4. Build
+Tại repository root:
 
-### Build cả solution
-```bash
-cd D:\Dev\AssetAutomator
-dotnet build AssetAutomator.sln
+```powershell
+dotnet restore AssetAutomator.sln
+dotnet build src/AssetAutomator.WinUI/AssetAutomator.WinUI.csproj -c Debug -p:Platform=x64
 ```
 
-Kết quả mong đợi: `Build succeeded. 0 Error(s)`. Một số **warning** (NU1902 AngleSharp, CS0618 obsolete `GeminiVideoPipelineService` / `LegacyVideoPipelineService`) là bình thường – không ảnh hưởng chức năng.
+WinUI project khai báo platform x64; nên truyền `-p:Platform=x64` khi build/run CLI.
 
-### Build chỉ project UI
-```bash
-dotnet build src/AssetAutomator.UI/AssetAutomator.UI.csproj
+Build cả solution:
+
+```powershell
+dotnet build AssetAutomator.sln -c Debug -p:Platform=x64
 ```
 
-### Clean rebuild (khi cache bị lệch)
-```bash
-dotnet clean AssetAutomator.sln
-dotnet build AssetAutomator.sln
+Không coi warning là “bình thường” một cách mặc định. Ghi nhận warning hiện tại, phân loại warning mới/cũ và xử lý warning liên quan nullable, package vulnerability hoặc XAML binding trước release.
+
+## 3. Chạy app
+
+```powershell
+dotnet run --project src/AssetAutomator.WinUI/AssetAutomator.WinUI.csproj -c Debug -p:Platform=x64
 ```
 
-### Build release
-```bash
-dotnet build AssetAutomator.sln -c Release
+Nếu đã build:
+
+```powershell
+.\src\AssetAutomator.WinUI\bin\x64\Debug\net10.0-windows10.0.26100.0\AssetAutomator.WinUI.exe
 ```
 
-Output: `src/AssetAutomator.UI/bin/Debug/net10.0-windows/AssetAutomator.UI.exe`
+Đường dẫn output có thể khác theo SDK/cấu hình. Nếu không thấy file, kiểm tra output được in bởi `dotnet build` thay vì giả định thư mục.
 
----
+## 4. Kiểm tra startup
 
-## 5. Run
+Sau khi chạy, xác nhận:
 
-### Cách 1: dotnet CLI
-```bash
-cd D:\Dev\AssetAutomator
-dotnet run --project src/AssetAutomator.UI/AssetAutomator.UI.csproj
+- Cửa sổ `AssetAutomator` mở được.
+- Navigation có Automation Tasks, Image Pool, Chrome Profiles, Gemini AI Creator, Batch Image Gen, History và Settings.
+- Flow Local indicator chuyển khỏi trạng thái “đang kiểm tra”.
+- Settings page đọc/lưu được cấu hình.
+- Không có exception mới trong debugger/log.
+
+Đây là smoke test startup, không chứng minh các API/provider ngoài đang hoạt động.
+
+## 5. Python embedded và Flow Local
+
+Khi auto-launch được bật, app kiểm tra:
+
+- `tools/PythonEmbed/python.exe`.
+- `tools/PythonEmbed/.installed-marker`.
+- `tools/Scripts/Setup-PythonEmbed.ps1`.
+- Google Flow source trong `tools/PythonSource/`.
+
+Nếu thiếu runtime, app có thể chạy setup script. Có thể chuẩn bị thủ công:
+
+```powershell
+pwsh -File tools/Scripts/Setup-PythonEmbed.ps1
 ```
 
-### Cách 2: chạy exe đã build
-```bash
-src\AssetAutomator.UI\bin\Debug\net10.0-windows\AssetAutomator.UI.exe
+Sau setup, chạy lại app và kiểm tra endpoint mặc định:
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:8787/health
 ```
 
-### Cách 3: Visual Studio
-1. Mở `AssetAutomator.sln`
-2. Set `AssetAutomator.UI` làm **Startup Project**
-3. Nhấn **F5**
+Cấu hình liên quan:
 
-### Khi nào thì coi như thành công?
-- Cửa sổ WPF bật lên với **title "AssetAutomator"**, kích thước `1240×700`, icon "A" màu xanh.
-- Tab mặc định là **Tab Tổng hợp**.
-- Không có hộp thoại exception, không có `crash.log` được tạo ở thư mục exe.
+- `GoogleFlow2RootPath`
+- `GoogleFlow2Port`
+- `GoogleFlow2AutoLaunch`
+- `ImageApiUrl`
+- `ImageApiKey`
 
-### File log
-- `crash.log` ở thư mục exe khi có unhandled exception.
-- Log UI realtime hiển thị ở phần dưới của MainWindow.
+`ImageApiKey=flow-local-key` là token nội bộ mặc định của server local trong thiết kế hiện tại; không phải Google API key. Nếu expose server ra ngoài loopback, phải thay cơ chế auth phù hợp.
 
----
+## 6. Cấu hình ứng dụng
 
-## 6. Cấu hình (AppSettings)
+Settings được lưu ở:
 
-App dùng JSON ở `%APPDATA%\AssetAutomator\settings.json` (hoặc đường dẫn tương đương trong `IConfigService`). Các key quan trọng:
-
-| Key | Mô tả |
-| --- | --- |
-| `GeminiApiBaseUrl` | URL server Python (mặc định `http://localhost:8000`) |
-| `G LabsApiKey` | API key cho G-Labs webhook |
-| `FlowLocalApiKey` | API key cho Flow Local API |
-| `SelectedScriptwriterGem` / `SelectedSceneCreatorGem` | ID model Gemini mặc định |
-| `OpenAIApiKey` | API key cho ChatGPT rewrite |
-| `ProxyList` | Danh sách proxy (mỗi dòng 1 proxy) |
-
-Chỉnh sửa trong UI: **Tab Tổng hợp** → Settings panel, hoặc sửa JSON trực tiếp khi app đang tắt.
-
----
-
-## 7. Dependency Injection (DI)
-
-UI dùng **Microsoft.Extensions.DependencyInjection** + **Microsoft.Extensions.Hosting**.
-
-### Composition root: `src/AssetAutomator.UI/App.xaml.cs`
-```csharp
-_host = Host.CreateDefaultBuilder()
-    .ConfigureServices((context, services) =>
-    {
-        services.AddSingleton<Core.Interfaces.IConfigService, Infrastructure.Services.ConfigService>();
-        services.AddSingleton<Core.Interfaces.ILogService, Infrastructure.Logging.LogService>();
-        services.AddSingleton<Application.Services.HistoryService>();
-        services.AddSingleton<Application.Services.LicenseService>();
-        services.AddSingleton<Application.Services.ChatGptService>();
-    })
-    .Build();
+```text
+%APPDATA%\AssetAutomator\appsettings.json
 ```
 
-### Bridge static
-`MainWindow.BatchImageGen.cs` có field initializers kiểu:
-```csharp
-private readonly BatchProjectService _batchProjectService = new BatchProjectService(ConfigService.Instance);
+Các nhóm cấu hình chính:
+
+- AI84/API key và image provider credentials.
+- Gemini API base URL.
+- Image API URL/key.
+- Subtitle API và license server URL.
+- Output/project/profile directories.
+- Proxy file paths.
+- Gem IDs và provider mặc định.
+
+Các environment override hiện có trong `ConfigService`:
+
+- `AI84_API_KEY`
+- `IMAGE_API_URL`
+- `IMAGE_API_KEY`
+
+Lưu ý: config hiện serialize credential plain text. Không chia sẻ file này; xem [Hạn chế](./docs/product/LIMITATIONS.md).
+
+## 7. Chạy workflow Gemini
+
+Trước khi chạy batch lớn:
+
+1. Mở Settings và kiểm tra AI84, Gemini, Flow Local/output path.
+2. Kiểm tra Flow Local `/health` nếu dùng provider này.
+3. Tạo một task với topic hoặc URL.
+4. Chọn voice, language, gem/model và image provider.
+5. Chạy một task trước để xác nhận output.
+6. Sau đó mới tăng số task batch.
+
+Artifact chính:
+
+```text
+<output-task>/
+  transcript.txt
+  voiceover.mp3 hoặc voiceover.wav
+  voiceover.srt
+  scenes.json
+  img/
+    <scene-id>.png
 ```
-Vì field initializers chạy trước constructor, cần bridge:
-```csharp
-// AssetAutomator.UI.ConfigService (static helper)
-public static IConfigService Instance { get; private set; } = null!;
-public static AppSettings CurrentSettings => Instance?.CurrentSettings ?? new AppSettings();
-public static void SetProvider(IConfigService provider) { Instance = provider; }
+
+Pipeline có thể skip stage nếu artifact hợp lệ đã có trong đúng folder task.
+
+## 8. Batch Image Gen
+
+- Flow Local mặc định: `http://127.0.0.1:8787/v1`.
+- G-Labs: URL/key theo Settings.
+- Health endpoint Flow Local nằm ở root `/health`, không phải `/v1/health`.
+- Ảnh tham chiếu có thể được upload một lần và tái sử dụng qua `reference_media_id`.
+
+Khi lỗi:
+
+- Xác nhận provider/URL/key.
+- Kiểm tra server health.
+- Kiểm tra output directory có quyền ghi.
+- Thử một prompt và một ảnh trước khi chạy batch.
+
+## 9. Publish x64
+
+```powershell
+dotnet publish src/AssetAutomator.WinUI/AssetAutomator.WinUI.csproj `
+  -c Release `
+  -r win-x64 `
+  --self-contained true `
+  -p:Platform=x64 `
+  -p:WindowsPackageType=None `
+  -p:PublishSingleFile=false
 ```
-`App.OnStartup` gọi:
-```csharp
-ConfigService.SetProvider(Services.GetRequiredService<IConfigService>());
-MainWindow = new MainWindow();
-MainWindow.Show();
-```
 
----
+Trước khi phát hành:
 
-## 8. Pipeline chạy như thế nào?
-
-### 8.1. Legacy YouTube pipeline (Tab Tổng hợp / Kịch bản & Video)
-`LegacyVideoPipelineService` chạy tuần tự 5 step:
-1. **TranscriptExtractionStep** – tải transcript YouTube (qua Python `yt-dlp`)
-2. **ChatGptRewriteStep** – viết lại kịch bản tiếng Việt
-3. **VoiceoverGenerationStep** – tạo voice-over (ElevenLabs)
-4. **GeminiSceneBreakdownStep** – tách thành các scene
-5. **SceneImageBatchStep** – sinh ảnh cho từng scene
-
-### 8.2. Gemini Creator pipeline (Tab Gemini)
-- **PipelineOrchestrator** (multi-task, 4-stage matrix với rate-limit) — chạy nhiều task song song, mỗi task đi qua 4 giai đoạn:
-  1. **GeminiTopicResearchStep** – nghiên cứu chủ đề
-  2. **VoiceoverGenerationStep** – tạo voice-over
-  3. **GeminiPlaywrightSceneBreakdownStep** – tách scene (dùng Playwright headless)
-  4. **SceneImageBatchStep** – sinh ảnh
-- **GeminiVideoPipelineService** (legacy) – vẫn giữ cho tương thích ngược (đánh dấu `[Obsolete]`).
-
-### 8.3. Hình ảnh lô (Tab Hình ảnh)
-- `BatchImageGenService` gọi provider qua `IImageGenProvider` factory:
-  - `FlowLocalImageGenProvider` (Flow Local API, port 8787)
-  - `GlabsImageGenProvider` (G-Labs webhook, port 8765)
-- `BatchProjectService` quản lý project lô (`BatchProjectModel`).
-
----
-
-## 9. Mở rộng / Add service mới
-
-1. Đăng ký interface trong `Core/Interfaces/`
-2. Implement trong `Application/Services/` (hoặc `Infrastructure/Helpers/`)
-3. Inject trong `App.xaml.cs`:
-   ```csharp
-   services.AddSingleton<IMyService, MyService>();
-   ```
-4. Resolve ở MainWindow:
-   ```csharp
-   var svc = App.Services.GetRequiredService<IMyService>();
-   ```
-
----
+- Chạy trên máy Windows sạch.
+- Xác nhận Python/Chromium được bundle hoặc first-run setup hoạt động.
+- Không đóng gói cookie, appsettings thật, log hoặc output test.
+- Kiểm tra license/update endpoint theo environment release.
+- Lưu dependency/version manifest của package.
 
 ## 10. Troubleshooting
 
-| Triệu chứng | Nguyên nhân / Cách xử lý |
-| --- | --- |
-| App crash ngay khi mở, log `configService` null | Bridge `ConfigService.SetProvider(...)` chưa được gọi trước `new MainWindow()`. Kiểm tra `App.OnStartup`. |
-| `Cannot locate resource 'resources/app_logo.png'` | File `src/AssetAutomator.UI/Resources/app_logo.png` bị xóa hoặc csproj mất `<Resource Include="Resources\app_logo.png" />`. |
-| Tab Gemini không load gem list | Server Python chưa chạy. Kiểm tra `PythonServerManager.Default` & cổng 8000. |
-| Tab Gemini log `UNUTHENTICATED` / `Unexpected response data structure: )]}'` / `500 Internal Server Error` từ `/api/gems` | `cookies.json` hết hạn (Google rotate session tokens mỗi ~24h). Vào tab Gemini → **Nhập Cookies** (Chrome profile có gemini.google.com đang đăng nhập) hoặc chạy Playwright login. Xem mục "Làm mới cookies" trong tab Gemini. |
-| `Errno 10048 address already in use` khi restart server | Có process `python.exe` khác đang giữ cổng 8000. Đã fix tự động trong `PythonServerManager` (kill theo PID port-holder). Nếu orphan thuộc SYSTEM thì cần `taskkill /PID <pid> /T /F` với quyền Admin. |
-| Ảnh lô lỗi "API key invalid" | Mở Settings → nhập lại API key cho provider tương ứng. |
-| `CS0234 GemOptionItem ambiguous` | Không nên xảy ra sau P4; nếu vẫn gặp thì kiểm tra cả 2 file `Models/Nodes/GeminiGraphModels.cs` và `Core/Models/GemOptionItem.cs`. UI chỉ dùng Core version (đã alias). |
-| AngleSharp warning `NU1902` | Cảnh báo transitive dependency; không ảnh hưởng runtime. Có thể bỏ qua. |
+### App không build hoặc XAML compiler fail
 
----
+- Chạy restore project WinUI.
+- Đảm bảo target/platform đúng.
+- Đóng process app/Visual Studio nếu DLL đang bị lock.
+- Build với verbosity cao và cô lập XAML vừa thay đổi.
+
+```powershell
+dotnet restore src/AssetAutomator.WinUI/AssetAutomator.WinUI.csproj
+dotnet build src/AssetAutomator.WinUI/AssetAutomator.WinUI.csproj -c Debug -p:Platform=x64 -v:diag
+```
+
+### Flow Local không khởi động
+
+- Kiểm tra marker và Python executable.
+- Chạy setup script thủ công.
+- Kiểm tra port 8787 có bị chiếm.
+- Kiểm tra `GoogleFlow2RootPath` và log setup/server.
+
+### Gemini không load gem hoặc scene
+
+- Kiểm tra API local port 8000.
+- Kiểm tra cookie/session/profile Chrome.
+- Thử API stream trước Playwright.
+- Xác nhận selector/browser flow chưa bị dịch vụ ngoài thay đổi.
+
+### Cancel nhưng task chưa dừng ngay
+
+Đây là hạn chế hiện tại: token chưa được truyền xuyên suốt mọi step. Không force kill app khi đang ghi output nếu chưa sao lưu; xem roadmap cancellation.
 
 ## 11. Tài liệu liên quan
 
-- `improve-docs/INDEX.md` – danh sách phase cải tiến P1–P4
-- `improve-docs/check-list.md` – checklist các đầu việc đã hoàn thành
-- `improve-docs/p4-project-cleanup.md` – chi tiết tái cấu trúc P4 (tách Core/Infrastructure/Application/UI)
-
----
-
-**Trạng thái**: ✅ Build pass (0 errors), ✅ App khởi động thành công với title `AssetAutomator`.
+- [Mục lục tài liệu](./docs/README.md)
+- [Tính năng](./docs/product/FEATURES.md)
+- [Hạn chế](./docs/product/LIMITATIONS.md)
+- [Kiến trúc](./docs/engineering/ARCHITECTURE.md)
+- [Code quality](./docs/engineering/CODE-QUALITY.md)
+- [Roadmap](./docs/engineering/IMPROVEMENT-ROADMAP.md)
+- [Flow API](./FLOW-API.md)

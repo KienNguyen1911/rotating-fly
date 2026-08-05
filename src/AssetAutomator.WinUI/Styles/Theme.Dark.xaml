@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Theme.Dark.xaml
+  Dark-theme SolidColorBrush values for every semantic token
+  defined in Theme.xaml.
+-->
+<ResourceDictionary
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <SolidColorBrush x:Key="Surface.DefaultBrush" Color="{StaticResource Color.CanvasDark}" />
+    <SolidColorBrush x:Key="Surface.RaisedBrush" Color="{StaticResource Color.SurfaceSoftDark}" />
+    <SolidColorBrush x:Key="Surface.HoverBrush" Color="{StaticResource Color.SurfaceStrongDark}" />
+    <SolidColorBrush x:Key="Surface.SelectedBrush" Color="{StaticResource Color.SurfaceStrongDark}" />
+    <SolidColorBrush x:Key="Surface.SoftBrush" Color="{StaticResource Color.SurfaceSoftDark}" />
+    <SolidColorBrush x:Key="Surface.CardBrush" Color="{StaticResource Color.SurfaceCardDark}" />
+    <SolidColorBrush x:Key="Surface.StrongBrush" Color="{StaticResource Color.SurfaceStrongDark}" />
+
+    <SolidColorBrush x:Key="Content.PrimaryBrush" Color="{StaticResource Color.InkDark}" />
+    <SolidColorBrush x:Key="Content.MutedBrush" Color="{StaticResource Color.BodyDark}" />
+    <SolidColorBrush x:Key="Content.OnActionBrush" Color="{StaticResource Color.OnAction}" />
+
+    <SolidColorBrush x:Key="Border.DefaultBrush" Color="{StaticResource Color.HairlineDark}" />
+    <SolidColorBrush x:Key="Border.SubtleBrush" Color="{StaticResource Color.SurfaceStrongDark}" />
+    <SolidColorBrush x:Key="Action.PrimaryBrush" Color="{StaticResource Color.PrimaryDark}" />
+
+    <SolidColorBrush x:Key="Status.PendingBrush" Color="{StaticResource Color.PendingDark}" />
+    <SolidColorBrush x:Key="Status.WarningBrush" Color="{StaticResource Color.Warning}" />
+    <SolidColorBrush x:Key="Status.SuccessBrush" Color="{StaticResource Color.Success}" />
+    <SolidColorBrush x:Key="Status.DangerBrush" Color="{StaticResource Color.Danger}" />
+
+    <SolidColorBrush x:Key="CanvasBrush" Color="{StaticResource Color.CanvasDark}" />
+    <SolidColorBrush x:Key="InkBrush" Color="{StaticResource Color.InkDark}" />
+    <SolidColorBrush x:Key="BodyBrush" Color="{StaticResource Color.BodyDark}" />
+    <SolidColorBrush x:Key="PrimaryBrush" Color="{StaticResource Color.PrimaryDark}" />
+    <SolidColorBrush x:Key="PrimaryActiveBrush" Color="{StaticResource Color.PrimaryActiveDark}" />
+    <SolidColorBrush x:Key="PrimaryDisabledBrush" Color="{StaticResource Color.PrimaryDisabledDark}" />
+    <SolidColorBrush x:Key="SurfaceSoftBrush" Color="{StaticResource Color.SurfaceSoftDark}" />
+    <SolidColorBrush x:Key="SurfaceCardBrush" Color="{StaticResource Color.SurfaceCardDark}" />
+    <SolidColorBrush x:Key="SurfaceStrongBrush" Color="{StaticResource Color.SurfaceStrongDark}" />
+    <SolidColorBrush x:Key="HairlineBrush" Color="{StaticResource Color.HairlineDark}" />
+    <SolidColorBrush x:Key="SemanticUpBrush" Color="{StaticResource Color.Success}" />
+    <SolidColorBrush x:Key="SemanticDownBrush" Color="{StaticResource Color.Danger}" />
+    <SolidColorBrush x:Key="OnPrimaryBrush" Color="{StaticResource Color.OnAction}" />
+    <SolidColorBrush x:Key="MutedSoftBrush" Color="{StaticResource Color.MutedSoftDark}" />
+    <SolidColorBrush x:Key="SubtleBrush" Color="{StaticResource Color.SubtleDark}" />
+</ResourceDictionary>

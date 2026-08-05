@@ -1,0 +1,132 @@
+Flow Image Local API - Local Maintenance Changelog
+
+This file is for the maintainer only.
+It records the practical changes made during local deployment, debugging, packaging, setup-page iteration, and third-party API compatibility work.
+
+1. v1.0.0 baseline
+
+- Added a local OpenAI-compatible API wrapper around the original Flow image CLI.
+- Added compatible endpoints:
+  /v1/models
+  /v1/images/generations
+  /v1/images/edits
+  /v1/chat/completions
+  /v1/files/{filename}
+- Added one-click scripts:
+  install.bat
+  start-flow-api.bat
+- Added /setup guided setup page.
+- Added card-style API result display instead of raw JSON.
+- Added API usage documentation in API_USAGE.md.
+- Cleaned the repo for public publishing:
+  removed old extension/token-server flow
+  removed flow_token_server.py
+  removed flow-token-updater/
+  rewrote README.md and README-zh.md
+- Added release packaging helpers under release-package/.
+
+2. Third-party API compatibility work
+
+- Added prompt parsing support for:
+  Preferred size: 1K / 2K / 4K
+  Preferred aspect ratio: 1:1 / 9:16 / 16:9 / 21:9
+- Added size mapping:
+  1K
+  2K
+  4K
+- Added quality mapping:
+  standard
+  hd
+  2k
+  4k
+- Added aspect ratio mapping:
+  1:1
+  9:16
+  16:9
+  21:9
+- Added model family aliases:
+  gemini-3.1-flash-image
+  gemini-3.0-pro-image
+  imagen-4.0-generate-preview
+  nano banana2
+  nano banana pro
+- Added nano banana pro.
+- Kept nano banana2.
+- Restricted 21:9 to nano banana2 only in the compatible API layer.
+
+3. Login and setup reliability fixes
+
+- Reworked login detection to support split NextAuth cookies such as:
+  __Secure-next-auth.session-token
+  __Secure-next-auth.session-token.0
+  __Secure-next-auth.session-token.1
+- Prevented /setup/status from failing with 500 when cookie detection throws.
+- Added login_error to setup status for easier debugging.
+- Improved setup status so persisted tokens also count as a detected login state:
+  st
+  at
+  project_id
+- Fixed the case where API info was already available but login status still showed as undetected.
+
+4. Browser control improvements
+
+- Changed 重新登录 from simple reopen to a true fresh relogin flow:
+  clear local token state
+  remove local browser profile
+  reopen Flow login page
+- Added browser window visibility control in /setup.
+- Reworked browser hide/show to use Windows-native window control instead of the previous unreliable behavior.
+- Added status fields:
+  browser_open
+  browser_visible
+  live_login_detected
+  persisted_login_detected
+
+5. Startup and packaging fixes
+
+- Fixed FLOW_API_KEY trimming so trailing spaces no longer break authentication.
+- Fixed start-flow-api.bat to stop old google_flow.api_server processes before launching a new one.
+- Fixed packaging issues where some test zips were incomplete and missed files such as:
+  requirements.txt
+  pyproject.toml
+  start-flow-api.bat
+- Rebuilt complete release packages and removed:
+  __pycache__
+  *.pyc
+
+6. Setup UI adjustments
+
+- Added setup guidance step 4:
+  if auto configuration fails, check magic network / proxy and prefer global + TUN mode
+- Switched API result notes to Chinese.
+- Removed the outdated 21:9 note from the API result card because Flow does not support 21:9 generation in the real upstream workflow.
+- Added a later cleanup pass to simplify the API result notes.
+- Updated recommended models in setup result to:
+  nano banana2
+  nano banana pro
+- Updated setup result notes to:
+  请保持这台电脑开机并保持 API 服务运行。
+  请保持这台电脑上的 Google Flow 登录状态。
+  OpenAI Chat接口完整示例：http://127.0.0.1:8787/v1/chat/completions
+  其他接口格式详README-zh文件
+
+7. Network failure handling
+
+- Added a pre-check for connectivity to labs.google:443 before final Flow setup.
+- Changed /setup/finalize so network failures return a readable JSON error instead of an unhandled 500.
+- Improved error typing for:
+  network_unreachable
+  network_timeout
+  flow_request_failed
+
+8. Notes for future maintenance
+
+- If the browser can open Google Flow but /setup/finalize fails, first check whether the Python process can access labs.google:443.
+- If browser login works but setup never detects login, check whether Google cookies changed again.
+- If a packaged zip fails during install.bat, verify the package includes:
+  requirements.txt
+  pyproject.toml
+  install.bat
+  start-flow-api.bat
+  google_flow/
+- Prefer rebuilding packages from the source workspace instead of re-zipping older extracted test folders.

@@ -28,7 +28,7 @@ namespace AssetAutomator.Core.Models
 
         public int Index { get; set; }
         public string TaskId { get; set; } = string.Empty;
-        public string Provider { get; set; } = "glabs"; // "glabs" or "flow_local"
+        public string Provider { get; set; } = "flow_local"; // always Google Flow Local
 
         public string Prompt
         {
@@ -49,7 +49,7 @@ namespace AssetAutomator.Core.Models
         }
 
         public string Engine { get; set; } = "flow";
-        public string Model { get; set; } = "nano_banana_2";
+        public string Model { get; set; } = "nano-banana-2";
 
         public string AspectRatio
         {
@@ -153,6 +153,7 @@ namespace AssetAutomator.Core.Models
             set { _finishedAt = value; OnPropertyChanged(); }
         }
 
+        public string IndexFormatted => Index.ToString();
         public string CreatedTimeFormatted => EnqueuedAt.ToString("HH:mm:ss");
         public string FinishedTimeFormatted => FinishedAt?.ToString("HH:mm:ss") ?? string.Empty;
 

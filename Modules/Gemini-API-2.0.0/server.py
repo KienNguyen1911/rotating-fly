@@ -350,6 +350,7 @@ class ChatRequest(BaseModel):
     files: Optional[List[str]] = Field(None, description="Optional list of local file paths to upload and attach to the chat prompt.")
     deep_research: bool = Field(False, description="Set to True to trigger automated Deep Research mode.")
     temporary: bool = Field(False, description="Set to True to prevent saving conversation in Gemini history.")
+    enable_thinking: bool = Field(True, description="Set to True to prefer thinking-capable models (auto-upgrades non-thinking model names to their -thinking variant).")
 
 class ImageOutput(BaseModel):
     url: str
@@ -573,14 +574,25 @@ async def chat_with_gem(req: ChatRequest):
             chat_kwargs = {}
             if req.gem_id:
                 chat_kwargs["gem"] = req.gem_id
-            if req.model:
-                chat_kwargs["model"] = req.model
+            # Resolve model name: if enable_thinking is on and user didn't
+            # explicitly request a thinking model, auto-upgrade to the
+            # -thinking variant so extended thinking is active by default.
+            resolved_model = req.model
+            if resolved_model and req.enable_thinking:
+                lower = resolved_model.lower()
+                if "thinking" not in lower and "advanced" not in lower:
+                    if "flash" in lower and not lower.endswith("-thinking"):
+                        resolved_model = resolved_model + "-thinking"
+                    elif "pro" in lower and not lower.endswith("-thinking"):
+                        resolved_model = resolved_model + "-thinking"
+            if resolved_model:
+                chat_kwargs["model"] = resolved_model
             chat_sessions[session_id] = client.start_chat(**chat_kwargs)
             # ── MODEL LOGGING: hiển thị model + thinking status ──
-            model_name = req.model or "default"
+            model_name = resolved_model or req.model or "default"
             is_thinking = "thinking" in model_name.lower()
             thinking_tag = "🧠 THINKING" if is_thinking else "📄 STANDARD"
-            log.info(f"[MODEL] Session {session_id[:8]} → model={model_name} | {thinking_tag} | gem={req.gem_id or 'default'}")
+            log.info(f"[MODEL] Session {session_id[:8]} → model={model_name} | {thinking_tag} | gem={req.gem_id or 'default'} | enable_thinking={req.enable_thinking}")
         elif req.gem_id:
             # Safeguard: if session exists but requested gem_id differs, re-initialize chat session for new Gem
             existing_chat = chat_sessions[session_id]
@@ -689,7 +701,7 @@ async def chat_stream(req: ChatRequest):
         if req.gem_id:
             chat_kwargs["gem"] = req.gem_id
         chat_sessions[session_id] = client.start_chat(**chat_kwargs)
-        
+
     chat = chat_sessions[session_id]
 
     async def event_generator():
@@ -704,6 +716,99 @@ async def chat_stream(req: ChatRequest):
             yield f"data: {json.dumps({'event': 'error', 'detail': str(e)})}\n\n"
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
+@app.post("/api/chat/stream-extended", summary="Stream Chat with extended thinking (SSE)")
+async def chat_stream_extended(req: ChatRequest):
+    """
+    Gửi tin nhắn và stream cả `text_delta` (câu trả lời) lẫn `thoughts_delta`
+    (chuỗi tư duy mở rộng) theo thời gian thực. Mirror đúng behavior của
+    `client.generate_content_stream()` trong `test_gem_and_thinking.py`.
+
+    Events phát ra:
+      - 'start'            : bắt đầu, kèm session_id
+      - 'thoughts_delta'   : chuỗi tư duy mới (delta — chỉ phần thêm vào)
+      - 'text_delta'       : câu trả lời mới (delta)
+      - 'done'             : kết thúc, kèm full text + full thoughts
+      - 'error'            : lỗi, kèm detail
+    """
+    if client is None:
+        raise HTTPException(status_code=503, detail="Gemini client is not initialized.")
+
+    try:
+        session_id = req.session_id or str(uuid.uuid4())
+
+        if session_id not in chat_sessions:
+            chat_kwargs = {}
+            if req.gem_id:
+                chat_kwargs["gem"] = req.gem_id
+            # Resolve model với cùng logic như /api/chat
+            resolved_model = req.model
+            if resolved_model and req.enable_thinking:
+                lower = resolved_model.lower()
+                if "thinking" not in lower and "advanced" not in lower:
+                    if "flash" in lower and not lower.endswith("-thinking"):
+                        resolved_model = resolved_model + "-thinking"
+                    elif "pro" in lower and not lower.endswith("-thinking"):
+                        resolved_model = resolved_model + "-thinking"
+            if resolved_model:
+                chat_kwargs["model"] = resolved_model
+            chat_sessions[session_id] = client.start_chat(**chat_kwargs)
+
+            model_name = resolved_model or req.model or "default"
+            is_thinking = "thinking" in model_name.lower()
+            thinking_tag = "🧠 THINKING" if is_thinking else "📄 STANDARD"
+            log.info(
+                f"[MODEL-EXT] Session {session_id[:8]} → model={model_name} | "
+                f"{thinking_tag} | gem={req.gem_id or 'default'} | "
+                f"enable_thinking={req.enable_thinking} | files={len(req.files or [])}"
+            )
+
+        chat = chat_sessions[session_id]
+
+        async def event_generator():
+            full_text_parts: list[str] = []
+            full_thoughts_parts: list[str] = []
+            try:
+                yield f"data: {json.dumps({'event': 'start', 'session_id': session_id})}\n\n"
+                async for chunk in chat.send_message_stream(
+                    req.message,
+                    files=req.files,
+                    temporary=req.temporary,
+                ):
+                    if chunk.thoughts_delta:
+                        full_thoughts_parts.append(chunk.thoughts_delta)
+                        payload = json.dumps({
+                            "event": "thoughts_delta",
+                            "delta": chunk.thoughts_delta,
+                        })
+                        yield f"data: {payload}\n\n"
+                    if chunk.text_delta:
+                        full_text_parts.append(chunk.text_delta)
+                        payload = json.dumps({
+                            "event": "text_delta",
+                            "delta": chunk.text_delta,
+                        })
+                        yield f"data: {payload}\n\n"
+
+                # Kết thúc: gửi done kèm full text + thoughts
+                final_payload = json.dumps({
+                    'event': 'done',
+                    'session_id': session_id,
+                    'text': ''.join(full_text_parts),
+                    'thoughts': ''.join(full_thoughts_parts),
+                })
+                yield f"data: {final_payload}\n\n"
+            except GeminiError as e:
+                yield f"data: {json.dumps({'event': 'error', 'detail': f'GeminiError: {str(e)}'})}\n\n"
+            except Exception as e:
+                yield f"data: {json.dumps({'event': 'error', 'detail': str(e)})}\n\n"
+
+        return StreamingResponse(event_generator(), media_type="text/event-stream")
+    except GeminiError as e:
+        raise HTTPException(status_code=400, detail=f"Gemini API Error: {str(e)}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}")
 
 
 @app.get("/api/sessions", summary="List Active Chat Sessions")

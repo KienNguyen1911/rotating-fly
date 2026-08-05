@@ -7,6 +7,7 @@ using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using AssetAutomator.Core.Interfaces;
 using AssetAutomator.Core.Models;
 
 namespace AssetAutomator.Application.Services.Providers
@@ -63,8 +64,25 @@ namespace AssetAutomator.Application.Services.Providers
             string outputDirectory,
             List<(string base64Data, string tag, string filePath)>? refWithFilePath)
         {
-            item.StartedAt = DateTime.Now;
-            item.Status = "Processing";
+            // Capture the originating sync context so all BatchImageItem property
+            // updates marshal back to the UI thread. WinUI bindings raise
+            // PropertyChanged from the dispatcher thread; setting these from a
+            // thread-pool thread causes RPC_E_WRONG_THREAD crashes.
+            var uiContext = SynchronizationContext.Current;
+
+            void SetItemProperty(Action set)
+            {
+                if (uiContext != null && SynchronizationContext.Current != uiContext)
+                {
+                    uiContext.Post(_ => set(), null);
+                }
+                else
+                {
+                    set();
+                }
+            }
+
+            SetItemProperty(() => { item.StartedAt = DateTime.Now; item.Status = "Processing"; });
 
             string baseUrl = string.IsNullOrWhiteSpace(serverUrl) ? "http://127.0.0.1:8787/v1" : serverUrl.TrimEnd('/');
             if (!baseUrl.EndsWith("/v1", StringComparison.OrdinalIgnoreCase) && !baseUrl.Contains("/v1/"))
@@ -136,13 +154,16 @@ namespace AssetAutomator.Application.Services.Providers
                 }
 
                 // Step 2: Perform Image Generation (POST /v1/images/generations with reference_media_id if available)
-                await ProcessGenerationsAsync(item, baseUrl, effApiKey, model, size, quality, effectiveRefMediaId, outputDirectory);
+                await ProcessGenerationsAsync(item, baseUrl, effApiKey, model, size, quality, effectiveRefMediaId, outputDirectory, uiContext);
             }
             catch (Exception ex)
             {
-                item.Status = "Failed";
-                item.ErrorMessage = $"Error: {ex.Message}";
-                item.FinishedAt = DateTime.Now;
+                SetItemProperty(() =>
+                {
+                    item.Status = "Failed";
+                    item.ErrorMessage = $"Error: {ex.Message}";
+                    item.FinishedAt = DateTime.Now;
+                });
             }
         }
 
@@ -199,7 +220,8 @@ namespace AssetAutomator.Application.Services.Providers
             string size,
             string quality,
             string? referenceMediaId,
-            string outputDirectory)
+            string outputDirectory,
+            SynchronizationContext? uiContext)
         {
             string endpoint = $"{baseUrl}/images/generations";
 
@@ -270,19 +292,56 @@ namespace AssetAutomator.Application.Services.Providers
 
                         if (retryResponse.IsSuccessStatusCode)
                         {
-                            await HandleOpenAiResponseAsync(item, retryContent, outputDirectory);
+                            await HandleOpenAiResponseAsync(item, retryContent, outputDirectory, uiContext);
                             return;
                         }
                     }
                 }
 
-                item.Status = "Failed";
-                item.ErrorMessage = FormatErrorMessage((int)response.StatusCode, responseContent);
-                item.FinishedAt = DateTime.Now;
+                SetItemStatusFailed(item, uiContext, FormatErrorMessage((int)response.StatusCode, responseContent));
                 return;
             }
 
-            await HandleOpenAiResponseAsync(item, responseContent, outputDirectory);
+            await HandleOpenAiResponseAsync(item, responseContent, outputDirectory, uiContext);
+        }
+
+        private static void SetItemStatusFailed(BatchImageItem item, SynchronizationContext? uiContext, string errorMessage)
+        {
+            void Apply()
+            {
+                item.Status = "Failed";
+                item.ErrorMessage = errorMessage;
+                item.FinishedAt = DateTime.Now;
+            }
+            if (uiContext != null && SynchronizationContext.Current != uiContext)
+            {
+                uiContext.Post(_ => Apply(), null);
+            }
+            else
+            {
+                Apply();
+            }
+        }
+
+        private static void SetItemStatusDone(BatchImageItem item, SynchronizationContext? uiContext, string savedPath, string? mediaId, string? flowProjectId, string? flowProjectUrl)
+        {
+            void Apply()
+            {
+                if (!string.IsNullOrEmpty(mediaId)) item.MediaId = mediaId;
+                if (!string.IsNullOrEmpty(flowProjectId)) item.FlowProjectId = flowProjectId;
+                if (!string.IsNullOrEmpty(flowProjectUrl)) item.FlowProjectUrl = flowProjectUrl;
+                item.ImagePath = savedPath;
+                item.Status = "Done";
+                item.FinishedAt = DateTime.Now;
+            }
+            if (uiContext != null && SynchronizationContext.Current != uiContext)
+            {
+                uiContext.Post(_ => Apply(), null);
+            }
+            else
+            {
+                Apply();
+            }
         }
 
         private async Task<string?> UploadReferenceImageAndGetMediaIdAsync(
@@ -357,7 +416,7 @@ namespace AssetAutomator.Application.Services.Providers
             return null;
         }
 
-        private async Task HandleOpenAiResponseAsync(BatchImageItem item, string jsonResponse, string outputDirectory)
+        private async Task HandleOpenAiResponseAsync(BatchImageItem item, string jsonResponse, string outputDirectory, SynchronizationContext? uiContext)
         {
             using var doc = JsonDocument.Parse(jsonResponse);
             var root = doc.RootElement;
@@ -366,28 +425,15 @@ namespace AssetAutomator.Application.Services.Providers
             {
                 var firstItem = dataArr[0];
 
-                if (firstItem.TryGetProperty("media_id", out var mediaIdProp))
-                {
-                    item.MediaId = mediaIdProp.GetString();
-                }
-
-                if (firstItem.TryGetProperty("project_id", out var projIdProp) && !string.IsNullOrEmpty(projIdProp.GetString()))
-                {
-                    item.FlowProjectId = projIdProp.GetString();
-                }
-
-                if (firstItem.TryGetProperty("project_url", out var projUrlProp) && !string.IsNullOrEmpty(projUrlProp.GetString()))
-                {
-                    item.FlowProjectUrl = projUrlProp.GetString();
-                }
+                string? mediaId = firstItem.TryGetProperty("media_id", out var mediaIdProp) ? mediaIdProp.GetString() : null;
+                string? projId = firstItem.TryGetProperty("project_id", out var projIdProp) ? projIdProp.GetString() : null;
+                string? projUrl = firstItem.TryGetProperty("project_url", out var projUrlProp) ? projUrlProp.GetString() : null;
 
                 if (firstItem.TryGetProperty("url", out var urlProp) && !string.IsNullOrEmpty(urlProp.GetString()))
                 {
                     string fileUrl = urlProp.GetString()!;
                     string savedPath = await DownloadOrSaveImageAsync(fileUrl, outputDirectory, item.Index);
-                    item.ImagePath = savedPath;
-                    item.Status = "Done";
-                    item.FinishedAt = DateTime.Now;
+                    SetItemStatusDone(item, uiContext, savedPath, mediaId, projId, projUrl);
                     return;
                 }
                 else if (firstItem.TryGetProperty("b64_json", out var b64Prop) && !string.IsNullOrEmpty(b64Prop.GetString()))
@@ -396,16 +442,12 @@ namespace AssetAutomator.Application.Services.Providers
                     string savedPath = Path.Combine(outputDirectory, $"flow_image_{item.Index}_{DateTime.Now:yyyyMMdd_HHmmss}.png");
                     Directory.CreateDirectory(outputDirectory);
                     await File.WriteAllBytesAsync(savedPath, bytes);
-                    item.ImagePath = savedPath;
-                    item.Status = "Done";
-                    item.FinishedAt = DateTime.Now;
+                    SetItemStatusDone(item, uiContext, savedPath, mediaId, projId, projUrl);
                     return;
                 }
             }
 
-            item.Status = "Failed";
-            item.ErrorMessage = "Flow API did not return image URL or base64 data.";
-            item.FinishedAt = DateTime.Now;
+            SetItemStatusFailed(item, uiContext, "Flow API did not return image URL or base64 data.");
         }
 
         private async Task<string> DownloadOrSaveImageAsync(string fileUrl, string outputDir, int index)

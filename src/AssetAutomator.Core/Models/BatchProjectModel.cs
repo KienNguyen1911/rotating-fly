@@ -18,9 +18,9 @@ namespace AssetAutomator.Core.Models
         public string OutputDir { get; set; } = string.Empty;
         public List<string> RefImagePaths { get; set; } = new List<string>();
 
-        public string Provider { get; set; } = "glabs";
+        public string Provider { get; set; } = "flow_local";
         public string Engine { get; set; } = "flow";
-        public string Model { get; set; } = "nano_banana_2";
+        public string Model { get; set; } = "nano-banana-2";
         public string AspectRatio { get; set; } = "16:9";
         public string Upscale { get; set; } = "none";
         public int Concurrency { get; set; } = 4;
@@ -50,7 +50,7 @@ namespace AssetAutomator.Core.Models
         public string? FlowProjectTitle { get; set; }
         public string? FlowProjectUrl { get; set; }
         public string Engine { get; set; } = "flow";
-        public string Model { get; set; } = "nano_banana_2";
+        public string Model { get; set; } = "nano-banana-2";
         public string AspectRatio { get; set; } = "16:9";
         public string Upscale { get; set; } = "none";
     }

@@ -1,0 +1,28 @@
+<ContentDialog x:Class="AssetAutomator.WinUI.Views.Dialogs.BulkTaskDialog"
+               xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+               xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+               Title="Tạo Nhiều Task Tự Động"
+               PrimaryButtonText="Tạo Task"
+               CloseButtonText="Hủy bỏ"
+               DefaultButton="Primary"
+               PrimaryButtonClick="ContentDialog_PrimaryButtonClick">
+
+    <StackPanel Spacing="12" MinWidth="480">
+        <TextBlock Text="Nhập danh sách YouTube URL và Voice ID (1 dòng = 1 link + 1 voice id, phân tách bởi khoảng trắng hoặc tab):"
+                   Style="{ThemeResource BodyTextBlockStyle}"
+                   TextWrapping="Wrap"
+                   Opacity="0.8" />
+        <TextBlock Text="Ví dụ:&#x0a;https://www.youtube.com/watch?v=sHo_tlZ3PZ0  UgBBYS2sOqTuMpoF3BR0&#x0a;https://www.youtube.com/watch?v=YGpllKL3YP8  UgBBYS2sOqTuMpoF3BR0"
+                   Style="{ThemeResource CaptionTextBlockStyle}"
+                   FontFamily="Consolas"
+                   Opacity="0.6"
+                   TextWrapping="Wrap" />
+
+        <TextBox x:Name="TxtBulkInput"
+                 AcceptsReturn="True"
+                 TextWrapping="Wrap"
+                 FontFamily="Consolas"
+                 MinHeight="180"
+                 PlaceholderText="Dán danh sách URL tại đây..." />
+    </StackPanel>
+</ContentDialog>

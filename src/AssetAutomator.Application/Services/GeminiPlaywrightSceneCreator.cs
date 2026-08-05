@@ -1028,11 +1028,18 @@ namespace AssetAutomator.Application.Services
             await Task.Delay(3000);
 
             var startTime = DateTime.Now;
-            var wait = maxWait ?? TimeSpan.FromMinutes(10);
+            var wait = maxWait ?? TimeSpan.FromMinutes(20);
             string lastText = "";
             string? lastThoughts = null;
             int stableCount = 0;
-            const int REQUIRED_STABLE_CHECKS = 3;
+            // Scene prompts are huge (often > 50 KB for a 60+ scene video)
+            // so we require MORE stable polls than the default 3 to avoid
+            // the well-known race where Gemini briefly pauses mid-stream
+            // (typically between scenes or while reasoning through the next
+            // image_prompt). 5 stable checks × 4s poll interval = 20s of
+            // confirmed stillness, which is well past the longest pause we
+            // have observed in production.
+            const int REQUIRED_STABLE_CHECKS = 5;
             const int POLL_INTERVAL_MS = 4000;
             const int STABLE_TOLERANCE_CHARS = 8;
 
@@ -1056,9 +1063,21 @@ namespace AssetAutomator.Application.Services
 
                     bool hasContent = !string.IsNullOrWhiteSpace(currentText) && currentText.Length >= RESPONSE_MIN_CHARS;
 
-                    if (isDone && hasContent)
+                    // Safety guard against the well-known race that
+                    // previously caused response extraction to stop mid-stream
+                    // for Scene Breakdown & Prompt: the "Send" button on
+                    // gemini.google.com becomes visible during the brief
+                    // moment the model swaps from "generating" → "ready to
+                    // reply" state. Polling once during that swap can return
+                    // isDone=true and isStillGenerating=false even though
+                    // the response is incomplete (typically after scene 1
+                    // or 2 of a 67-scene output). We refuse to early-return
+                    // unless ALL three signals agree: done + NOT generating
+                    // + content stable. This is what WaitForResponseAsync
+                    // would have settled on a few polls later anyway.
+                    if (isDone && hasContent && !isStillGenerating && !string.IsNullOrWhiteSpace(currentText) && currentText.TrimEnd().EndsWith("}"))
                     {
-                        _log($"[PW-SCENE] ✅ Response complete (send button visible, {currentText.Length} chars).");
+                        _log($"[PW-SCENE] ✅ Response complete (send button visible, {currentText.Length} chars, ends with closing brace).");
                         string? finalThoughts = string.IsNullOrWhiteSpace(currentThoughts) ? lastThoughts : currentThoughts;
                         return (currentText, string.IsNullOrWhiteSpace(finalThoughts) ? null : finalThoughts);
                     }

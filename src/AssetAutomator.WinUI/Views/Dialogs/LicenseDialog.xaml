@@ -1,0 +1,15 @@
+<ContentDialog x:Class="AssetAutomator.WinUI.Views.Dialogs.LicenseDialog"
+               xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+               xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+               Title="Kích Hoạt Bản Quyền"
+               PrimaryButtonText="Kích hoạt"
+               SecondaryButtonText="Chuyển máy"
+               CloseButtonText="Đóng"
+               DefaultButton="Primary">
+    <StackPanel Spacing="14" MinWidth="440">
+        <TextBlock x:Name="TxtInstruction" Text="Vui lòng nhập License Key được cấp để kích hoạt ứng dụng:" Style="{ThemeResource BodyTextBlockStyle}" Opacity="0.8" />
+        <TextBox x:Name="TxtLicenseKey" PlaceholderText="Nhập License Key..." FontFamily="Consolas" FontSize="14" Header="License Key" />
+        <InfoBar x:Name="InfoStatus" IsOpen="True" IsClosable="False" Severity="Warning" Title="Trạng thái:" Message="Chưa kích hoạt bản quyền." />
+        <Button x:Name="BtnDeactivate" Content="Hủy kích hoạt trên thiết bị này" Click="BtnDeactivate_Click" Visibility="Collapsed" HorizontalAlignment="Right" />
+    </StackPanel>
+</ContentDialog>

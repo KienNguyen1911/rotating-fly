@@ -6,7 +6,7 @@ namespace AssetAutomator.Core.Interfaces
 {
     /// <summary>
     /// Abstraction for browser lifecycle management: initialization, slot allocation,
-    /// and cleanup. Implementations manage Playwright browser contexts.
+    /// profile cloning, and cleanup. Implementations manage Playwright browser contexts.
     /// </summary>
     public interface IBrowserService
     {
@@ -14,6 +14,16 @@ namespace AssetAutomator.Core.Interfaces
         /// Active browser contexts keyed by profile path.
         /// </summary>
         ConcurrentDictionary<string, IBrowserContext> BrowserContexts { get; }
+
+        /// <summary>
+        /// Copies a Chrome profile directory, skipping cache folders to reduce size.
+        /// </summary>
+        void CopyProfileDirectory(string sourceDir, string destinationDir);
+
+        /// <summary>
+        /// Lightweight copy of only the essential files needed for cookie extraction from a Chrome profile.
+        /// </summary>
+        void CopyMinimalProfileForCookies(string sourceDir, string destinationDir);
 
         /// <summary>
         /// Initializes or reuses a browser context for the given profile path.

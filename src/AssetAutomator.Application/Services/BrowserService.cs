@@ -2,9 +2,9 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
-using System.Windows;
 using Microsoft.Playwright;
 using AssetAutomator.Core.Constants;
 using AssetAutomator.Core.Interfaces;
@@ -12,7 +12,7 @@ using AssetAutomator.Core.Interfaces;
 namespace AssetAutomator.Application.Services
 {
     /// <summary>
-    /// Manages Playwright browser lifecycle: initialization, slot allocation, and cleanup.
+    /// Manages Playwright browser lifecycle: initialization, slot allocation, profile cloning, and cleanup.
     /// Extracted from MainWindow.AutomationSteps.cs to follow SRP.
     /// </summary>
     public class BrowserService : IBrowserService
@@ -29,6 +29,82 @@ namespace AssetAutomator.Application.Services
         public BrowserService(Action<string> log)
         {
             _log = log;
+        }
+
+        [DllImport("user32.dll")]
+        private static extern int GetSystemMetrics(int nIndex);
+
+        private static double GetScreenWidth() => GetSystemMetrics(0);  // SM_CXSCREEN = 0
+        private static double GetScreenHeight() => GetSystemMetrics(1);  // SM_CYSCREEN = 1
+
+        /// <summary>
+        /// <summary>
+        /// Copies a Chrome profile directory, skipping cache folders to reduce size.
+        /// </summary>
+        public void CopyProfileDirectory(string sourceDir, string destinationDir)
+        {
+            Directory.CreateDirectory(destinationDir);
+            foreach (string file in Directory.GetFiles(sourceDir))
+            {
+                string dest = Path.Combine(destinationDir, Path.GetFileName(file));
+                try
+                {
+                    File.Copy(file, dest, true);
+                }
+                catch { }
+            }
+            foreach (string subDir in Directory.GetDirectories(sourceDir))
+            {
+                string dirName = Path.GetFileName(subDir);
+                if (dirName.Equals("Cache", StringComparison.OrdinalIgnoreCase) ||
+                    dirName.Equals("Code Cache", StringComparison.OrdinalIgnoreCase) ||
+                    dirName.Equals("GPUCache", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+                string dest = Path.Combine(destinationDir, dirName);
+                CopyProfileDirectory(subDir, dest);
+            }
+        }
+
+        /// <summary>
+        /// Lightweight copy of only the essential files needed for cookie extraction from a Chrome profile.
+        /// Copies: Cookies, Cookies-journal, Local State, Network/Cookies, Network/Trust Tokens.
+        /// Skips: Extensions, IndexedDB, Local Storage, Service Workers, etc. (hundreds of MB).
+        /// </summary>
+        public void CopyMinimalProfileForCookies(string sourceDir, string destinationDir)
+        {
+            Directory.CreateDirectory(destinationDir);
+
+            // Only copy essential root-level files
+            string[] essentialFiles = { "Cookies", "Cookies-journal", "Local State" };
+            foreach (string fileName in essentialFiles)
+            {
+                string srcFile = Path.Combine(sourceDir, fileName);
+                string dstFile = Path.Combine(destinationDir, fileName);
+                try
+                {
+                    if (File.Exists(srcFile))
+                        File.Copy(srcFile, dstFile, true);
+                }
+                catch { }
+            }
+
+            // Only copy Network subfolder (contains cookie-related state)
+            string networkSrc = Path.Combine(sourceDir, "Network");
+            if (Directory.Exists(networkSrc))
+            {
+                string networkDst = Path.Combine(destinationDir, "Network");
+                Directory.CreateDirectory(networkDst);
+                foreach (string file in Directory.GetFiles(networkSrc))
+                {
+                    try
+                    {
+                        File.Copy(file, Path.Combine(networkDst, Path.GetFileName(file)), true);
+                    }
+                    catch { }
+                }
+            }
         }
 
         /// <summary>
@@ -74,8 +150,8 @@ namespace AssetAutomator.Application.Services
                     }
                 }
 
-                double screenWidth = SystemParameters.PrimaryScreenWidth;
-                double screenHeight = SystemParameters.PrimaryScreenHeight;
+                double screenWidth = GetScreenWidth();
+                double screenHeight = GetScreenHeight();
                 int cols = 2;
                 int rows = 2;
                 int w = (int)(screenWidth / cols);

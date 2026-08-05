@@ -1,0 +1,264 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page x:Class="AssetAutomator.WinUI.Views.Pages.SettingsPage"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      x:Name="PageRoot">
+
+    <ScrollViewer Padding="24" VerticalScrollBarVisibility="Auto">
+        <StackPanel Spacing="16">
+
+            <!-- Header -->
+            <StackPanel Spacing="4">
+                <TextBlock Text="App Settings" Style="{ThemeResource TitleTextBlockStyle}" />
+                <TextBlock Text="Cấu hình hệ thống: API Keys, thư mục lưu trữ và số luồng xử lý." Style="{ThemeResource BodyTextBlockStyle}" Opacity="0.7" />
+            </StackPanel>
+
+            <!-- Status message -->
+            <InfoBar IsOpen="True" IsClosable="False" Severity="Informational" Title="Trạng thái Cấu hình:" Message="{Binding StatusMessage}" />
+
+            <!-- Command bar -->
+            <CommandBar DefaultLabelPosition="Right" Background="Transparent" IsOpen="False" HorizontalAlignment="Left">
+                <AppBarButton Icon="Save" Label="Lưu Cấu Hình" Command="{Binding SaveSettingsCommand}" />
+                <AppBarSeparator />
+                <AppBarButton Icon="Upload" Label="Xuất Cấu Hình" Command="{Binding ExportSettingsCommand}" />
+                <AppBarButton Icon="Download" Label="Nhập Cấu Hình" Command="{Binding ImportSettingsCommand}" />
+                <AppBarButton Icon="Repair" Label="Kiểm Tra Hệ Thống" Command="{Binding CheckRequirementsCommand}" />
+            </CommandBar>
+
+            <!-- Row 1: 2 cards side-by-side (API Keys & Credentials | Directories & Execution) -->
+            <Grid ColumnSpacing="16">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+
+                <!-- LEFT: API Keys & Credentials -->
+                <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                        BorderThickness="1"
+                        CornerRadius="8"
+                        Padding="16">
+                    <StackPanel Spacing="14">
+                        <TextBlock Text="API Keys &amp; Credentials" Style="{ThemeResource SubtitleTextBlockStyle}" />
+
+                        <!-- OpenAI / Gemini API Key -->
+                        <StackPanel Spacing="6">
+                            <TextBlock Text="OpenAI / Gemini API Key" Style="{ThemeResource CaptionTextBlockStyle}" Opacity="0.7" />
+                            <PasswordBox x:Name="PbApiKey"
+                                         PlaceholderText="sk-..." />
+                        </StackPanel>
+
+                        <!-- AI84 API Key (with Check Key button) -->
+                        <StackPanel Spacing="6">
+                            <TextBlock Text="AI84 API Key" Style="{ThemeResource CaptionTextBlockStyle}" Opacity="0.7" />
+                            <Grid ColumnSpacing="8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <PasswordBox x:Name="PbAi84ApiKey"
+                                             PlaceholderText="Nhập AI84 API Key..." />
+                                <Button Grid.Column="1"
+                                        Content="Kiểm tra Key"
+                                        Command="{Binding CheckAi84KeyCommand}" />
+                            </Grid>
+                        </StackPanel>
+
+                        <!-- Supabase DB URL -->
+                        <StackPanel Spacing="6">
+                            <TextBlock Text="Supabase DB URL" Style="{ThemeResource CaptionTextBlockStyle}" Opacity="0.7" />
+                            <PasswordBox x:Name="PbSupabaseDbUrl"
+                                         PlaceholderText="https://xyz.supabase.co..." />
+                        </StackPanel>
+
+                        <!-- Image API URL -->
+                        <StackPanel Spacing="6">
+                            <TextBlock Text="Image API URL" Style="{ThemeResource CaptionTextBlockStyle}" Opacity="0.7" />
+                            <TextBox Text="{Binding ImageApiUrl, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                     PlaceholderText="http://localhost:8765" />
+                        </StackPanel>
+
+                        <!-- Subtitle API URL -->
+                        <StackPanel Spacing="6">
+                            <TextBlock Text="Subtitle API URL" Style="{ThemeResource CaptionTextBlockStyle}" Opacity="0.7" />
+                            <TextBox Text="{Binding SubtitleApiUrl, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                     PlaceholderText="https://...ngrok-free.app/api/transcribe" />
+                        </StackPanel>
+
+                        <!-- Image API Key -->
+                        <StackPanel Spacing="6">
+                            <TextBlock Text="Image API Key" Style="{ThemeResource CaptionTextBlockStyle}" Opacity="0.7" />
+                            <PasswordBox x:Name="PbImageApiKey"
+                                         PlaceholderText="Nhập API Key cho Image API..." />
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <!-- RIGHT: Directories + Concurrency + Engine -->
+                <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                        BorderThickness="1"
+                        CornerRadius="8"
+                        Padding="16"
+                        Grid.Column="1">
+                    <StackPanel Spacing="14">
+                        <TextBlock Text="Directories &amp; Execution" Style="{ThemeResource SubtitleTextBlockStyle}" />
+
+                        <!-- Output folder -->
+                        <StackPanel Spacing="6">
+                            <TextBlock Text="Thư mục xuất kết quả (Output Folder)" Style="{ThemeResource CaptionTextBlockStyle}" Opacity="0.7" />
+                            <Grid ColumnSpacing="8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBox Text="{Binding OutputPath, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                <Button Grid.Column="1" Content="Browse..." Command="{Binding BrowseFolderCommand}" />
+                            </Grid>
+                        </StackPanel>
+
+                        <!-- Batch Image Gen Projects Storage -->
+                        <StackPanel Spacing="6">
+                            <TextBlock Text="Thư mục lưu Projects Batch Image Gen" Style="{ThemeResource CaptionTextBlockStyle}" Opacity="0.7" />
+                            <Grid ColumnSpacing="8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBox Text="{Binding ProjectsStorageDir, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                         PlaceholderText="C:\AssetAutomator\Projects" />
+                                <Button Grid.Column="1" Content="Browse..." Command="{Binding BrowseProjectsStorageDirCommand}" />
+                            </Grid>
+                            <TextBlock Text="Lưu file metadata (.json) của các dự án Batch Image Gen. Ảnh render vẫn dùng Output Folder ở trên."
+                                       Style="{ThemeResource CaptionTextBlockStyle}"
+                                       Opacity="0.55"
+                                       TextWrapping="Wrap"
+                                       FontSize="11" />
+                        </StackPanel>
+
+                        <!-- Chrome Profiles Dir -->
+                        <StackPanel Spacing="6">
+                            <TextBlock Text="Chrome Profiles Directory" Style="{ThemeResource CaptionTextBlockStyle}" Opacity="0.7" />
+                            <Grid ColumnSpacing="8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBox Text="{Binding ChromeProfilesDir, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                         PlaceholderText="C:\Path\To\Chrome\User Data" />
+                                <Button Grid.Column="1" Content="Browse..." Command="{Binding BrowseChromeProfilesDirCommand}" />
+                            </Grid>
+                        </StackPanel>
+
+                        <!-- Max concurrent threads -->
+                        <StackPanel Spacing="6">
+                            <TextBlock Text="Số luồng chạy song song tối đa (Max Concurrent Threads):" Style="{ThemeResource CaptionTextBlockStyle}" Opacity="0.7" />
+                            <NumberBox Value="{Binding MaxConcurrentThreads, Mode=TwoWay}" Minimum="1" Maximum="16" SmallChange="1" LargeChange="2" Width="140" HorizontalAlignment="Left" />
+                        </StackPanel>
+
+                        <CheckBox IsChecked="{Binding EnableHeadless, Mode=TwoWay}" Content="Chạy Trình duyệt ở chế độ An danh / Headless Mode" Margin="0,8,0,0" />
+                    </StackPanel>
+                </Border>
+            </Grid>
+
+            <!-- Row 2: 2 cards side-by-side (App & Updates | Google Flow Local Server) -->
+            <Grid ColumnSpacing="16">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+
+                <!-- LEFT: App & Updates -->
+                <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                        BorderThickness="1"
+                        CornerRadius="8"
+                        Padding="16">
+                    <StackPanel Spacing="12">
+                        <TextBlock Text="App &amp; Updates" Style="{ThemeResource SubtitleTextBlockStyle}" />
+
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Button x:Name="BtnLicense" Click="BtnLicense_Click"
+                                    ToolTipService.ToolTip="Quản lý bản quyền ứng dụng">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <FontIcon Glyph="&#xE192;" FontSize="12" />
+                                    <TextBlock Text="Bản Quyền" />
+                                </StackPanel>
+                            </Button>
+                            <Button x:Name="BtnCheckUpdate" Click="BtnCheckUpdate_Click"
+                                    ToolTipService.ToolTip="Kiểm tra phiên bản cập nhật mới nhất">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <FontIcon Glyph="&#xE72C;" FontSize="12" />
+                                    <TextBlock Text="Check Update" />
+                                </StackPanel>
+                            </Button>
+                        </StackPanel>
+
+                        <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                            <TextBlock Text="Giao diện (Theme):" VerticalAlignment="Center" FontSize="13" />
+                            <ToggleSwitch x:Name="ThemeToggle"
+                                          IsOn="True"
+                                          OffContent="Light"
+                                          OnContent="Dark"
+                                          Toggled="ThemeToggle_Toggled" />
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <!-- RIGHT: Google Flow Local Server -->
+                <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                        BorderThickness="1"
+                        CornerRadius="8"
+                        Padding="16"
+                        Grid.Column="1">
+                    <StackPanel Spacing="12">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <FontIcon Glyph="&#xE8B7;" FontSize="16" VerticalAlignment="Center" />
+                            <TextBlock Text="Google Flow Local Server" Style="{ThemeResource SubtitleTextBlockStyle}" />
+                        </StackPanel>
+                        <TextBlock Text="Server Python auto-start cùng app, dùng để generate ảnh bằng tài khoản Google đã đăng nhập."
+                                   Style="{ThemeResource CaptionTextBlockStyle}"
+                                   Opacity="0.7"
+                                   TextWrapping="Wrap" />
+
+                        <Grid ColumnSpacing="16">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Spacing="4">
+                                <TextBlock Text="Port" Style="{ThemeResource CaptionTextBlockStyle}" Opacity="0.7" />
+                                <NumberBox Value="{Binding GoogleFlow2Port, Mode=TwoWay}"
+                                           Minimum="1024" Maximum="65535"
+                                           SmallChange="1" LargeChange="10"
+                                           Width="180" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="1" Spacing="4" VerticalAlignment="Bottom">
+                                <ToggleSwitch Header="Auto-launch on app start"
+                                              IsOn="{Binding GoogleFlow2AutoLaunch, Mode=TwoWay}"
+                                              OnContent="Bật" OffContent="Tắt" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Bottom">
+                                <Button Command="{Binding RestartFlow2Command}" Style="{ThemeResource AccentButtonStyle}">
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <FontIcon Glyph="&#xE72C;" FontSize="12" />
+                                        <TextBlock Text="Restart" />
+                                    </StackPanel>
+                                </Button>
+                                <Button Command="{Binding TestFlow2Command}">
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <FontIcon Glyph="&#xE73E;" FontSize="12" />
+                                        <TextBlock Text="Test" />
+                                    </StackPanel>
+                                </Button>
+                            </StackPanel>
+                        </Grid>
+                    </StackPanel>
+                </Border>
+            </Grid>
+
+        </StackPanel>
+    </ScrollViewer>
+</Page>

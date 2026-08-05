@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ButtonStyles.xaml
+  Custom Button control template + named style variants.
+  Based on original WPF design from legacy UI project.
+
+  WinUI 3's default Button chrome is preserved when no template is supplied,
+  so we only override visual aspects through Setters that target the
+  framework's existing template parts (Background, BorderBrush, Foreground,
+  CornerRadius, Padding, FontWeight, FontSize).
+-->
+<ResourceDictionary
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- Base: matches the WPF Button.Base (slight tweak for WinUI defaults). -->
+    <Style x:Key="Button.Base" TargetType="Button">
+        <Setter Property="Background" Value="{ThemeResource Surface.RaisedBrush}" />
+        <Setter Property="Foreground" Value="{ThemeResource Content.PrimaryBrush}" />
+        <Setter Property="BorderBrush" Value="{ThemeResource Border.DefaultBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="8" />
+        <Setter Property="Padding" Value="14,6" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="HorizontalContentAlignment" Value="Center" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+        <Setter Property="UseSystemFocusVisuals" Value="True" />
+    </Style>
+
+    <!-- Implicit default for every Button. -->
+    <Style TargetType="Button" BasedOn="{StaticResource Button.Base}" />
+
+    <!-- Accent / primary call-to-action (maps to WPF PrimaryButton). -->
+    <Style x:Key="PrimaryButton" TargetType="Button" BasedOn="{StaticResource Button.Base}">
+        <Setter Property="Background" Value="{ThemeResource Action.PrimaryBrush}" />
+        <Setter Property="Foreground" Value="{ThemeResource Content.OnActionBrush}" />
+        <Setter Property="BorderThickness" Value="0" />
+    </Style>
+
+    <!-- Secondary (subtle hover surface). -->
+    <Style x:Key="SecondaryButton" TargetType="Button" BasedOn="{StaticResource Button.Base}">
+        <Setter Property="Background" Value="{ThemeResource Surface.SoftBrush}" />
+        <Setter Property="Foreground" Value="{ThemeResource Content.PrimaryBrush}" />
+        <Setter Property="BorderBrush" Value="{ThemeResource Border.SubtleBrush}" />
+    </Style>
+
+    <!-- Green "ok / apply" button. -->
+    <Style x:Key="GreenButton" TargetType="Button" BasedOn="{StaticResource Button.Base}">
+        <Setter Property="Background" Value="{ThemeResource SemanticUpBrush}" />
+        <Setter Property="Foreground" Value="{ThemeResource Content.OnActionBrush}" />
+        <Setter Property="BorderThickness" Value="0" />
+    </Style>
+
+    <!-- Red "delete / danger" button. -->
+    <Style x:Key="DeleteButton" TargetType="Button" BasedOn="{StaticResource Button.Base}">
+        <Setter Property="Background" Value="{ThemeResource SemanticDownBrush}" />
+        <Setter Property="Foreground" Value="{ThemeResource Content.OnActionBrush}" />
+        <Setter Property="BorderThickness" Value="0" />
+    </Style>
+
+    <!-- Icon-only 28×28 button (used in grids, headers, etc.). -->
+    <Style x:Key="IconButton" TargetType="Button" BasedOn="{StaticResource Button.Base}">
+        <Setter Property="Width" Value="28" />
+        <Setter Property="Height" Value="28" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="MinWidth" Value="28" />
+        <Setter Property="MinHeight" Value="28" />
+    </Style>
+
+    <!--
+      Round close button used by the sidebar drawer header (port of the WPF
+      "✕" round button that turns red on hover). WinUI 3's default Button
+      template already animates Background on PointerOver, so we only set the
+      colours and let the framework handle the visual transition.
+    -->
+    <Style x:Key="RoundCloseButton" TargetType="Button" BasedOn="{StaticResource Button.Base}">
+        <Setter Property="Width" Value="32" />
+        <Setter Property="Height" Value="32" />
+        <Setter Property="CornerRadius" Value="16" />
+        <Setter Property="Background" Value="{ThemeResource Surface.CardBrush}" />
+        <Setter Property="Foreground" Value="{ThemeResource Content.PrimaryBrush}" />
+        <Setter Property="BorderBrush" Value="{ThemeResource Border.DefaultBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="FontWeight" Value="ExtraBold" />
+        <Setter Property="Padding" Value="0" />
+    </Style>
+
+    <!--
+      Header pill button (used by the BtnLicense / BtnCheckUpdate in the
+      title bar — equivalent to the WPF "🔑 Bản Quyền" / "🔄 Check Update"
+      rounded white pills).
+    -->
+    <Style x:Key="HeaderPillButton" TargetType="Button" BasedOn="{StaticResource Button.Base}">
+        <Setter Property="Background" Value="{ThemeResource Surface.CardBrush}" />
+        <Setter Property="Foreground" Value="{ThemeResource Content.PrimaryBrush}" />
+        <Setter Property="BorderBrush" Value="{ThemeResource Border.DefaultBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="12" />
+        <Setter Property="Padding" Value="12,6" />
+    </Style>
+</ResourceDictionary>

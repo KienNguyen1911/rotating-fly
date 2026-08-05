@@ -1,0 +1,1291 @@
+from __future__ import annotations
+
+import urllib.parse
+from typing import TYPE_CHECKING, Any
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+
+from google_flow.utils.parsing import parse_bool_strict
+
+from ..core.auth import (
+    issue_admin_token,
+    revoke_admin_token,
+    revoke_portal_user_tokens_by_user_id,
+    verify_admin_token,
+)
+from ..core.config import config
+from ..core.logger import debug_logger
+
+if TYPE_CHECKING:
+    from ..core.database import Database
+    from ..core.models import (
+        BatchPortalUserDeleteRequest,
+        ClusterNodeLogClearRequest,
+        ClusterNodeUpdateRequest,
+        CreateApiKeyRequest,
+        LoginRequest,
+        PortalCdkBatchCreateRequest,
+        PortalUserUpdateRequest,
+        UpdateAdminCredentialsRequest,
+        UpdateApiKeyRequest,
+        UpdateCaptchaConfigRequest,
+        UpdateCdkRequest,
+        UpdateSystemConfigRequest,
+    )
+    from ..services.captcha_runtime import CaptchaRuntime
+    from ..services.cluster_manager import ClusterManager
+
+router = APIRouter(prefix="/api/admin", tags=["admin"])
+
+_db: Database | None = None
+_runtime: CaptchaRuntime | None = None
+_cluster: ClusterManager | None = None
+
+RESTART_REQUIRED_CONFIG_KEYS = {
+    "server.host",
+    "server.port",
+    "storage.db_path",
+    "cluster.role",
+}
+
+
+def _assert_master_role(feature_name: str):
+    if config.cluster_role != "master":
+        raise HTTPException(status_code=400, detail=f"Only available for master role: {feature_name}")
+
+
+def _assert_local_captcha_role():
+    if config.cluster_role == "master":
+        raise HTTPException(status_code=400, detail="The master role does not perform local coding and does not need to configure runtime coding parameters.")
+
+
+def _assert_portal_admin_role(feature_name: str):
+    if config.cluster_role == "subnode":
+        raise HTTPException(status_code=400, detail=f"Current subnode role is unavailable: {feature_name}")
+
+
+async def _build_setup_guide_payload() -> dict[str, Any]:
+    if _db is None:
+        return {
+            "role": config.cluster_role,
+            "is_first_deploy": False,
+            "has_blocker": False,
+            "items": [],
+            "next_steps": [],
+        }
+
+    role = config.cluster_role
+    items: list[dict[str, Any]] = []
+    next_steps: list[str] = []
+
+    default_admin = await _db.verify_admin_credentials("admin", "admin")
+    if default_admin:
+        items.append(
+            {
+                "level": "critical",
+                "title": "Please modify the default administrator account first",
+                "detail": "Currently, you can still use admin/admin to log in, which poses obvious security risks.",
+                "key": "admin.default_credentials",
+            }
+        )
+        next_steps.append("First modify the username and password in the 'Administrator Account' before continuing with other configurations.")
+
+    if role == "master":
+        stats = await _db.get_service_stats()
+        if int(stats.get("api_key_total") or 0) <= 0:
+            items.append(
+                {
+                    "level": "required",
+                    "title": "There is no API Key available for the master node yet",
+                    "detail": "Before flow2api calls the master node, you need to create at least one enabled API Key.",
+                    "key": "master.api_key_missing",
+                }
+            )
+        if int(stats.get("cluster_node_total") or 0) <= 0:
+            items.append(
+                {
+                    "level": "required",
+                    "title": "The master node has not registered child nodes yet",
+                    "detail": "Please start the subnode first and configure the master address and cluster key.",
+                    "key": "master.subnode_missing",
+                }
+            )
+        next_steps.append("Confirm that the master node port is reachable to the outside world, and then allow the child nodes to connect and register.")
+    elif role == "subnode":
+        if not config.cluster_master_base_url:
+            items.append(
+                {
+                    "level": "required",
+                    "title": "Master node address is not configured",
+                    "detail": "Please fill in cluster.master_base_url, for example http://master:8060.",
+                    "key": "subnode.master_base_url_missing",
+                }
+            )
+        if not config.cluster_master_cluster_key:
+            items.append(
+                {
+                    "level": "required",
+                    "title": "Cluster key not configured",
+                    "detail": "Please fill in cluster.master_cluster_key, which must be exactly the same as the master node Cluster Key.",
+                    "key": "subnode.cluster_key_missing",
+                }
+            )
+        if not config.cluster_node_public_base_url:
+            items.append(
+                {
+                    "level": "required",
+                    "title": "The external address of the subnode is not configured",
+                    "detail": "Please fill in cluster.node_public_base_url, the master node will call back the child node through this address.",
+                    "key": "subnode.public_base_url_missing",
+                }
+            )
+        if not config.node_api_key:
+            items.append(
+                {
+                    "level": "required",
+                    "title": "Child node API Key is not configured",
+                    "detail": "Please fill in cluster.node_api_key. The master node will verify this key when calling the child node.",
+                    "key": "subnode.node_api_key_missing",
+                }
+            )
+        next_steps.append("After saving, restart the subnode and observe whether the 'subnode status' of the main node is healthy.")
+    else:
+        next_steps.append("Standalone mode can directly use local header coding without cluster configuration.")
+
+    has_blocker = any(item["level"] in {"critical", "required"} for item in items)
+    is_first_deploy = default_admin or has_blocker
+    if not items:
+        next_steps.append("The current basic configuration is complete and can be directly put into use.")
+
+    return {
+        "role": role,
+        "is_first_deploy": is_first_deploy,
+        "has_blocker": has_blocker,
+        "items": items,
+        "next_steps": next_steps,
+    }
+
+
+def _validate_subnode_fields_before_persist(updates: dict[str, dict[str, Any]]):
+    cluster_updates = updates.get("cluster", {}) if isinstance(updates.get("cluster"), dict) else {}
+    env_overrides = config.get_active_env_overrides()
+
+    role_from_update = str(cluster_updates.get("role") or "").strip().lower()
+    if "FCS_CLUSTER_ROLE" in env_overrides:
+        effective_role = config.cluster_role
+    else:
+        effective_role = role_from_update or config.cluster_role
+
+    if effective_role != "subnode":
+        return
+
+    def _pick_value(update_key: str, env_key: str, runtime_value: str) -> str:
+        if env_key in env_overrides:
+            return str(runtime_value or "").strip()
+        if update_key in cluster_updates:
+            return str(cluster_updates.get(update_key) or "").strip()
+        return str(runtime_value or "").strip()
+
+    master_base_url = _pick_value(
+        update_key="master_base_url",
+        env_key="FCS_CLUSTER_MASTER_BASE_URL",
+        runtime_value=config.cluster_master_base_url,
+    )
+    master_cluster_key = _pick_value(
+        update_key="master_cluster_key",
+        env_key="FCS_CLUSTER_MASTER_CLUSTER_KEY",
+        runtime_value=config.cluster_master_cluster_key,
+    )
+    node_public_base_url = _pick_value(
+        update_key="node_public_base_url",
+        env_key="FCS_CLUSTER_NODE_PUBLIC_BASE_URL",
+        runtime_value=config.cluster_node_public_base_url,
+    )
+    node_api_key = _pick_value(
+        update_key="node_api_key",
+        env_key="FCS_CLUSTER_NODE_API_KEY",
+        runtime_value=config.node_api_key,
+    )
+
+    missing_fields: list[str] = []
+    if not master_base_url:
+        missing_fields.append("cluster.master_base_url")
+    if not master_cluster_key:
+        missing_fields.append("cluster.master_cluster_key")
+    if not node_public_base_url:
+        missing_fields.append("cluster.node_public_base_url")
+    if not node_api_key:
+        missing_fields.append("cluster.node_api_key")
+    if missing_fields:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Subnode mode is missing required configuration: {', '.join(missing_fields)}",
+        )
+
+    parsed_public = urllib.parse.urlparse(node_public_base_url)
+    public_host = (parsed_public.hostname or "").strip().lower()
+    if parsed_public.scheme not in {"http", "https"} or not public_host:
+        raise HTTPException(status_code=400, detail="cluster.node_public_base_url format is invalid")
+    if public_host in {"0.0.0.0", "127.0.0.1", "localhost", "::1", "::"}:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "cluster.node_public_base_url cannot use 0.0.0.0/127.0.0.1/localhost,"
+                "Must be an accessible address of the master node"
+            ),
+        )
+
+
+def _as_bool(value: Any, field_name: str) -> bool:
+    try:
+        return parse_bool_strict(value)
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"{field_name} must be a boolean")
+
+
+def _as_int(value: Any, field_name: str, min_value: int, max_value: int) -> int:
+    try:
+        iv = int(value)
+    except Exception:
+        raise HTTPException(status_code=400, detail=f"{field_name} must be an integer")
+    if iv < min_value or iv > max_value:
+        raise HTTPException(
+            status_code=400,
+            detail=f"{field_name} must be in the range [{min_value}, {max_value}]",
+        )
+    return iv
+
+
+def _as_float(value: Any, field_name: str, min_value: float, max_value: float) -> float:
+    try:
+        fv = float(value)
+    except Exception:
+        raise HTTPException(status_code=400, detail=f"{field_name} must be a number")
+    if fv < min_value or fv > max_value:
+        raise HTTPException(
+            status_code=400,
+            detail=f"{field_name} must be in the range [{min_value}, {max_value}]",
+        )
+    return fv
+
+
+def _build_pagination(limit: int, offset: int, total: int) -> dict[str, Any]:
+    safe_limit = max(1, int(limit or 1))
+    safe_offset = max(0, int(offset or 0))
+    safe_total = max(0, int(total or 0))
+    return {
+        "limit": safe_limit,
+        "offset": safe_offset,
+        "total": safe_total,
+        "page": (safe_offset // safe_limit) + 1,
+        "total_pages": max(1, (safe_total + safe_limit - 1) // safe_limit) if safe_total > 0 else 1,
+        "has_prev": safe_offset > 0,
+        "has_next": safe_offset + safe_limit < safe_total,
+    }
+
+
+def _sanitize_system_config_updates(payload: dict[str, Any]) -> tuple[dict[str, dict[str, Any]], list[str]]:
+    allowed_sections = {"server", "storage", "portal", "captcha", "log", "cluster"}
+    updates: dict[str, dict[str, Any]] = {}
+    changed_keys: list[str] = []
+
+    unknown_sections = [s for s in payload if s not in allowed_sections and s != "admin"]
+    if unknown_sections:
+        raise HTTPException(status_code=400, detail=f"Unsupported configuration grouping exists: {unknown_sections}")
+
+    server_cfg = payload.get("server")
+    if isinstance(server_cfg, dict):
+        section: dict[str, Any] = {}
+        if "host" in server_cfg:
+            host = str(server_cfg.get("host") or "").strip()
+            if not host:
+                raise HTTPException(status_code=400, detail="server.host cannot be empty")
+            section["host"] = host
+            changed_keys.append("server.host")
+        if "port" in server_cfg:
+            section["port"] = _as_int(server_cfg.get("port"), "server.port", 1, 65535)
+            changed_keys.append("server.port")
+        if section:
+            updates["server"] = section
+
+    storage_cfg = payload.get("storage")
+    if isinstance(storage_cfg, dict):
+        section = {}
+        if "db_path" in storage_cfg:
+            db_path = str(storage_cfg.get("db_path") or "").strip()
+            if not db_path:
+                raise HTTPException(status_code=400, detail="storage.db_path cannot be empty")
+            section["db_path"] = db_path
+            changed_keys.append("storage.db_path")
+        if section:
+            updates["storage"] = section
+
+    portal_cfg = payload.get("portal")
+    if isinstance(portal_cfg, dict):
+        section = {}
+        if "public_base_url" in portal_cfg:
+            section["public_base_url"] = str(portal_cfg.get("public_base_url") or "").strip().rstrip("/")
+            changed_keys.append("portal.public_base_url")
+        if "oidc_enabled" in portal_cfg:
+            section["oidc_enabled"] = _as_bool(portal_cfg.get("oidc_enabled"), "portal.oidc_enabled")
+            changed_keys.append("portal.oidc_enabled")
+        if "oidc_base_url" in portal_cfg:
+            section["oidc_base_url"] = str(portal_cfg.get("oidc_base_url") or "").strip().rstrip("/")
+            changed_keys.append("portal.oidc_base_url")
+        if "oidc_well_known_url" in portal_cfg:
+            section["oidc_well_known_url"] = str(portal_cfg.get("oidc_well_known_url") or "").strip()
+            changed_keys.append("portal.oidc_well_known_url")
+        if "oidc_client_id" in portal_cfg:
+            section["oidc_client_id"] = str(portal_cfg.get("oidc_client_id") or "").strip()
+            changed_keys.append("portal.oidc_client_id")
+        if "oidc_client_secret" in portal_cfg:
+            section["oidc_client_secret"] = str(portal_cfg.get("oidc_client_secret") or "").strip()
+            changed_keys.append("portal.oidc_client_secret")
+        if "oidc_scope" in portal_cfg:
+            scope = " ".join(str(portal_cfg.get("oidc_scope") or "").strip().split())
+            section["oidc_scope"] = scope or "openid profile email"
+            changed_keys.append("portal.oidc_scope")
+        if "oauth_only" in portal_cfg:
+            section["oauth_only"] = _as_bool(portal_cfg.get("oauth_only"), "portal.oauth_only")
+            changed_keys.append("portal.oauth_only")
+        if "register_bonus_quota" in portal_cfg:
+            section["register_bonus_quota"] = _as_int(portal_cfg.get("register_bonus_quota"), "portal.register_bonus_quota", 0, 2147483647)
+            changed_keys.append("portal.register_bonus_quota")
+        if "checkin_min_quota" in portal_cfg:
+            section["checkin_min_quota"] = _as_int(portal_cfg.get("checkin_min_quota"), "portal.checkin_min_quota", 0, 2147483647)
+            changed_keys.append("portal.checkin_min_quota")
+        if "checkin_max_quota" in portal_cfg:
+            section["checkin_max_quota"] = _as_int(portal_cfg.get("checkin_max_quota"), "portal.checkin_max_quota", 0, 2147483647)
+            changed_keys.append("portal.checkin_max_quota")
+
+        effective_enabled = section.get("oidc_enabled", config.portal_oidc_enabled)
+        effective_public_base_url = section.get("public_base_url", config.portal_public_base_url)
+        effective_base_url = section.get("oidc_base_url", config.portal_oidc_base_url)
+        effective_well_known_url = section.get("oidc_well_known_url", config.portal_oidc_well_known_url)
+        effective_client_id = section.get("oidc_client_id", config.portal_oidc_client_id)
+        effective_client_secret = section.get("oidc_client_secret", config.portal_oidc_client_secret)
+        effective_oauth_only = section.get("oauth_only", config.portal_oauth_only)
+        effective_checkin_min = section.get("checkin_min_quota", config.portal_checkin_min_quota)
+        effective_checkin_max = section.get("checkin_max_quota", config.portal_checkin_max_quota)
+        if effective_enabled:
+            missing_fields = []
+            if not effective_public_base_url:
+                missing_fields.append("portal.public_base_url")
+            if not effective_base_url and not effective_well_known_url:
+                missing_fields.append("portal.oidc_base_url or portal.oidc_well_known_url")
+            if not effective_client_id:
+                missing_fields.append("portal.oidc_client_id")
+            if not effective_client_secret:
+                missing_fields.append("portal.oidc_client_secret")
+            if missing_fields:
+                raise HTTPException(status_code=400, detail=f"OIDC is enabled but configuration is missing: {', '.join(missing_fields)}")
+            parsed_public = urllib.parse.urlparse(effective_public_base_url)
+            if parsed_public.scheme not in {"http", "https"} or not (parsed_public.netloc or "").strip():
+                raise HTTPException(status_code=400, detail="portal.public_base_url format is invalid")
+            if effective_base_url:
+                parsed = urllib.parse.urlparse(effective_base_url)
+                if parsed.scheme not in {"http", "https"} or not (parsed.netloc or "").strip():
+                    raise HTTPException(status_code=400, detail="portal.oidc_base_url format is invalid")
+            if effective_well_known_url:
+                parsed_well_known = urllib.parse.urlparse(effective_well_known_url)
+                if parsed_well_known.scheme not in {"http", "https"} or not (parsed_well_known.netloc or "").strip():
+                    raise HTTPException(status_code=400, detail="portal.oidc_well_known_url format is invalid")
+        if effective_oauth_only and not effective_enabled:
+            raise HTTPException(status_code=400, detail="When portal.oauth_only is enabled, OIDC login must also be enabled.")
+        if effective_checkin_max < effective_checkin_min:
+            raise HTTPException(status_code=400, detail="portal.checkin_max_quota cannot be less than portal.checkin_min_quota")
+        if section:
+            updates["portal"] = section
+
+    captcha_cfg = payload.get("captcha")
+    if isinstance(captcha_cfg, dict):
+        section = {}
+        if "captcha_method" in captcha_cfg:
+            method = str(captcha_cfg.get("captcha_method") or "").strip().lower() or "browser"
+            if method not in {"browser", "personal"}:
+                raise HTTPException(status_code=400, detail="captcha.captcha_method only supports browser/personal")
+            section["captcha_method"] = method
+            changed_keys.append("captcha.captcha_method")
+        if "browser_launch_background" in captcha_cfg:
+            section["browser_launch_background"] = _as_bool(
+                captcha_cfg.get("browser_launch_background"),
+                "captcha.browser_launch_background",
+            )
+            changed_keys.append("captcha.browser_launch_background")
+        if "browser_flow_website_key" in captcha_cfg:
+            section["browser_flow_website_key"] = str(captcha_cfg.get("browser_flow_website_key") or "").strip()
+            changed_keys.append("captcha.browser_flow_website_key")
+        if "browser_auto_warm_project_id" in captcha_cfg:
+            section["browser_auto_warm_project_id"] = str(captcha_cfg.get("browser_auto_warm_project_id") or "").strip()
+            changed_keys.append("captcha.browser_auto_warm_project_id")
+        if "browser_auto_warmup_action" in captcha_cfg:
+            auto_action = str(captcha_cfg.get("browser_auto_warmup_action") or "").strip().upper() or "IMAGE_GENERATION"
+            if auto_action not in {"IMAGE_GENERATION", "VIDEO_GENERATION"}:
+                raise HTTPException(
+                    status_code=400,
+                    detail="captcha.browser_auto_warmup_action only supports IMAGE_GENERATION/VIDEO_GENERATION",
+                )
+            section["browser_auto_warmup_action"] = auto_action
+            changed_keys.append("captcha.browser_auto_warmup_action")
+        if "browser_auto_warm_website_url" in captcha_cfg:
+            section["browser_auto_warm_website_url"] = str(captcha_cfg.get("browser_auto_warm_website_url") or "").strip()
+            changed_keys.append("captcha.browser_auto_warm_website_url")
+        if "browser_auto_warm_website_key" in captcha_cfg:
+            section["browser_auto_warm_website_key"] = str(captcha_cfg.get("browser_auto_warm_website_key") or "").strip()
+            changed_keys.append("captcha.browser_auto_warm_website_key")
+        if "browser_auto_warm_action" in captcha_cfg:
+            auto_custom_action = str(captcha_cfg.get("browser_auto_warm_action") or "").strip()
+            section["browser_auto_warm_action"] = auto_custom_action
+            changed_keys.append("captcha.browser_auto_warm_action")
+        if "personal_project_pool_size" in captcha_cfg:
+            section["personal_project_pool_size"] = _as_int(
+                captcha_cfg.get("personal_project_pool_size"),
+                "captcha.personal_project_pool_size",
+                1,
+                50,
+            )
+            changed_keys.append("captcha.personal_project_pool_size")
+        if "personal_max_resident_tabs" in captcha_cfg:
+            section["personal_max_resident_tabs"] = _as_int(
+                captcha_cfg.get("personal_max_resident_tabs"),
+                "captcha.personal_max_resident_tabs",
+                1,
+                50,
+            )
+            changed_keys.append("captcha.personal_max_resident_tabs")
+        if "personal_idle_tab_ttl_seconds" in captcha_cfg:
+            section["personal_idle_tab_ttl_seconds"] = _as_int(
+                captcha_cfg.get("personal_idle_tab_ttl_seconds"),
+                "captcha.personal_idle_tab_ttl_seconds",
+                60,
+                86400,
+            )
+            changed_keys.append("captcha.personal_idle_tab_ttl_seconds")
+        if "browser_score_dom_wait_seconds" in captcha_cfg:
+            section["browser_score_dom_wait_seconds"] = _as_float(
+                captcha_cfg.get("browser_score_dom_wait_seconds"),
+                "captcha.browser_score_dom_wait_seconds",
+                1.0,
+                180.0,
+            )
+            changed_keys.append("captcha.browser_score_dom_wait_seconds")
+        if "browser_recaptcha_settle_seconds" in captcha_cfg:
+            section["browser_recaptcha_settle_seconds"] = _as_float(
+                captcha_cfg.get("browser_recaptcha_settle_seconds"),
+                "captcha.browser_recaptcha_settle_seconds",
+                0.0,
+                30.0,
+            )
+            changed_keys.append("captcha.browser_recaptcha_settle_seconds")
+        if "browser_score_test_warmup_seconds" in captcha_cfg:
+            section["browser_score_test_warmup_seconds"] = _as_float(
+                captcha_cfg.get("browser_score_test_warmup_seconds"),
+                "captcha.browser_score_test_warmup_seconds",
+                0.0,
+                300.0,
+            )
+            changed_keys.append("captcha.browser_score_test_warmup_seconds")
+        if "browser_score_test_settle_seconds" in captcha_cfg:
+            section["browser_score_test_settle_seconds"] = _as_float(
+                captcha_cfg.get("browser_score_test_settle_seconds"),
+                "captcha.browser_score_test_settle_seconds",
+                0.0,
+                60.0,
+            )
+            changed_keys.append("captcha.browser_score_test_settle_seconds")
+        if "browser_personal_recreate_threshold" in captcha_cfg:
+            section["browser_personal_recreate_threshold"] = _as_int(
+                captcha_cfg.get("browser_personal_recreate_threshold"),
+                "captcha.browser_personal_recreate_threshold",
+                1,
+                20,
+            )
+            changed_keys.append("captcha.browser_personal_recreate_threshold")
+        if "browser_personal_restart_threshold" in captcha_cfg:
+            section["browser_personal_restart_threshold"] = _as_int(
+                captcha_cfg.get("browser_personal_restart_threshold"),
+                "captcha.browser_personal_restart_threshold",
+                2,
+                20,
+            )
+            changed_keys.append("captcha.browser_personal_restart_threshold")
+        if "flow_timeout" in captcha_cfg:
+            section["flow_timeout"] = _as_int(
+                captcha_cfg.get("flow_timeout"),
+                "captcha.flow_timeout",
+                10,
+                7200,
+            )
+            changed_keys.append("captcha.flow_timeout")
+        if "upsample_timeout" in captcha_cfg:
+            section["upsample_timeout"] = _as_int(
+                captcha_cfg.get("upsample_timeout"),
+                "captcha.upsample_timeout",
+                10,
+                7200,
+            )
+            changed_keys.append("captcha.upsample_timeout")
+        if "session_ttl_seconds" in captcha_cfg:
+            section["session_ttl_seconds"] = _as_int(
+                captcha_cfg.get("session_ttl_seconds"),
+                "captcha.session_ttl_seconds",
+                120,
+                7200,
+            )
+            changed_keys.append("captcha.session_ttl_seconds")
+        if "node_name" in captcha_cfg:
+            node_name = str(captcha_cfg.get("node_name") or "").strip()
+            if not node_name:
+                raise HTTPException(status_code=400, detail="captcha.node_name cannot be empty")
+            section["node_name"] = node_name
+            changed_keys.append("captcha.node_name")
+        if section:
+            updates["captcha"] = section
+
+    log_cfg = payload.get("log")
+    if isinstance(log_cfg, dict):
+        section = {}
+        if "level" in log_cfg:
+            level = str(log_cfg.get("level") or "").strip().upper()
+            if level not in {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}:
+                raise HTTPException(status_code=400, detail="log.level only supports DEBUG/INFO/WARNING/ERROR/CRITICAL")
+            section["level"] = level
+            changed_keys.append("log.level")
+        if "startup_clear_on_boot" in log_cfg:
+            section["startup_clear_on_boot"] = bool(log_cfg.get("startup_clear_on_boot"))
+            changed_keys.append("log.startup_clear_on_boot")
+        if "auto_clear_interval_minutes" in log_cfg:
+            section["auto_clear_interval_minutes"] = _as_int(
+                log_cfg.get("auto_clear_interval_minutes"),
+                "log.auto_clear_interval_minutes",
+                0,
+                10080,
+            )
+            changed_keys.append("log.auto_clear_interval_minutes")
+        if section:
+            updates["log"] = section
+
+    cluster_cfg = payload.get("cluster")
+    if isinstance(cluster_cfg, dict):
+        section = {}
+        if "role" in cluster_cfg:
+            role = str(cluster_cfg.get("role") or "").strip().lower()
+            if role not in {"standalone", "master", "subnode"}:
+                raise HTTPException(status_code=400, detail="cluster.role only supports standalone/master/subnode")
+            section["role"] = role
+            changed_keys.append("cluster.role")
+        if "master_base_url" in cluster_cfg:
+            section["master_base_url"] = str(cluster_cfg.get("master_base_url") or "").strip().rstrip("/")
+            changed_keys.append("cluster.master_base_url")
+        if "master_cluster_key" in cluster_cfg:
+            section["master_cluster_key"] = str(cluster_cfg.get("master_cluster_key") or "").strip()
+            changed_keys.append("cluster.master_cluster_key")
+        if "node_public_base_url" in cluster_cfg:
+            section["node_public_base_url"] = str(cluster_cfg.get("node_public_base_url") or "").strip().rstrip("/")
+            changed_keys.append("cluster.node_public_base_url")
+        if "node_api_key" in cluster_cfg:
+            section["node_api_key"] = str(cluster_cfg.get("node_api_key") or "").strip()
+            changed_keys.append("cluster.node_api_key")
+        if "heartbeat_interval_seconds" in cluster_cfg:
+            section["heartbeat_interval_seconds"] = _as_int(
+                cluster_cfg.get("heartbeat_interval_seconds"),
+                "cluster.heartbeat_interval_seconds",
+                5,
+                3600,
+            )
+            changed_keys.append("cluster.heartbeat_interval_seconds")
+        if "node_weight" in cluster_cfg:
+            section["node_weight"] = _as_int(
+                cluster_cfg.get("node_weight"),
+                "cluster.node_weight",
+                1,
+                10000,
+            )
+            changed_keys.append("cluster.node_weight")
+        if "node_max_concurrency" in cluster_cfg:
+            section["node_max_concurrency"] = _as_int(
+                cluster_cfg.get("node_max_concurrency"),
+                "cluster.node_max_concurrency",
+                1,
+                200,
+            )
+            changed_keys.append("cluster.node_max_concurrency")
+        if "master_node_stale_seconds" in cluster_cfg:
+            section["master_node_stale_seconds"] = _as_int(
+                cluster_cfg.get("master_node_stale_seconds"),
+                "cluster.master_node_stale_seconds",
+                10,
+                3600,
+            )
+            changed_keys.append("cluster.master_node_stale_seconds")
+        if "master_dispatch_timeout_seconds" in cluster_cfg:
+            section["master_dispatch_timeout_seconds"] = _as_int(
+                cluster_cfg.get("master_dispatch_timeout_seconds"),
+                "cluster.master_dispatch_timeout_seconds",
+                5,
+                3600,
+            )
+            changed_keys.append("cluster.master_dispatch_timeout_seconds")
+        if section:
+            updates["cluster"] = section
+
+    return updates, changed_keys
+
+
+def _build_system_config_payload(admin_profile: dict[str, Any]) -> dict[str, Any]:
+    merged = config.get_merged_config()
+    return {
+        "config_path": str(config.config_path),
+        "role": config.cluster_role,
+        "env_overrides": config.get_active_env_overrides(),
+        "config": {
+            "server": merged.get("server", {}),
+            "storage": merged.get("storage", {}),
+            "portal": {
+                "public_base_url": merged.get("portal", {}).get("public_base_url", ""),
+                "oidc_enabled": bool(merged.get("portal", {}).get("oidc_enabled", False)),
+                "oidc_base_url": merged.get("portal", {}).get("oidc_base_url", ""),
+                "oidc_well_known_url": merged.get("portal", {}).get("oidc_well_known_url", ""),
+                "oidc_client_id": merged.get("portal", {}).get("oidc_client_id", ""),
+                "oidc_client_secret": merged.get("portal", {}).get("oidc_client_secret", ""),
+                "oidc_scope": merged.get("portal", {}).get("oidc_scope", "openid profile email"),
+                "oauth_only": bool(merged.get("portal", {}).get("oauth_only", False)),
+                "register_bonus_quota": int(merged.get("portal", {}).get("register_bonus_quota", 0) or 0),
+                "checkin_min_quota": int(merged.get("portal", {}).get("checkin_min_quota", 0) or 0),
+                "checkin_max_quota": int(merged.get("portal", {}).get("checkin_max_quota", 0) or 0),
+            },
+            "captcha": merged.get("captcha", {}),
+            "log": merged.get("log", {}),
+            "cluster": merged.get("cluster", {}),
+            "admin": {
+                "username": admin_profile.get("username"),
+                "password": "******",
+            },
+        },
+    }
+
+
+def set_dependencies(db: Database, runtime: CaptchaRuntime, cluster_manager: ClusterManager):
+    global _db, _runtime, _cluster
+    _db = db
+    _runtime = runtime
+    _cluster = cluster_manager
+
+
+async def _sync_runtime_captcha_config_to_db():
+    if _db is None:
+        return
+
+    current = await _db.get_captcha_config()
+    await _db.update_captcha_config(
+        captcha_method=config.captcha_method,
+        browser_proxy_enabled=current.browser_proxy_enabled,
+        browser_proxy_url=current.browser_proxy_url if current.browser_proxy_enabled else None,
+        browser_count=current.browser_count,
+        personal_project_pool_size=config.personal_project_pool_size,
+        personal_max_resident_tabs=config.personal_max_resident_tabs,
+        personal_idle_tab_ttl_seconds=config.personal_idle_tab_ttl_seconds,
+    )
+
+
+@router.post("/login")
+async def admin_login(request: LoginRequest):
+    if _db is None:
+        raise HTTPException(status_code=500, detail="Service not initialized")
+
+    ok = await _db.verify_admin_credentials(request.username, request.password)
+    if not ok:
+        raise HTTPException(status_code=401, detail="Wrong username or password")
+
+    token = issue_admin_token()
+    return {
+        "success": True,
+        "token": token,
+        "username": request.username,
+        "role": config.cluster_role,
+    }
+
+
+@router.post("/logout")
+async def admin_logout(token: str = Depends(verify_admin_token)):
+    revoke_admin_token(token)
+    return {"success": True}
+
+
+@router.get("/profile")
+async def get_admin_profile(token: str = Depends(verify_admin_token)):
+    if _db is None:
+        raise HTTPException(status_code=500, detail="Service not initialized")
+    profile = await _db.get_admin_profile()
+    return {"success": True, "profile": profile}
+
+
+@router.post("/credentials")
+async def update_admin_credentials(
+    request: UpdateAdminCredentialsRequest,
+    token: str = Depends(verify_admin_token),
+):
+    if _db is None:
+        raise HTTPException(status_code=500, detail="Service not initialized")
+    if not request.new_username and not request.new_password:
+        raise HTTPException(status_code=400, detail="At a minimum, a new username or new password is required")
+
+    ok, message, profile = await _db.update_admin_credentials(
+        current_password=request.current_password,
+        new_username=request.new_username,
+        new_password=request.new_password,
+    )
+    if not ok:
+        raise HTTPException(status_code=400, detail=message)
+    return {"success": True, "message": message, "profile": profile}
+
+
+@router.get("/system-config")
+async def get_system_config(token: str = Depends(verify_admin_token)):
+    if _db is None:
+        raise HTTPException(status_code=500, detail="Service not initialized")
+    profile = await _db.get_admin_profile()
+    setup_guide = await _build_setup_guide_payload()
+    return {
+        "success": True,
+        "setup_guide": setup_guide,
+        **_build_system_config_payload(profile),
+    }
+
+
+@router.post("/system-config")
+async def update_system_config(
+    request: UpdateSystemConfigRequest,
+    token: str = Depends(verify_admin_token),
+):
+    if _db is None:
+        raise HTTPException(status_code=500, detail="Service not initialized")
+
+    request_payload = request.model_dump(exclude_none=True)
+    updates, changed_keys = _sanitize_system_config_updates(request_payload)
+    if not updates:
+        raise HTTPException(status_code=400, detail="There are no system configuration fields to update")
+
+    _validate_subnode_fields_before_persist(updates)
+    config.update_config_sections(updates)
+    await _db.start_periodic_log_cleanup()
+
+    if any(
+        key in {
+            "captcha.captcha_method",
+            "captcha.personal_project_pool_size",
+            "captcha.personal_max_resident_tabs",
+            "captcha.personal_idle_tab_ttl_seconds",
+        }
+        for key in changed_keys
+    ):
+        await _sync_runtime_captcha_config_to_db()
+
+    if (
+        _runtime is not None
+        and "cluster.role" not in changed_keys
+        and any(key.startswith("captcha.") for key in changed_keys)
+    ):
+        try:
+            await _runtime.refresh_browser_warmup_settings()
+        except Exception as exc:
+            debug_logger.log_warning(f"[admin] refresh browser warmup settings failed: {exc}")
+
+    if "log.level" in changed_keys:
+        debug_logger.refresh_level()
+
+    restart_required = any(key in RESTART_REQUIRED_CONFIG_KEYS for key in changed_keys)
+    message = "System configuration saved and hot reloaded"
+    if restart_required:
+        message += "; Some configurations need to be fully effective after restarting the service."
+
+    profile = await _db.get_admin_profile()
+    setup_guide = await _build_setup_guide_payload()
+    return {
+        "success": True,
+        "message": message,
+        "restart_required": restart_required,
+        "changed_keys": changed_keys,
+        "setup_guide": setup_guide,
+        **_build_system_config_payload(profile),
+    }
+
+
+@router.get("/setup-guide")
+async def get_setup_guide(token: str = Depends(verify_admin_token)):
+    if _db is None:
+        raise HTTPException(status_code=500, detail="Service not initialized")
+    return {
+        "success": True,
+        **(await _build_setup_guide_payload()),
+    }
+
+
+@router.get("/apikeys")
+async def list_api_keys(token: str = Depends(verify_admin_token)):
+    if _db is None:
+        raise HTTPException(status_code=500, detail="Service not initialized")
+    _assert_master_role("API key management")
+    items = await _db.list_api_keys()
+    return {"success": True, "items": items}
+
+
+@router.post("/apikeys")
+async def create_api_key(request: CreateApiKeyRequest, token: str = Depends(verify_admin_token)):
+    if _db is None:
+        raise HTTPException(status_code=500, detail="Service not initialized")
+    _assert_master_role("API key management")
+
+    raw_key, item = await _db.create_api_key(request.name, request.quota_remaining)
+    return {
+        "success": True,
+        "api_key": raw_key,
+        "item": item,
+        "message": "Only the complete API Key will be returned this time, please save it now",
+    }
+
+
+@router.patch("/apikeys/{api_key_id}")
+async def update_api_key(
+    api_key_id: int,
+    request: UpdateApiKeyRequest,
+    token: str = Depends(verify_admin_token),
+):
+    if _db is None:
+        raise HTTPException(status_code=500, detail="Service not initialized")
+    _assert_master_role("API key management")
+
+    item = await _db.update_api_key(
+        api_key_id=api_key_id,
+        name=request.name,
+        enabled=request.enabled,
+        quota_remaining=request.quota_remaining,
+    )
+    if not item:
+        raise HTTPException(status_code=404, detail="API Key does not exist")
+
+    return {"success": True, "item": item}
+
+
+@router.get("/users")
+@router.get("/portal-users")
+async def list_portal_users(token: str = Depends(verify_admin_token)):
+    if _db is None:
+        raise HTTPException(status_code=500, detail="Service not initialized")
+    _assert_portal_admin_role("User management")
+    items = await _db.list_portal_users()
+    return {"success": True, "items": items}
+
+
+@router.patch("/users/{user_id}")
+@router.patch("/portal-users/{user_id}")
+async def update_portal_user(
+    user_id: int,
+    request: PortalUserUpdateRequest,
+    token: str = Depends(verify_admin_token),
+):
+    if _db is None:
+        raise HTTPException(status_code=500, detail="Service not initialized")
+    _assert_portal_admin_role("User management")
+
+    try:
+        updated = await _db.update_portal_user(
+            user_id=user_id,
+            username=request.username,
+            enabled=request.enabled,
+            display_name=request.display_name,
+            quota_remaining_delta=request.quota_remaining_delta,
+            quota_remaining=request.quota_remaining,
+            quota_used=request.quota_used,
+            new_password=request.new_password,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    if not updated:
+        raise HTTPException(status_code=404, detail="User does not exist")
+    if request.new_password or request.enabled is False:
+        revoke_portal_user_tokens_by_user_id(user_id)
+    return {"success": True, "item": updated}
+
+
+@router.delete("/users/{user_id}")
+@router.delete("/portal-users/{user_id}")
+async def soft_delete_portal_user(
+    user_id: int,
+    token: str = Depends(verify_admin_token),
+):
+    if _db is None:
+        raise HTTPException(status_code=500, detail="Service not initialized")
+    _assert_portal_admin_role("User management")
+
+    deleted = await _db.delete_portal_user(user_id=user_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="User does not exist")
+
+    revoke_portal_user_tokens_by_user_id(user_id)
+    return {"success": True, "message": f"User #{user_id} has been deleted"}
+
+
+@router.post("/users/batch-delete")
+@router.post("/portal-users/batch-delete")
+async def batch_delete_portal_users(
+    request: BatchPortalUserDeleteRequest,
+    token: str = Depends(verify_admin_token),
+):
+    if _db is None:
+        raise HTTPException(status_code=500, detail="Service not initialized")
+    _assert_portal_admin_role("User management")
+
+    user_ids = [int(user_id) for user_id in request.user_ids if int(user_id or 0) > 0]
+    if not user_ids:
+        raise HTTPException(status_code=400, detail="Please provide at least 1 valid user ID")
+
+    deleted_ids = await _db.delete_portal_users(user_ids)
+    if not deleted_ids:
+        raise HTTPException(status_code=404, detail="No user found to delete")
+
+    for user_id in deleted_ids:
+        revoke_portal_user_tokens_by_user_id(user_id)
+
+    return {
+        "success": True,
+        "deleted_ids": deleted_ids,
+        "deleted_count": len(deleted_ids),
+        "message": f"{len(deleted_ids)} users deleted",
+    }
+
+
+@router.get("/cdks")
+@router.get("/portal-cdks")
+async def list_portal_cdks(token: str = Depends(verify_admin_token)):
+    if _db is None:
+        raise HTTPException(status_code=500, detail="Service not initialized")
+    _assert_portal_admin_role("CDK ??")
+    items = await _db.list_portal_cdks(limit=500)
+    return {"success": True, "items": items}
+
+
+@router.post("/cdks/batch")
+@router.post("/portal-cdks/batch")
+async def create_portal_cdks_batch(
+    request: PortalCdkBatchCreateRequest,
+    token: str = Depends(verify_admin_token),
+):
+    if _db is None:
+        raise HTTPException(status_code=500, detail="Service not initialized")
+    _assert_portal_admin_role("CDK ??")
+
+    items = await _db.create_portal_cdks_batch(
+        count=request.count,
+        quota_times=request.quota_times,
+        prefix=request.prefix,
+        note=request.note,
+    )
+    return {
+        "success": True,
+        "items": items,
+        "message": f"{len(items)} CDKs have been generated, please copy and save them now.",
+    }
+
+
+@router.patch("/cdks/{cdk_id}")
+@router.patch("/portal-cdks/{cdk_id}")
+async def update_portal_cdk(
+    cdk_id: int,
+    request: UpdateCdkRequest,
+    token: str = Depends(verify_admin_token),
+):
+    if _db is None:
+        raise HTTPException(status_code=500, detail="Service not initialized")
+    _assert_portal_admin_role("CDK ??")
+
+    updated = await _db.update_portal_cdk(cdk_id=cdk_id, enabled=request.enabled)
+    if not updated:
+        raise HTTPException(status_code=404, detail="CDK ???")
+    return {"success": True, "item": updated}
+
+
+@router.delete("/cdks/{cdk_id}")
+@router.delete("/portal-cdks/{cdk_id}")
+async def soft_delete_portal_cdk(
+    cdk_id: int,
+    token: str = Depends(verify_admin_token),
+):
+    if _db is None:
+        raise HTTPException(status_code=500, detail="??????")
+    _assert_portal_admin_role("CDK ??")
+
+    updated = await _db.update_portal_cdk(cdk_id=cdk_id, enabled=False)
+    if not updated:
+        raise HTTPException(status_code=404, detail="CDK ???")
+    return {"success": True, "item": updated, "message": f"CDK #{cdk_id} ?????????"}
+
+
+@router.get("/logs")
+async def get_logs(
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    token: str = Depends(verify_admin_token),
+):
+    if _db is None:
+        raise HTTPException(status_code=500, detail="Service not initialized")
+
+    items = await _db.list_job_logs(limit=limit, offset=offset)
+    total = await _db.count_job_logs()
+    return {
+        "success": True,
+        "items": items,
+        **_build_pagination(limit=limit, offset=offset, total=total),
+    }
+
+
+@router.post("/logs/clear")
+async def clear_logs(token: str = Depends(verify_admin_token)):
+    if _db is None:
+        raise HTTPException(status_code=500, detail="Service not initialized")
+
+    result = await _db.clear_job_logs()
+    total_deleted = int(result.get("captcha_jobs") or 0) + int(result.get("portal_user_jobs") or 0)
+    return {
+        "success": True,
+        "deleted": result,
+        "message": f"{total_deleted} request logs cleared",
+    }
+
+
+@router.get("/stats")
+async def get_stats(token: str = Depends(verify_admin_token)):
+    if _db is None or _runtime is None:
+        raise HTTPException(status_code=500, detail="Service not initialized")
+
+    db_stats = await _db.get_service_stats()
+    runtime_stats = await _runtime.get_stats()
+    cluster_stats = await _cluster.get_cluster_runtime_summary() if _cluster else {}
+    return {
+        "success": True,
+        "db": db_stats,
+        "runtime": runtime_stats,
+        "cluster": cluster_stats,
+    }
+
+
+@router.get("/captcha-config")
+async def get_captcha_config(token: str = Depends(verify_admin_token)):
+    if _db is None:
+        raise HTTPException(status_code=500, detail="Service not initialized")
+    _assert_local_captcha_role()
+
+    cfg = await _db.get_captcha_config()
+    from ..services.browser_captcha import split_browser_proxy_pool
+
+    proxy_pool_size = len(split_browser_proxy_pool(cfg.browser_proxy_url or ""))
+    return {
+        "success": True,
+        "captcha_method": config.captcha_method,
+        "browser_proxy_enabled": cfg.browser_proxy_enabled,
+        "browser_proxy_url": cfg.browser_proxy_url or "",
+        "browser_count": cfg.browser_count,
+        "personal_project_pool_size": config.personal_project_pool_size,
+        "personal_max_resident_tabs": config.personal_max_resident_tabs,
+        "personal_idle_tab_ttl_seconds": config.personal_idle_tab_ttl_seconds,
+        "browser_proxy_pool_size": proxy_pool_size,
+    }
+
+
+@router.post("/captcha-config")
+async def update_captcha_config(
+    request: UpdateCaptchaConfigRequest,
+    token: str = Depends(verify_admin_token),
+):
+    if _db is None or _runtime is None:
+        raise HTTPException(status_code=500, detail="Service not initialized")
+    _assert_local_captcha_role()
+
+    if request.browser_proxy_enabled and request.browser_proxy_url:
+        from ..services.browser_captcha import validate_browser_proxy_url
+
+        is_valid, message = validate_browser_proxy_url(request.browser_proxy_url)
+        if not is_valid:
+            raise HTTPException(status_code=400, detail=message)
+
+    method = str(request.captcha_method or "").strip().lower() or "browser"
+    if method not in {"browser", "personal"}:
+        raise HTTPException(status_code=400, detail="captcha_method only supports browser/personal")
+
+    config.update_config_sections(
+        {
+            "captcha": {
+                "captcha_method": method,
+                "personal_project_pool_size": int(request.personal_project_pool_size),
+                "personal_max_resident_tabs": int(request.personal_max_resident_tabs),
+                "personal_idle_tab_ttl_seconds": int(request.personal_idle_tab_ttl_seconds),
+            }
+        }
+    )
+
+    await _db.update_captcha_config(
+        captcha_method=method,
+        browser_proxy_enabled=request.browser_proxy_enabled,
+        browser_proxy_url=request.browser_proxy_url if request.browser_proxy_enabled else None,
+        browser_count=request.browser_count,
+        personal_project_pool_size=request.personal_project_pool_size,
+        personal_max_resident_tabs=request.personal_max_resident_tabs,
+        personal_idle_tab_ttl_seconds=request.personal_idle_tab_ttl_seconds,
+    )
+    await _runtime.reload_browser_count()
+    await _runtime.refresh_browser_warmup_settings()
+
+    updated = await get_captcha_config(token=token)
+    updated["message"] = "Runtime coding configuration is saved and hot reloaded"
+    return updated
+
+
+@router.get("/cluster/config")
+async def get_cluster_config(token: str = Depends(verify_admin_token)):
+    if _db is None:
+        raise HTTPException(status_code=500, detail="Service not initialized")
+
+    cluster_key = await _db.get_cluster_key()
+    return {
+        "success": True,
+        "role": config.cluster_role,
+        "cluster_key": cluster_key if config.cluster_role == "master" else "",
+        "node_name": config.node_name,
+        "master_base_url": config.cluster_master_base_url,
+        "node_public_base_url": config.cluster_node_public_base_url,
+        "heartbeat_interval_seconds": config.cluster_heartbeat_interval_seconds,
+    }
+
+
+@router.post("/cluster/config/rotate-key")
+async def rotate_cluster_key(token: str = Depends(verify_admin_token)):
+    if _db is None:
+        raise HTTPException(status_code=500, detail="Service not initialized")
+    _assert_master_role("Cluster Key rotation")
+
+    new_key = await _db.rotate_cluster_key()
+    return {
+        "success": True,
+        "cluster_key": new_key,
+    }
+
+
+@router.get("/cluster/nodes")
+async def list_cluster_nodes(token: str = Depends(verify_admin_token)):
+    if _db is None:
+        raise HTTPException(status_code=500, detail="Service not initialized")
+    _assert_master_role("Sub-node management")
+    items = await _db.list_cluster_nodes()
+    if _cluster is not None:
+        items = _cluster.decorate_nodes_capacity(items)
+    return {
+        "success": True,
+        "items": items,
+    }
+
+
+@router.get("/cluster/nodes/{node_id}/detail")
+async def get_cluster_node_detail(
+    node_id: int,
+    heartbeat_limit: int = Query(default=20, ge=1, le=100),
+    error_limit: int = Query(default=20, ge=1, le=100),
+    token: str = Depends(verify_admin_token),
+):
+    if _db is None:
+        raise HTTPException(status_code=500, detail="Service not initialized")
+    _assert_master_role("Child node diagnostic details")
+
+    node = await _db.get_cluster_node(node_id)
+    if not node:
+        raise HTTPException(status_code=404, detail="Node does not exist")
+
+    item = _cluster.decorate_node_capacity(node) if _cluster is not None else node
+    heartbeats = await _db.list_cluster_node_heartbeats(node_id=node_id, limit=heartbeat_limit)
+    errors = await _db.list_cluster_node_errors(node_id=node_id, limit=error_limit)
+
+    return {
+        "success": True,
+        "item": item,
+        "heartbeats": heartbeats,
+        "errors": errors,
+    }
+
+
+@router.post("/cluster/nodes/{node_id}/logs/clear")
+async def clear_cluster_node_logs(
+    node_id: int,
+    request: ClusterNodeLogClearRequest,
+    token: str = Depends(verify_admin_token),
+):
+    if _db is None:
+        raise HTTPException(status_code=500, detail="Service not initialized")
+    _assert_master_role("Child node diagnostic details")
+
+    requested_scopes = {str(scope or "").strip().lower() for scope in request.scopes}
+    clear_heartbeats = "heartbeats" in requested_scopes
+    clear_errors = "errors" in requested_scopes
+    if not clear_heartbeats and not clear_errors:
+        raise HTTPException(status_code=400, detail="scopes only support heartbeats / errors")
+
+    try:
+        result = await _db.clear_cluster_node_logs(
+            node_id=node_id,
+            clear_heartbeats=clear_heartbeats,
+            clear_errors=clear_errors,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+    cleared_parts = []
+    if clear_heartbeats:
+        cleared_parts.append(f"Heartbeat log {result['heartbeats']} items")
+    if clear_errors:
+        cleared_parts.append(f"Error log {result['errors']} items")
+    return {
+        "success": True,
+        "deleted": result,
+        "message": f"Child node #{node_id} has been cleared" + "，".join(cleared_parts),
+    }
+
+
+@router.patch("/cluster/nodes/{node_id}")
+async def update_cluster_node(
+    node_id: int,
+    request: ClusterNodeUpdateRequest,
+    token: str = Depends(verify_admin_token),
+):
+    if _db is None:
+        raise HTTPException(status_code=500, detail="Service not initialized")
+    _assert_master_role("Sub-node management")
+
+    updated = await _db.update_cluster_node(
+        node_id=node_id,
+        enabled=request.enabled,
+        weight=request.weight,
+    )
+    if not updated:
+        raise HTTPException(status_code=404, detail="Node does not exist")
+
+    return {
+        "success": True,
+        "item": updated,
+    }
+
+
+@router.delete("/cluster/nodes/{node_id}")
+async def delete_cluster_node(
+    node_id: int,
+    token: str = Depends(verify_admin_token),
+):
+    if _db is None:
+        raise HTTPException(status_code=500, detail="Service not initialized")
+    _assert_master_role("Sub-node management")
+
+    deleted = await _db.delete_cluster_node(node_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Node does not exist")
+
+    return {
+        "success": True,
+        "message": f"Child node #{node_id} has been deleted",
+    }

@@ -91,7 +91,16 @@ namespace AssetAutomator.Application.Steps
 
                 logTask(task, $"[STEP 2] Phase 2: Converting Research Session context to final spoken script transcript in {targetLangName} (Session ID: {currentSessionId})...");
 
-                string scriptPrompt = $"Write a complete, high-quality script of approximately 1600 - 2000 words in {targetLangName} based on these guidelines. Remember: output ONLY the spoken words. NOT INCLUDE: title, [Pause 2 seconds], description, special characters";
+                string scriptPrompt = $$"""
+Write a complete, high-quality script of approximately 1600 - 2000 words in {{targetLangName}} based on the deep research guidelines.
+CRITICAL RULES FOR OUTPUT FORMAT:
+1. You are generating raw input for a Text-To-Speech (TTS) engine.
+2. Output ONLY the raw spoken words.
+3. DO NOT include any titles, headers, or part numbers (e.g., NO "PART 1:", NO "Title:").
+4. DO NOT include any visual descriptions, character names, or scene directions (e.g., NO "(Visual Mascot...)", NO "Host:").
+5. DO NOT include any audio cues, pauses, or timestamps (e.g., NO "[Pause 2 seconds]", NO "00:00 - 00:30").
+6. The final output must consist EXCLUSIVELY of the paragraphs of text to be read aloud, with no other formatting.
+""";
 
                 var scriptResponse = await _geminiApiService.SendChatAsync(
                     message: scriptPrompt,
@@ -133,7 +142,16 @@ namespace AssetAutomator.Application.Steps
                     targetLangName = targetLangName.Split(new[] { " - " }, StringSplitOptions.None)[0].Trim();
                 }
 
-                string prompt = $"Write a complete, high-quality video script transcript of approximately 1600 - 2000 words in {targetLangName} about the topic: '{topicOrUrl}'. Remember: output ONLY the spoken words.";
+                string prompt = $$"""
+Write a complete, high-quality video script transcript of approximately 1600 - 2000 words in {{targetLangName}} about the topic: '{{topicOrUrl}}'.
+CRITICAL RULES FOR OUTPUT FORMAT:
+1. You are generating raw input for a Text-To-Speech (TTS) engine.
+2. Output ONLY the raw spoken words.
+3. DO NOT include any titles, headers, or part numbers (e.g., NO "PART 1:", NO "Title:").
+4. DO NOT include any visual descriptions, character names, or scene directions (e.g., NO "(Visual Mascot...)", NO "Host:").
+5. DO NOT include any audio cues, pauses, or timestamps (e.g., NO "[Pause 2 seconds]", NO "00:00 - 00:30").
+6. The final output must consist EXCLUSIVELY of the paragraphs of text to be read aloud, with no other formatting.
+""";
                 logTask(task, $"[STEP 2] Sending request to Gemini API (Gem ID: {gemId ?? "Default"}, Model: {resolvedModel2}, Language: {targetLangName})...");
 
                 var response = await _geminiApiService.SendChatAsync(

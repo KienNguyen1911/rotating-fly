@@ -20,6 +20,29 @@ namespace AssetAutomator.Application.Services
         public bool deep_research_completed { get; set; }
     }
 
+    /// <summary>
+    /// Streaming chat response result. Aggregates text + thoughts from SSE events
+    /// emitted by the Python server's <c>/api/chat/stream-extended</c> endpoint.
+    /// Mirrors the behavior of <c>generate_content_stream</c> in
+    /// <c>test_gem_and_thinking.py</c>.
+    /// </summary>
+    public class GeminiChatStreamResult
+    {
+        public string SessionId { get; set; } = string.Empty;
+        public string Text { get; set; } = string.Empty;
+        public string Thoughts { get; set; } = string.Empty;
+        public List<GeminiChatResponseImage> Images { get; set; } = new();
+        public bool Completed { get; set; }
+        public string? Error { get; set; }
+    }
+
+    public class GeminiChatResponseImage
+    {
+        public string url { get; set; } = string.Empty;
+        public string? title { get; set; }
+        public string? alt { get; set; }
+    }
+
     public class DeepResearchStartResponseModel
     {
         public string research_id { get; set; } = string.Empty;

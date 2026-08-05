@@ -18,9 +18,11 @@ Thumbs.db
 dist_package/
 *.zip
 
-# Python Portable runtime & setup files
-PythonEmbed/
-get-pip.py
+# Python Portable runtime & setup files (bundled self-contained installer)
+tools/PythonEmbed/
+tools/PythonSource/
+tools/get-pip.py
+tools/python-embed.zip
 
 # Runtime logs (created by app or PowerShell test wrappers)
 *.log
@@ -40,3 +42,25 @@ test-stderr.log
 Modules/*/venv/
 Modules/*/__pycache__/
 Modules/*/.pytest_cache/
+
+# Runtime authentication/session data — never commit
+Modules/*/cookies.json
+Modules/*/*cookies*.json
+Modules/*/profiles/
+
+# Generated module outputs
+Modules/*/output/
+Modules/*/screenshots/
+Modules/*/tmp/
+
+# Runtime PIDs/sockets for module process managers
+Modules/*/*.pid
+Modules/*/*.sock
+
+# Local runtime and diagnostic artifacts
+logs/
+*.out.txt
+*.err.txt
+*_debug.png
+appsettings.json
+free-proxies.json

@@ -20,8 +20,8 @@ Write-Host "=== BẮT ĐẦU ĐÓNG GÓI ỨNG DỤNG v$Version ===" -Foreground
 
 # 1. Định nghĩa các đường dẫn
 $projectRoot = Get-Location
-$uiProjectPath = Join-Path $projectRoot "src\AssetAutomator.UI\AssetAutomator.UI.csproj"
-$publishDir = Join-Path $projectRoot "src\AssetAutomator.UI\bin\Release\net10.0-windows\win-x64\publish"
+$uiProjectPath = Join-Path $projectRoot "src\AssetAutomator.WinUI\AssetAutomator.WinUI.csproj"
+$publishDir = Join-Path $projectRoot "src\AssetAutomator.WinUI\bin\Release\net10.0-windows10.0.26100.0\win-x64\publish"
 $packageOutDir = Join-Path $projectRoot "dist_package"
 $zipFile = Join-Path $projectRoot "AssetAutomator_v${Version}.zip"
 

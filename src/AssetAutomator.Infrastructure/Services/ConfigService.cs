@@ -82,6 +82,7 @@ namespace AssetAutomator.Infrastructure.Services
                 settings.ImageApiKey = envImageKey.Trim();
 
             _currentSettings = settings;
+            AutomationTask.BaseOutputsDirProvider = () => _currentSettings.OutputsDir;
             SaveSettingsImpl(settings);
 
             return settings;
@@ -90,10 +91,20 @@ namespace AssetAutomator.Infrastructure.Services
         private void EnsureDefaultsImpl(AppSettings settings)
         {
             if (string.IsNullOrWhiteSpace(settings.ImageApiUrl))
-                settings.ImageApiUrl = "http://localhost:8765";
+                settings.ImageApiUrl = "http://127.0.0.1:8787/v1";
 
             if (string.IsNullOrWhiteSpace(settings.ImageApiKey))
-                settings.ImageApiKey = "chatgpt2api";
+                settings.ImageApiKey = "flow-local-key";
+
+            if (string.IsNullOrWhiteSpace(settings.GoogleFlow2RootPath))
+                settings.GoogleFlow2RootPath = Path.Combine(
+                    AppContext.BaseDirectory, "tools", "PythonSource");
+
+            if (settings.GoogleFlow2Port <= 0)
+                settings.GoogleFlow2Port = 8787;
+
+            if (string.IsNullOrWhiteSpace(settings.DefaultImageGenProvider))
+                settings.DefaultImageGenProvider = "flow_local";
 
             if (string.IsNullOrWhiteSpace(settings.CustomGptUrl))
                 settings.CustomGptUrl = "https://chatgpt.com/g/g-6a4083a0e37081919a248ef7721dae3d-dich-chay";

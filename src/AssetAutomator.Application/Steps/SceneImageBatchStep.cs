@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -14,16 +15,22 @@ namespace AssetAutomator.Application.Steps
     /// Pipeline Step 5: Reads scenes.json, parses image_prompts for all scenes,
     /// and invokes BatchImageGenService to generate scene images concurrently (defaulting to flow_local provider).
     /// Uses SemaphoreSlim to cap concurrent image generation at MaxConcurrentImages.
+    /// After completion, creates a BatchProject in BatchImageGen tab for quality control.
     /// </summary>
     public class SceneImageBatchStep
     {
         private readonly BatchImageGenService _batchImageGenService;
+        private readonly BatchProjectService _batchProjectService;
         private readonly IConfigService _configService;
         private const int MaxConcurrentImages = 6;
 
-        public SceneImageBatchStep(BatchImageGenService batchImageGenService, IConfigService configService)
+        public SceneImageBatchStep(
+            BatchImageGenService batchImageGenService,
+            BatchProjectService batchProjectService,
+            IConfigService configService)
         {
             _batchImageGenService = batchImageGenService;
+            _batchProjectService = batchProjectService;
             _configService = configService;
         }
 
@@ -51,20 +58,22 @@ namespace AssetAutomator.Application.Steps
                 throw new InvalidOperationException("[STEP 5] No valid scenes found in scenes.json.");
             }
 
-            string provider = string.IsNullOrWhiteSpace(providerKey) ? (_configService.CurrentSettings.DefaultImageGenProvider ?? "flow_local") : providerKey;
-            // flow_local: pass empty strings to let FlowLocalImageGenProvider use its built-in defaults
-            // (http://127.0.0.1:8787/v1 + flow-local-key). Other providers read from config.
-            string serverUrl = provider.Equals("flow_local", StringComparison.OrdinalIgnoreCase)
-                ? ""
-                : _configService.CurrentSettings.ImageApiUrl;
-            string apiKey = provider.Equals("flow_local", StringComparison.OrdinalIgnoreCase)
-                ? ""
-                : _configService.CurrentSettings.ImageApiKey;
+            string provider = string.IsNullOrWhiteSpace(providerKey)
+                ? (_configService.CurrentSettings.DefaultImageGenProvider ?? "flow_local")
+                : providerKey;
+            // Legacy projects may have provider="glabs" - silently remap to flow_local.
+            if (!string.Equals(provider, "flow_local", StringComparison.OrdinalIgnoreCase))
+            {
+                provider = "flow_local";
+            }
 
-            // Determine default model based on provider (must match Flow Local API naming: hyphens, not underscores)
-            string defaultModel = provider.Equals("flow_local", StringComparison.OrdinalIgnoreCase)
-                ? "nano-banana-2"   // Flow Local uses hyphens (nano-banana-2-landscape)
-                : "nano_banana_2";   // Glabs uses underscores
+            // Pass empty strings so FlowLocalImageGenProvider uses its built-in defaults
+            // (http://127.0.0.1:8787/v1 + flow-local-key) when settings are missing.
+            string serverUrl = "";
+            string apiKey = "";
+
+            // Default model name must match Google Flow Local API naming (hyphens, not underscores).
+            string defaultModel = "nano-banana-2";
 
             string imgDir = Path.Combine(outputDir, "img");
             Directory.CreateDirectory(imgDir);
@@ -105,7 +114,7 @@ namespace AssetAutomator.Application.Steps
                     Transcript = scene.transcript,
                     SceneTitle = $"Scene #{scene.scene}: {sceneId}",
                     Provider = provider,
-                    Engine = provider.Equals("flow_local", StringComparison.OrdinalIgnoreCase) ? "flow" : "glabs",
+                    Engine = "flow",
                     Model = defaultModel,
                     AspectRatio = "16:9",
                     Status = "Processing"
@@ -156,6 +165,83 @@ namespace AssetAutomator.Application.Steps
 
             task.Step5Status = "Done";
             logTask(task, $"[STEP 5] Success! Finished Batch Image Generation. ({successCount}/{total} images created, {failCount} failed).");
+
+            // Create BatchProject in BatchImageGen tab for quality control
+            await CreateBatchProjectForTaskAsync(task, rootData, imgDir, provider, defaultModel, logTask);
+        }
+
+        /// <summary>
+        /// Creates a BatchProject in BatchImageGen tab after image generation completes.
+        /// This allows users to review quality, regenerate failed images, and collect assets.
+        /// </summary>
+        private async Task CreateBatchProjectForTaskAsync(
+            AutomationTask task,
+            ScenesJsonRootModel? rootData,
+            string imgDir,
+            string provider,
+            string defaultModel,
+            Action<AutomationTask, string> logTask)
+        {
+            try
+            {
+                // Generate project name from task ID or topic
+                string projectName = $"Gemini_{task.Id.ToString()[..8]}_{DateTime.Now:yyyyMMdd_HHmmss}";
+                if (!string.IsNullOrWhiteSpace(task.VideoId) && task.VideoId.Length > 5)
+                {
+                    projectName = $"Gemini_{task.VideoId[..Math.Min(20, task.VideoId.Length)]}";
+                }
+
+                logTask(task, $"[STEP 5] Creating BatchProject '{projectName}' in BatchImageGen tab...");
+
+                // Create the project
+                var project = await _batchProjectService.CreateProjectAsync(projectName);
+
+                // Update project metadata
+                project.OutputDir = imgDir;
+                project.Provider = provider;
+                project.Engine = "flow";
+                project.Model = defaultModel;
+                project.AspectRatio = "16:9";
+                project.Concurrency = MaxConcurrentImages;
+
+                // Add items from scenes
+                if (rootData?.scenes != null)
+                {
+                    foreach (var scene in rootData.scenes)
+                    {
+                        string sceneId = string.IsNullOrWhiteSpace(scene.id)
+                            ? $"scene_{scene.scene:D3}"
+                            : scene.id;
+
+                        string imagePath = Path.Combine(imgDir, $"{sceneId}.png");
+                        string status = File.Exists(imagePath) ? "Done" : "Failed";
+
+                        project.Items.Add(new BatchImageItemState
+                        {
+                            Index = scene.scene,
+                            SceneTitle = $"Scene #{scene.scene}: {sceneId}",
+                            Transcript = scene.transcript ?? string.Empty,
+                            Prompt = scene.image_prompt ?? string.Empty,
+                            Status = status,
+                            ImagePath = File.Exists(imagePath) ? imagePath : string.Empty,
+                            ErrorMessage = status == "Failed" ? "Image file not found after generation" : string.Empty,
+                            Engine = "flow",
+                            Model = defaultModel,
+                            AspectRatio = "16:9"
+                        });
+                    }
+                }
+
+                // Save project with all items
+                await _batchProjectService.SaveProjectAsync(project);
+
+                logTask(task, $"[STEP 5] ✅ BatchProject created with {project.Items.Count} image items for quality review.");
+            }
+            catch (Exception ex)
+            {
+                logTask(task, $"[STEP 5] ⚠️ Failed to create BatchProject: {ex.Message}");
+                // Don't throw - image gen was successful, this is just a convenience feature
+            }
         }
     }
 }

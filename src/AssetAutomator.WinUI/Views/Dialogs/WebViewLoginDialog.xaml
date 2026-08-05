@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ContentDialog x:Class="AssetAutomator.WinUI.Views.Dialogs.WebViewLoginDialog"
+               xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+               xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+               Title="Dang nhap ChatGPT (WebView2)"
+               CloseButtonText="Hoan tat"
+               DefaultButton="Close">
+
+    <Grid MinWidth="700" MinHeight="480" RowSpacing="8">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- Status -->
+        <TextBlock x:Name="TxtStatus" Text="Dang khoi tao..." Style="{ThemeResource CaptionTextBlockStyle}" Opacity="0.7" TextTrimming="CharacterEllipsis" />
+
+        <!-- WebView2 host (note: WebView2 element is not in default WinAppSDK XAML namespace; using Border as a stand-in until the WinAppSDK add-on is wired) -->
+        <Border x:Name="WvBrowserHost" Grid.Row="1" Background="{ThemeResource LayerOnAcrylicFillColorDefaultBrush}" />
+    </Grid>
+</ContentDialog>

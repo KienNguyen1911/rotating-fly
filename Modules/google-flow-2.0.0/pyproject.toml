@@ -1,0 +1,85 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "google-flow"
+version = "2.0.1"
+description = "Professional image generation library and OpenAI-compatible API for Google Flow"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+authors = [{name = "Google Flow"}]
+dependencies = [
+    "curl-cffi>=0.7.0",
+    "tomli>=2.0.0; python_version < '3.11'",
+    "Pillow>=9.0.0",
+    "playwright>=1.52.0",
+    "fastapi>=0.116.0",
+    "uvicorn>=0.35.0",
+    "python-multipart>=0.0.20",
+    "pydantic>=2.0.0",
+    "aiosqlite>=0.20.0",
+    "apscheduler>=3.10.4",
+    "python-dotenv>=1.0.1",
+    "redis>=5.0.0",
+    "nodriver>=0.50.3",
+]
+
+[project.optional-dependencies]
+nodriver = [
+    "nodriver>=0.50.3",
+]
+camoufox = [
+    "cloverlabs-camoufox>=0.6.0",
+]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-cov>=4.0.0",
+    "ruff>=0.4.0",
+    "mypy>=1.8.0",
+    "httpx>=0.24.0",
+]
+
+[project.scripts]
+google-flow = "google_flow.cli.commands:main"
+google-flow-api = "google_flow.api.app:main"
+google-flow-captcha = "google_flow.captcha_service.main:main"
+google-flow-updater = "google_flow.token_updater.main:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["google_flow*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "N",    # pep8-naming
+    "UP",   # pyupgrade
+    "B",    # bugbear
+    "SIM",  # simplify
+    "TCH",  # type-checking imports
+]
+ignore = ["B008"]
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = false
+warn_unused_configs = true
+disallow_untyped_defs = true
+ignore_missing_imports = true
+plugins = [
+    "pydantic.mypy",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"

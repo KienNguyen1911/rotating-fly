@@ -33,6 +33,7 @@ namespace AssetAutomator.Application.Services
         private readonly GeminiPlaywrightSceneBreakdownStep _sceneBreakdownStep;
         private readonly BatchImageGenService _batchImageGenService;
         private readonly GeminiTopicResearchStep _topicResearchStep;
+        private readonly SceneImageBatchStep _imageBatchStep;
 
         private readonly int _maxDeepResearch;
         private readonly int _maxVoiceover;
@@ -46,6 +47,7 @@ namespace AssetAutomator.Application.Services
             GeminiPlaywrightSceneBreakdownStep sceneBreakdownStep,
             BatchImageGenService batchImageGenService,
             GeminiTopicResearchStep topicResearchStep,
+            SceneImageBatchStep imageBatchStep,
             int maxDeepResearch = 2,
             int maxVoiceover = 3,
             int maxSceneCreator = 4,
@@ -57,6 +59,7 @@ namespace AssetAutomator.Application.Services
             _sceneBreakdownStep = sceneBreakdownStep;
             _batchImageGenService = batchImageGenService;
             _topicResearchStep = topicResearchStep;
+            _imageBatchStep = imageBatchStep;
             _maxDeepResearch = Math.Max(1, maxDeepResearch);
             _maxVoiceover = Math.Max(1, maxVoiceover);
             _maxSceneCreator = Math.Max(1, maxSceneCreator);
@@ -333,6 +336,19 @@ namespace AssetAutomator.Application.Services
             string gemName = taskModel.SelectedSceneCreatorGem?.Name ?? string.Empty;
             string model = GeminiApiService.ResolveModelName(taskModel.SceneCreatorModel);
 
+            // Routing: respect the per-task toggle so users can A/B test
+            // API Stream (fast, no Chrome) vs Playwright (real Web UI).
+            // Default = ApiStream because it mirrors test_gem_and_thinking.py
+            // and does not require a Chrome profile with an active session.
+            var mode = taskModel.UseApiStreamForSceneCreator
+                ? GeminiPlaywrightSceneBreakdownStep.SceneBreakdownMode.ApiStream
+                : GeminiPlaywrightSceneBreakdownStep.SceneBreakdownMode.Playwright;
+
+            // Auto-enable extended thinking when the resolved model name
+            // already carries the -thinking suffix (e.g. gemini-3-flash-thinking).
+            bool enableThinking = model.Contains("thinking", StringComparison.OrdinalIgnoreCase) ||
+                                  model.Contains("advanced", StringComparison.OrdinalIgnoreCase);
+
             await _sceneBreakdownStep.ExecuteAsync(
                 task: task,
                 logTask: log,
@@ -340,8 +356,9 @@ namespace AssetAutomator.Application.Services
                 outputDir: outputDir,
                 gemId: string.IsNullOrWhiteSpace(gemId) ? null : gemId,
                 sessionId: null,
-                gemName: gemName
-            );
+                gemName: gemName,
+                mode: mode,
+                enableExtendedThinking: enableThinking);
         }
 
         private async Task RunStageImageGenAsync(
@@ -364,8 +381,36 @@ namespace AssetAutomator.Application.Services
                 return;
             }
 
-            // Delegate to BatchImageGenService directly (placeholder step is bypassed).
-            await _batchImageGenService.TestHealthAsync(taskModel.SelectedImageProvider ?? "flow_local");
+            // Pre-flight health check so we fail fast if the local Python Flow server
+            // is down, instead of letting every scene request inside SceneImageBatchStep
+            // time out individually.
+            //
+            // NOTE: taskModel.SelectedImageProvider is the provider KEY (e.g. "flow_local"),
+            // NOT a URL. The actual base URL lives in AppSettings.ImageApiUrl — that's
+            // what TestHealthAsync expects. TestHealthAsync strips any trailing /v1
+            // before probing /health on the root.
+            string flowBaseUrl = string.IsNullOrWhiteSpace(_configService.CurrentSettings.ImageApiUrl)
+                ? "http://127.0.0.1:8787/v1"
+                : _configService.CurrentSettings.ImageApiUrl;
+            log(task, $"[STAGE-D] 🔎 Pinging Flow Local health at '{flowBaseUrl}'...");
+            bool healthy = await _batchImageGenService.TestHealthAsync(flowBaseUrl);
+            log(task, healthy
+                ? "[STAGE-D] ✅ Flow Local API /health OK."
+                : $"[STAGE-D] ⚠️ Flow Local API /health không phản hồi (đã ping '{flowBaseUrl}'). Kiểm tra server python ở port 8787 hoặc vào Settings để bật lại.");
+            if (!healthy)
+            {
+                throw new InvalidOperationException(
+                    $"[STAGE-D] ❌ Flow Local API /health failed for '{flowBaseUrl}'. Hãy chắc chắn server python đã chạy (port 8787) hoặc vào Settings để bật lại.");
+            }
+
+            // Actually run image generation. Previously this stage was a stub that only
+            // pinged /health and slept 15s — that left scenes.json in place but no
+            // files in img/, while Step4Status was still marked Success.
+            await _imageBatchStep.ExecuteAsync(
+                outputDir: outputDir,
+                providerKey: taskModel.SelectedImageProvider,
+                task: task,
+                logTask: log);
 
             // Nghỉ 15 giây để GPU/API hạ nhiệt
             log(task, $"[STAGE-D] 😴 Hoàn thành tạo ảnh. Nghỉ 15 giây để GPU hạ nhiệt...");

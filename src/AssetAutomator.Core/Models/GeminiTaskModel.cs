@@ -73,11 +73,37 @@ namespace AssetAutomator.Core.Models
             set { if (_step5Status != value) { _step5Status = value; OnPropertyChanged(); OnPropertyChanged(nameof(ProgressPercent)); OnPropertyChanged(nameof(ProgressText)); OnPropertyChanged(nameof(ActiveStep)); } }
         }
 
-        public string Step1Logs { get; set; } = "";
-        public string Step2Logs { get; set; } = "";
-        public string Step3Logs { get; set; } = "";
-        public string Step4Logs { get; set; } = "";
-        public string Step5Logs { get; set; } = "";
+        private string _step1Logs = "";
+        private string _step2Logs = "";
+        private string _step3Logs = "";
+        private string _step4Logs = "";
+        private string _step5Logs = "";
+
+        public string Step1Logs
+        {
+            get => _step1Logs;
+            set { if (_step1Logs != value) { _step1Logs = value; OnPropertyChanged(); } }
+        }
+        public string Step2Logs
+        {
+            get => _step2Logs;
+            set { if (_step2Logs != value) { _step2Logs = value; OnPropertyChanged(); } }
+        }
+        public string Step3Logs
+        {
+            get => _step3Logs;
+            set { if (_step3Logs != value) { _step3Logs = value; OnPropertyChanged(); } }
+        }
+        public string Step4Logs
+        {
+            get => _step4Logs;
+            set { if (_step4Logs != value) { _step4Logs = value; OnPropertyChanged(); } }
+        }
+        public string Step5Logs
+        {
+            get => _step5Logs;
+            set { if (_step5Logs != value) { _step5Logs = value; OnPropertyChanged(); } }
+        }
 
         public bool IsSelected
         {
@@ -142,6 +168,26 @@ namespace AssetAutomator.Core.Models
         {
             get => _selectedSceneCreatorGem;
             set { if (_selectedSceneCreatorGem != value) { _selectedSceneCreatorGem = value; OnPropertyChanged(); OnPropertyChanged(nameof(SceneCreatorSummary)); } }
+        }
+
+        private bool _useApiStreamForSceneCreator = true;
+
+        /// <summary>
+        /// When <c>true</c> (default), Step 3 (Scene Breakdown) uses the Python
+        /// REST server's <c>/api/chat/stream-extended</c> endpoint to stream the
+        /// extended-thinking process + final scenes JSON back in realtime.
+        /// This mirrors <c>test_gem_and_thinking.py</c> and does NOT require a
+        /// Chrome profile with an active Gemini session.
+        ///
+        /// When <c>false</c>, falls back to driving the real Gemini Web UI
+        /// through Playwright + a persistent Chrome profile. Use this when the
+        /// Python server is unavailable or the user wants the exact Web UI
+        /// behaviour.
+        /// </summary>
+        public bool UseApiStreamForSceneCreator
+        {
+            get => _useApiStreamForSceneCreator;
+            set { if (_useApiStreamForSceneCreator != value) { _useApiStreamForSceneCreator = value; OnPropertyChanged(); } }
         }
 
         private string _characterRef = "";
@@ -276,12 +322,22 @@ namespace AssetAutomator.Core.Models
 
         public string SceneCreatorSummary =>
             $"{(SelectedSceneCreatorGem?.Name ?? "Mặc Định")} · {SceneCreatorModel}" +
-            (SceneCreatorModel.Contains("pro", StringComparison.OrdinalIgnoreCase) ? " 🧠" : "");
+            (SceneCreatorModel.Contains("pro", StringComparison.OrdinalIgnoreCase) ? " 🧠" : "") +
+            (UseApiStreamForSceneCreator ? " 📡" : " 🎭");
+
+        private readonly System.Threading.SynchronizationContext? _syncContext = System.Threading.SynchronizationContext.Current;
 
         public event PropertyChangedEventHandler? PropertyChanged;
         protected void OnPropertyChanged([CallerMemberName] string? propertyName = null)
         {
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+            if (_syncContext != null)
+            {
+                _syncContext.Post(_ => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName)), null);
+            }
+            else
+            {
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+            }
         }
     }
 }

@@ -1,0 +1,5498 @@
+"""
+RT-based local reCAPTCHA coding service (ultimate closed-loop version - pure version without fake_useragent)
+Support: automatic refresh of Session Token, external trigger fingerprint switching, deadlock retry
+"""
+import gc
+from google_flow.constants import RECAPTCHA_SITE_KEY
+import os
+import signal
+import subprocess
+import sys
+
+# Fix asyncio compatibility issue with playwright on Windows
+os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", "0")
+
+import asyncio
+import contextlib
+import hashlib
+import json
+import random
+import re
+import time
+import uuid
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
+from typing import Any, Optional
+from urllib.parse import parse_qs, urlparse
+
+from ..core.config import config
+from ..core.logger import debug_logger
+from google_flow.utils.proxy import parse_proxy
+
+
+# ==================== Docker environment detection ====================
+def _is_running_in_docker() -> bool:
+    """Detect if running in Docker container"""
+    # Method 1: Check /.dockerenv file
+    if os.path.exists('/.dockerenv'):
+        return True
+    # Method 2: Check cgroup
+    try:
+        with open('/proc/1/cgroup') as f:
+            content = f.read()
+            if 'docker' in content or 'kubepods' in content or 'containerd' in content:
+                return True
+    except:
+        pass
+    # Method 3: Check environment variables
+    return bool(os.environ.get('DOCKER_CONTAINER') or os.environ.get('KUBERNETES_SERVICE_HOST'))
+
+
+IS_DOCKER = _is_running_in_docker()
+
+
+def _is_truthy_env(name: str) -> bool:
+    """Determine whether the environment variable is true."""
+    value = os.environ.get(name, "")
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+ALLOW_DOCKER_HEADED = (
+    _is_truthy_env("ALLOW_DOCKER_HEADED_CAPTCHA")
+    or _is_truthy_env("ALLOW_DOCKER_BROWSER_CAPTCHA")
+)
+DOCKER_HEADED_BLOCKED = IS_DOCKER and not ALLOW_DOCKER_HEADED
+
+
+# ==================== playwright automatic installation ====================
+def _run_pip_install(package: str, use_mirror: bool = False) -> bool:
+    """Run pip install command"""
+    cmd = [sys.executable, '-m', 'pip', 'install', package]
+    if use_mirror:
+        cmd.extend(['-i', 'https://pypi.tuna.tsinghua.edu.cn/simple'])
+
+    try:
+        debug_logger.log_info(f"[BrowserCaptcha] Installing {package}...")
+        print(f"[BrowserCaptcha] Installing {package}...")
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+        if result.returncode == 0:
+            debug_logger.log_info(f"[BrowserCaptcha] ✅ {package} installed successfully")
+            print(f"[BrowserCaptcha] ✅ {package} installed successfully")
+            return True
+        else:
+            debug_logger.log_warning(f"[BrowserCaptcha] {package} installation failed: {result.stderr[:200]}")
+            return False
+    except Exception as e:
+        debug_logger.log_warning(f"[BrowserCaptcha] {package} installation exception: {e}")
+        return False
+
+
+def _run_playwright_install(browser_type: str = "chrome", use_mirror: bool = False) -> bool:
+    """Install playwright browser (chrome or chromium)"""
+    cmd = [sys.executable, '-m', 'playwright', 'install', browser_type]
+    env = os.environ.copy()
+
+    if use_mirror:
+        # Use domestic mirroring
+        env['PLAYWRIGHT_DOWNLOAD_HOST'] = 'https://npmmirror.com/mirrors/playwright'
+
+    try:
+        debug_logger.log_info(f"[BrowserCaptcha] Installing {browser_type} browser...")
+        print(f"[BrowserCaptcha] Installing {browser_type} browser...")
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=600, env=env)
+        if result.returncode == 0:
+            debug_logger.log_info(f"[BrowserCaptcha] ✅ {browser_type} browser installed successfully")
+            print(f"[BrowserCaptcha] ✅ {browser_type} browser installed successfully")
+            return True
+        else:
+            debug_logger.log_warning(f"[BrowserCaptcha] {browser_type} installation failed: {result.stderr[:200]}")
+            return False
+    except Exception as e:
+        debug_logger.log_warning(f"[BrowserCaptcha] {browser_type} installation exception: {e}")
+        return False
+
+
+def _ensure_playwright_installed() -> bool:
+    """Make sure playwright is installed"""
+    try:
+        import playwright
+        debug_logger.log_info("[BrowserCaptcha] playwright installed")
+        return True
+    except ImportError:
+        pass
+
+    debug_logger.log_info("[BrowserCaptcha] playwright is not installed, starting automatic installation...")
+    print("[BrowserCaptcha] playwright is not installed, starting automatic installation...")
+
+    # Try the official source first
+    if _run_pip_install('playwright', use_mirror=False):
+        return True
+
+    # The official source failed, try domestic mirroring
+    debug_logger.log_info("[BrowserCaptcha] Official source installation failed, try domestic mirror...")
+    print("[BrowserCaptcha] Official source installation failed, try domestic mirror...")
+    if _run_pip_install('playwright', use_mirror=True):
+        return True
+
+    debug_logger.log_error("[BrowserCaptcha] ❌ The automatic installation of playwright failed, please install it manually: pip install playwright")
+    print("[BrowserCaptcha] ❌ The automatic installation of playwright failed, please install it manually: pip install playwright")
+    return False
+
+
+def _is_chrome_installed() -> bool:
+    """Check if Google Chrome is installed in standard paths or via Playwright"""
+    # 1. Check standard paths first (instant)
+    if sys.platform.startswith("win"):
+        paths = [
+            os.path.expandvars(r"%ProgramFiles%\Google\Chrome\Application\chrome.exe"),
+            os.path.expandvars(r"%ProgramFiles(x86)%\Google\Chrome\Application\chrome.exe"),
+            os.path.expandvars(r"%LocalAppData%\Google\Chrome\Application\chrome.exe"),
+        ]
+    elif sys.platform == "darwin":
+        paths = [
+            "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+        ]
+    else:  # Linux
+        paths = [
+            "/usr/bin/google-chrome",
+            "/usr/bin/google-chrome-stable",
+            "/usr/bin/chrome",
+        ]
+    if any(os.path.exists(p) for p in paths):
+        return True
+
+    # 2. Fallback to attempting a headless launch with channel="chrome"
+    try:
+        detect_script = (
+            "from playwright.sync_api import sync_playwright\n"
+            "with sync_playwright() as p:\n"
+            "    try:\n"
+            "        b = p.chromium.launch(headless=True, channel='chrome')\n"
+            "        b.close()\n"
+            "        print('chrome_installed')\n"
+            "    except Exception:\n"
+            "        pass\n"
+        )
+        result = subprocess.run(
+            [sys.executable, "-c", detect_script],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        return "chrome_installed" in (result.stdout or "")
+    except Exception:
+        return False
+
+
+def _ensure_browser_installed(browser_type: str = "chrome") -> bool:
+    """Make sure specified browser (chrome or chromium) is installed"""
+    browser_type = browser_type.lower().strip()
+    if browser_type == "chrome":
+        if _is_chrome_installed():
+            debug_logger.log_info("[BrowserCaptcha] chrome browser is already installed")
+            return True
+    else:
+        # Default/chromium detection
+        try:
+            detect_script = (
+                "from playwright.sync_api import sync_playwright\n"
+                "with sync_playwright() as p:\n"
+                "    print(p.chromium.executable_path or '')\n"
+            )
+            env = os.environ.copy()
+            env.setdefault("PLAYWRIGHT_BROWSERS_PATH", os.environ.get("PLAYWRIGHT_BROWSERS_PATH", "0") or "0")
+            result = subprocess.run(
+                [sys.executable, "-c", detect_script],
+                capture_output=True,
+                text=True,
+                timeout=60,
+                env=env,
+            )
+            browser_path = (result.stdout or "").strip().splitlines()
+            browser_path = browser_path[-1].strip() if browser_path else ""
+            if result.returncode == 0 and browser_path and os.path.exists(browser_path):
+                debug_logger.log_info(f"[BrowserCaptcha] chromium browser installed: {browser_path}")
+                return True
+        except Exception as e:
+            debug_logger.log_info(f"[BrowserCaptcha] Error detecting browser: {e}")
+
+    debug_logger.log_info(f"[BrowserCaptcha] The {browser_type} browser is not installed and will start to be installed automatically...")
+    print(f"[BrowserCaptcha] The {browser_type} browser is not installed and will start to be installed automatically...")
+
+    # Try the official source first
+    if _run_playwright_install(browser_type=browser_type, use_mirror=False):
+        return True
+
+    # The official source failed, try domestic mirroring
+    debug_logger.log_info(f"[BrowserCaptcha] Official source installation failed for {browser_type}, try domestic mirror...")
+    print(f"[BrowserCaptcha] Official source installation failed for {browser_type}, try domestic mirror...")
+    if _run_playwright_install(browser_type=browser_type, use_mirror=True):
+        return True
+
+    debug_logger.log_error(f"[BrowserCaptcha] ❌ The automatic installation of {browser_type} browser failed, please install it manually: python -m playwright install {browser_type}")
+    print(f"[BrowserCaptcha] ❌ The automatic installation of {browser_type} browser failed, please install it manually: python -m playwright install {browser_type}")
+    return False
+
+
+# Try importing playwright
+async_playwright = None
+Route = None
+BrowserContext = None
+PLAYWRIGHT_AVAILABLE = False
+
+if DOCKER_HEADED_BLOCKED:
+    debug_logger.log_warning(
+        "[BrowserCaptcha] Detected Docker environment, disabled head browser coding by default."
+        "To enable it set ALLOW_DOCKER_HEADED_CAPTCHA=true and provide DISPLAY/Xvfb."
+    )
+    print("[BrowserCaptcha] ⚠️ Detected Docker environment, disabled head browser coding by default")
+    print("[BrowserCaptcha] To enable please set ALLOW_DOCKER_HEADED_CAPTCHA=true and provide DISPLAY/Xvfb")
+else:
+    if IS_DOCKER and ALLOW_DOCKER_HEADED:
+        debug_logger.log_warning(
+            "[BrowserCaptcha] Docker head browser coding whitelist is enabled, please ensure DISPLAY/Xvfb is available"
+        )
+        print("[BrowserCaptcha] ✅ Docker head-on browser coding whitelist is enabled")
+    if _ensure_playwright_installed():
+        try:
+            from playwright.async_api import BrowserContext, Route, async_playwright
+            PLAYWRIGHT_AVAILABLE = True
+            # Check and install browser
+            browser_type = os.environ.get("FLOW_BROWSER_TYPE") or os.environ.get("FCS_BROWSER_TYPE") or "chrome"
+            _ensure_browser_installed(browser_type)
+        except ImportError as e:
+            debug_logger.log_error(f"[BrowserCaptcha] playwright import failed: {e}")
+            print(f"[BrowserCaptcha] ❌ playwright import failed: {e}")
+
+
+# Configuration
+LABS_URL = "https://labs.google/fx/tools/flow"
+
+# ==========================================
+# Agent parsing tool function
+# ==========================================
+def parse_proxy_url(proxy_url: str) -> dict[str, str] | None:
+    """Parse proxy URL"""
+    return parse_proxy(proxy_url)
+
+def normalize_browser_proxy_url(proxy_url: str) -> tuple[str | None, str | None]:
+    """Standardize browser proxies into a format acceptable to Playwright/Chromium.
+
+    Chromium does not support socks5 proxy authentication with account and password.
+    For `socks5://user:pass@host:port`, it is automatically downgraded to `http://user:pass@host:port`,
+    Conveniently compatible with proxy service providers that provide both HTTP/SOCKS5 dual entrances.
+
+    Returns:
+        (normalized_proxy_url, warning_message)
+    """
+    if not proxy_url:
+        return None, None
+
+    proxy_url = proxy_url.strip()
+    match = re.match(r'^(socks5|http|https)://(?:([^:]+):([^@]+)@)?([^:]+):(\d+)$', proxy_url)
+    if not match:
+        if not re.match(r'^(http|https|socks5)://', proxy_url):
+            proxy_url = f"http://{proxy_url}"
+        return proxy_url, None
+
+    protocol, username, password, host, port = match.groups()
+    if protocol == "socks5" and username and password:
+        normalized = f"http://{username}:{password}@{host}:{port}"
+        warning = (
+            "SOCKS5 proxy with authentication detected."
+            "Chromium does not support socks5 username and password authentication."
+            f"The browser has been automatically switched to use HTTP proxy: http://{host}:{port}"
+        )
+        return normalized, warning
+
+    return proxy_url, None
+
+def split_browser_proxy_pool(proxy_value: str) -> list[str]:
+    """Split a proxy pool string into a list using newlines, commas, or semicolons."""
+    if not proxy_value:
+        return []
+    parts = re.split(r"[\n,;]+", str(proxy_value))
+    return [part.strip() for part in parts if part and part.strip()]
+
+
+def normalize_browser_proxy_pool(proxy_value: str) -> tuple[list[str], list[str]]:
+    """Normalize the proxy pool and return any warning messages."""
+    normalized: list[str] = []
+    warnings: list[str] = []
+    for index, raw_proxy in enumerate(split_browser_proxy_pool(proxy_value), start=1):
+        normalized_proxy, warning_message = normalize_browser_proxy_url(raw_proxy)
+        if not normalized_proxy:
+            continue
+        normalized.append(normalized_proxy)
+        if warning_message:
+            warnings.append(f"Proxy #{index}: {warning_message}")
+    return normalized, warnings
+
+
+def validate_browser_proxy_url(proxy_url: str) -> tuple[bool, str]:
+    proxy_pool = split_browser_proxy_pool(proxy_url)
+    if not proxy_pool:
+        return True, None
+
+    for index, raw_proxy in enumerate(proxy_pool, start=1):
+        normalized_proxy_url, _ = normalize_browser_proxy_url(raw_proxy)
+        parsed = parse_proxy_url(normalized_proxy_url)
+        if not parsed:
+            return False, f"Proxy pool entry {index} has an invalid format"
+
+    return True, None
+
+
+def _build_user_agent_pool(base_user_agents: list[str], *, extra_count: int = 100) -> list[str]:
+    """On the basis of retaining the verified UA, expand more candidates and reduce the fingerprint duplication rate."""
+    normalized_pool: list[str] = []
+    seen: set[str] = set()
+    for raw_user_agent in base_user_agents:
+        if not isinstance(raw_user_agent, str):
+            continue
+        user_agent = raw_user_agent.strip()
+        if not user_agent or user_agent in seen:
+            continue
+        normalized_pool.append(user_agent)
+        seen.add(user_agent)
+
+    target_total = len(normalized_pool) + max(0, int(extra_count))
+    if len(normalized_pool) >= target_total:
+        return normalized_pool
+
+    candidate_pool: list[str] = []
+
+    windows_platforms = [
+        "Windows NT 10.0; Win64; x64",
+        "Windows NT 10.0; WOW64",
+    ]
+    windows_chrome_builds = [
+        "132.0.6834.84",
+        "132.0.6834.111",
+        "132.0.6834.159",
+        "131.0.6778.141",
+        "131.0.6778.205",
+        "131.0.6778.243",
+        "130.0.6723.91",
+        "130.0.6723.117",
+        "129.0.6668.70",
+        "129.0.6668.101",
+        "128.0.6613.84",
+        "128.0.6613.120",
+    ]
+    for platform in windows_platforms:
+        for chrome_build in windows_chrome_builds:
+            candidate_pool.append(
+                f"Mozilla/5.0 ({platform}) AppleWebKit/537.36 "
+                f"(KHTML, like Gecko) Chrome/{chrome_build} Safari/537.36"
+            )
+
+    windows_edge_pairs = [
+        ("132.0.6834.159", "132.0.2957.115"),
+        ("132.0.6834.111", "132.0.2957.140"),
+        ("131.0.6778.243", "131.0.2903.99"),
+        ("131.0.6778.205", "131.0.2903.112"),
+        ("130.0.6723.117", "130.0.2849.80"),
+        ("130.0.6723.91", "130.0.2849.96"),
+        ("129.0.6668.101", "129.0.2792.65"),
+        ("128.0.6613.120", "128.0.2739.79"),
+    ]
+    for platform in windows_platforms:
+        for chrome_build, edge_build in windows_edge_pairs:
+            candidate_pool.append(
+                f"Mozilla/5.0 ({platform}) AppleWebKit/537.36 "
+                f"(KHTML, like Gecko) Chrome/{chrome_build} Safari/537.36 Edg/{edge_build}"
+            )
+
+    firefox_versions = [
+        "134.0.1",
+        "134.0.2",
+        "133.0.3",
+        "132.0.2",
+        "131.0",
+        "130.0.1",
+    ]
+    for platform in windows_platforms:
+        for firefox_version in firefox_versions:
+            candidate_pool.append(
+                f"Mozilla/5.0 ({platform}; rv:{firefox_version}) Gecko/20100101 Firefox/{firefox_version}"
+            )
+
+    mac_platforms = [
+        "Macintosh; Intel Mac OS X 14_5_0",
+        "Macintosh; Intel Mac OS X 14_4_0",
+        "Macintosh; Intel Mac OS X 13_6_6",
+        "Macintosh; Intel Mac OS X 12_7_6",
+    ]
+    mac_chrome_builds = [
+        "132.0.6834.84",
+        "132.0.6834.159",
+        "131.0.6778.141",
+        "131.0.6778.243",
+        "130.0.6723.117",
+        "129.0.6668.101",
+    ]
+    for platform in mac_platforms:
+        for chrome_build in mac_chrome_builds:
+            candidate_pool.append(
+                f"Mozilla/5.0 ({platform}) AppleWebKit/537.36 "
+                f"(KHTML, like Gecko) Chrome/{chrome_build} Safari/537.36"
+            )
+
+    mac_edge_pairs = [
+        ("132.0.6834.159", "132.0.2957.115"),
+        ("131.0.6778.243", "131.0.2903.112"),
+        ("130.0.6723.117", "130.0.2849.96"),
+        ("129.0.6668.101", "129.0.2792.65"),
+    ]
+    for platform in mac_platforms:
+        for chrome_build, edge_build in mac_edge_pairs:
+            candidate_pool.append(
+                f"Mozilla/5.0 ({platform}) AppleWebKit/537.36 "
+                f"(KHTML, like Gecko) Chrome/{chrome_build} Safari/537.36 Edg/{edge_build}"
+            )
+
+    android_profiles = [
+        ("Android 14; Pixel 8", "132.0.6834.111"),
+        ("Android 14; SM-S9280", "132.0.6834.159"),
+        ("Android 14; OnePlus 12", "131.0.6778.243"),
+        ("Android 13; Pixel 7 Pro", "131.0.6778.205"),
+        ("Android 13; Xiaomi 14", "130.0.6723.117"),
+        ("Android 13; V2318A", "130.0.6723.91"),
+        ("Android 12; CPH2451", "129.0.6668.101"),
+        ("Android 12; RMX3840", "128.0.6613.120"),
+    ]
+    for device_token, chrome_build in android_profiles:
+        candidate_pool.append(
+            f"Mozilla/5.0 (Linux; {device_token}) AppleWebKit/537.36 "
+            f"(KHTML, like Gecko) Chrome/{chrome_build} Mobile Safari/537.36"
+        )
+
+    for candidate in candidate_pool:
+        if candidate in seen:
+            continue
+        normalized_pool.append(candidate)
+        seen.add(candidate)
+        if len(normalized_pool) >= target_total:
+            break
+
+    return normalized_pool
+
+
+def _classify_user_agent_platform(user_agent: str) -> str:
+    normalized = str(user_agent or "").lower()
+    if "iphone" in normalized or "ipad" in normalized or "crios" in normalized or "edgios" in normalized:
+        return "ios"
+    if "android" in normalized or "mobile" in normalized or "samsungbrowser" in normalized or "edga/" in normalized:
+        return "android"
+    if "mac os x" in normalized or "macintosh" in normalized:
+        return "mac"
+    if "linux" in normalized:
+        return "linux"
+    return "windows"
+
+
+@dataclass(frozen=True)
+class BrowserProfile:
+    user_agent: str
+    viewport: dict[str, int]
+    locale: str
+    timezone_id: str
+    accept_language: str
+    device_scale_factor: float = 1.0
+    is_mobile: bool = False
+    has_touch: bool = False
+    profile_family: str = "desktop"
+
+
+def _build_browser_profile_pool(
+    user_agents: list[str],
+    *,
+    desktop_resolutions: list[tuple[int, int]],
+) -> list[BrowserProfile]:
+    """Bind a more complete profile to the UA to avoid just random UA and viewport."""
+    desktop_regions = [
+        ("zh-CN", "zh-CN,zh;q=0.9,en;q=0.8", "Asia/Shanghai"),
+        ("en-US", "en-US,en;q=0.9", "America/Los_Angeles"),
+        ("en-GB", "en-GB,en;q=0.9", "Europe/London"),
+        ("ja-JP", "ja-JP,ja;q=0.9,en;q=0.7", "Asia/Tokyo"),
+    ]
+    mobile_regions = [
+        ("zh-CN", "zh-CN,zh;q=0.9,en;q=0.8", "Asia/Shanghai"),
+        ("en-US", "en-US,en;q=0.9", "America/Los_Angeles"),
+        ("en-SG", "en-SG,en;q=0.9,zh-CN;q=0.6", "Asia/Singapore"),
+        ("ja-JP", "ja-JP,ja;q=0.9,en;q=0.7", "Asia/Tokyo"),
+    ]
+    iphone_viewports = [
+        {"width": 393, "height": 852},
+        {"width": 430, "height": 932},
+        {"width": 390, "height": 844},
+    ]
+    android_viewports = [
+        {"width": 412, "height": 915},
+        {"width": 384, "height": 854},
+        {"width": 360, "height": 800},
+        {"width": 412, "height": 892},
+    ]
+    tablet_viewports = [
+        {"width": 820, "height": 1180},
+        {"width": 768, "height": 1024},
+        {"width": 800, "height": 1280},
+    ]
+
+    profiles: list[BrowserProfile] = []
+    for user_agent in user_agents:
+        digest = int(hashlib.sha256(user_agent.encode("utf-8")).hexdigest()[:8], 16)
+        platform_family = _classify_user_agent_platform(user_agent)
+
+        if platform_family == "ios":
+            viewport = dict(iphone_viewports[digest % len(iphone_viewports)])
+            locale, accept_language, timezone_id = mobile_regions[digest % len(mobile_regions)]
+            profiles.append(
+                BrowserProfile(
+                    user_agent=user_agent,
+                    viewport=viewport,
+                    locale=locale,
+                    timezone_id=timezone_id,
+                    accept_language=accept_language,
+                    device_scale_factor=3.0,
+                    is_mobile=True,
+                    has_touch=True,
+                    profile_family="mobile",
+                )
+            )
+            continue
+
+        if platform_family == "android":
+            viewport_source = android_viewports if "mobile" in user_agent.lower() else tablet_viewports
+            viewport = dict(viewport_source[digest % len(viewport_source)])
+            locale, accept_language, timezone_id = mobile_regions[digest % len(mobile_regions)]
+            profiles.append(
+                BrowserProfile(
+                    user_agent=user_agent,
+                    viewport=viewport,
+                    locale=locale,
+                    timezone_id=timezone_id,
+                    accept_language=accept_language,
+                    device_scale_factor=3.0 if viewport["width"] <= 430 else 2.0,
+                    is_mobile=True,
+                    has_touch=True,
+                    profile_family="mobile" if viewport["width"] <= 430 else "tablet",
+                )
+            )
+            continue
+
+        resolution = desktop_resolutions[digest % len(desktop_resolutions)]
+        locale, accept_language, timezone_id = desktop_regions[digest % len(desktop_regions)]
+        width, height = resolution
+        height = max(640, height - (digest % 96))
+        device_scale_factor = 2.0 if platform_family == "mac" and width >= 1400 else 1.0
+        profiles.append(
+            BrowserProfile(
+                user_agent=user_agent,
+                viewport={"width": width, "height": height},
+                locale=locale,
+                timezone_id=timezone_id,
+                accept_language=accept_language,
+                device_scale_factor=device_scale_factor,
+                is_mobile=False,
+                has_touch=False,
+                profile_family="desktop",
+            )
+        )
+
+    return profiles
+
+
+@dataclass
+class TokenAcquireResult:
+    token: str | None
+    browser_ref: int | str | None
+    browser_id: int | None
+    fingerprint: dict[str, Any] | None = None
+    source: str = "live"
+    elapsed_ms: int = 0
+    browser_epoch: int = 0
+    timings: dict[str, int] | None = None
+
+
+@dataclass
+class StandbyTokenEntry:
+    token: str
+    browser_id: int
+    fingerprint: dict[str, Any] | None
+    browser_epoch: int
+    project_id: str
+    action: str
+    proxy_signature: str
+    created_monotonic: float
+    expires_monotonic: float
+    match_signature: str = ""
+class TokenBrowser:
+    """Simplified version of the browser: start a new browser every time you get the token, and close it after use
+
+    It is a new random UA every time to avoid various problems caused by long running time.
+    """
+    # The original authenticated UA is retained while automatically augmenting 100 candidates at the end of the class definition.
+    _BASE_UA_LIST = [
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.6834.210 Safari/537.36",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.6778.265 Safari/537.36",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.6723.172 Safari/537.36",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.6668.177 Safari/537.36",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.6613.186 Safari/537.36",
+        "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36 Edg/132.0.0.0",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 Edg/130.0.0.0",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36 Edg/129.0.0.0",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36 Edg/128.0.0.0",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.6834.210 Safari/537.36 Edg/132.0.2957.171",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.6778.265 Safari/537.36 Edg/131.0.2903.146",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.6723.172 Safari/537.36 Edg/130.0.2849.142",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.6668.177 Safari/537.36 Edg/129.0.2792.124",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.6613.186 Safari/537.36 Edg/128.0.2739.111",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:134.0) Gecko/20100101 Firefox/134.0",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:133.0) Gecko/20100101 Firefox/133.0",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:132.0) Gecko/20100101 Firefox/132.0",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:129.0) Gecko/20100101 Firefox/129.0",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:128.0) Gecko/20100101 Firefox/128.0",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_3_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_2_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 13_6_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.6834.210 Safari/537.36",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.6778.265 Safari/537.36",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.6723.172 Safari/537.36",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.6613.186 Safari/537.36",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4_1) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.2 Safari/605.1.15",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 13_6_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.6 Safari/605.1.15",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36 Edg/132.0.0.0",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 Edg/130.0.0.0",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36 Edg/129.0.0.0",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36 Edg/128.0.0.0",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.6834.210 Safari/537.36 Edg/132.0.2957.171",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.6778.265 Safari/537.36 Edg/131.0.2903.146",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.6723.172 Safari/537.36 Edg/130.0.2849.142",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.6668.177 Safari/537.36 Edg/129.0.2792.124",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.6613.186 Safari/537.36 Edg/128.0.2739.111",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 14.4; rv:134.0) Gecko/20100101 Firefox/134.0",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 14.3; rv:133.0) Gecko/20100101 Firefox/133.0",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 14.2; rv:132.0) Gecko/20100101 Firefox/132.0",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 14.1; rv:131.0) Gecko/20100101 Firefox/131.0",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:129.0) Gecko/20100101 Firefox/129.0",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:128.0) Gecko/20100101 Firefox/128.0",
+        "Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.6834.163 Mobile Safari/537.36",
+        "Mozilla/5.0 (Linux; Android 14; SM-S9180) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.6778.260 Mobile Safari/537.36",
+        "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.6723.172 Mobile Safari/537.36",
+        "Mozilla/5.0 (Linux; Android 12; M2102J20SG) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.6668.177 Mobile Safari/537.36",
+        "Mozilla/5.0 (Linux; Android 11; M2012K11AC) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.6613.186 Mobile Safari/537.36",
+        "Mozilla/5.0 (Linux; Android 14; SM-S9180) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.6778.260 Mobile Safari/537.36 EdgA/131.0.2903.146",
+        "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.6723.172 Mobile Safari/537.36 EdgA/130.0.2849.142",
+        "Mozilla/5.0 (Linux; Android 12; M2102J20SG) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.6668.177 Mobile Safari/537.36 EdgA/129.0.2792.124",
+        "Mozilla/5.0 (Linux; Android 11; M2012K11AC) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.6613.186 Mobile Safari/537.36 EdgA/128.0.2739.111",
+        "Mozilla/5.0 (Linux; Android 14; SM-S9180) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/28.0 Chrome/132.0.6834.163 Mobile Safari/537.36",
+        "Mozilla/5.0 (Linux; Android 13; SM-S9110) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/27.0 Chrome/130.0.6723.172 Mobile Safari/537.36",
+        "Mozilla/5.0 (Linux; Android 12; SM-G9910) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/26.0 Chrome/128.0.6613.186 Mobile Safari/537.36",
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.1 Mobile/15E148 Safari/604.1",
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 18_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/132.0.6834.95 Mobile/15E148 Safari/604.1",
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/131.0.6778.112 Mobile/15E148 Safari/604.1",
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 18_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) EdgiOS/132.2957.171 Mobile/15E148 Safari/604.1",
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) EdgiOS/131.2903.146 Mobile/15E148 Safari/604.1",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.6834.210 Safari/537.36",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 13_6_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.6834.210 Safari/537.36",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.6834.210 Safari/537.36 Edg/132.0.2957.171",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 13_6_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.6834.210 Safari/537.36 Edg/132.0.2957.171",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.6834.210 Safari/537.36 OPR/117.0.0.0",
+    ]
+    UA_POOL_EXTRA_COUNT = 100
+    UA_LIST = _build_user_agent_pool(_BASE_UA_LIST, extra_count=UA_POOL_EXTRA_COUNT)
+
+    # resolution pool
+    RESOLUTIONS = [
+        (1920, 1080), (2560, 1440), (3840, 2160), (1366, 768), (1536, 864),
+        (1600, 900), (1280, 720), (1360, 768), (1920, 1200),
+        (1440, 900), (1680, 1050), (1280, 800), (2560, 1600),
+        (2880, 1800), (3024, 1890), (3456, 2160),
+        (1280, 1024), (1024, 768), (1400, 1050),
+        (1920, 1280), (2736, 1824), (2880, 1920), (3000, 2000),
+        (2256, 1504), (2496, 1664), (3240, 2160),
+        (3200, 1800), (2304, 1440), (1800, 1200),
+    ]
+    DEFAULT_PROFILE_POOL = tuple(_build_browser_profile_pool(UA_LIST, desktop_resolutions=RESOLUTIONS))
+    PROFILE_POOL_CACHE: dict[int, tuple[BrowserProfile, ...]] = {
+        UA_POOL_EXTRA_COUNT: DEFAULT_PROFILE_POOL,
+    }
+
+    def __init__(self, token_id: int, user_data_dir: str, db=None):
+        self.token_id = token_id
+        self.user_data_dir = user_data_dir
+        self.db = db
+        self._semaphore = asyncio.Semaphore(1)  # Only one active solve task is allowed per slot.
+        self._solve_count = 0
+        self._error_count = 0
+        self._last_fingerprint: dict[str, Any] | None = None
+        self._browser_proxy_active = False
+        # Delay browser release after solve and track it by request_ref.
+        self._pending_release_entries: dict[str, dict[str, Any]] = {}
+        self._pending_release_lock = asyncio.Lock()
+        self._background_close_tasks: set[asyncio.Task] = set()
+        # Browser mode keeps a shared in-memory browser instead of a persistent profile.
+        self._shared_browser_lock = asyncio.Lock()
+        self._shared_playwright = None
+        self._shared_browser = None
+        self._shared_context = None
+        self._shared_keepalive_page = None
+        self._shared_ready_page = None
+        self._shared_ready_key: str | None = None
+        self._shared_custom_pages: dict[str, Any] = {}
+        self._shared_custom_page_last_used: dict[str, float] = {}
+        # What is recorded here is the PID of the Playwright driver; the Chromium process tree is scanned through the slot marker.
+        self._shared_driver_pid: int | None = None
+        self._shared_driver_proc = None
+        self._pid_dir = os.path.join(os.getcwd(), "tmp", "browser_pids")
+        self._pid_file = os.path.join(self._pid_dir, f"slot_{self.token_id}.pid")
+        os.makedirs(self._pid_dir, exist_ok=True)
+        self._shared_proxy_url: str | None = None
+        self._shared_launch_count = 0
+        self._shared_reuse_count = 0
+        self._consecutive_browser_failures = 0
+        self._solve_inflight = 0
+        self._last_idle_since = time.monotonic()
+        self._browser_epoch = 0
+        self._profile_pool = self._build_profile_pool()
+        self._active_profile: BrowserProfile | None = None
+        self._refresh_browser_profile()
+
+    def _fingerprint_pool_extra_count(self) -> int:
+        try:
+            raw_value = getattr(config, "browser_fingerprint_pool_extra_count", self.UA_POOL_EXTRA_COUNT)
+            if raw_value is None or raw_value == "":
+                return self.UA_POOL_EXTRA_COUNT
+            return max(0, int(raw_value))
+        except Exception:
+            return self.UA_POOL_EXTRA_COUNT
+
+    def _build_profile_pool(self) -> tuple[BrowserProfile, ...]:
+        extra_count = self._fingerprint_pool_extra_count()
+        cached_pool = self.PROFILE_POOL_CACHE.get(extra_count)
+        if cached_pool is not None and all(
+            self._is_windows_chromium_user_agent(profile.user_agent)
+            for profile in cached_pool
+        ):
+            return cached_pool
+
+        user_agents = _build_user_agent_pool(self._BASE_UA_LIST, extra_count=extra_count)
+        compatible_user_agents = [
+            user_agent
+            for user_agent in user_agents
+            if self._is_windows_chromium_user_agent(user_agent)
+        ]
+        if compatible_user_agents:
+            user_agents = compatible_user_agents
+        profile_pool = tuple(_build_browser_profile_pool(user_agents, desktop_resolutions=self.RESOLUTIONS))
+        if extra_count == self.UA_POOL_EXTRA_COUNT:
+            self.__class__.DEFAULT_PROFILE_POOL = profile_pool
+        self.PROFILE_POOL_CACHE[extra_count] = profile_pool
+        return profile_pool
+
+    @staticmethod
+    def _is_windows_chromium_user_agent(user_agent: str) -> bool:
+        normalized = str(user_agent or "").strip().lower()
+        if not normalized or "windows nt" not in normalized:
+            return False
+        if any(marker in normalized for marker in ("android", "iphone", "ipad", " mobile", "firefox/")):
+            return False
+        return any(marker in normalized for marker in ("chrome/", "edg/", "opr/"))
+
+    def _refresh_browser_profile(self):
+        """Refresh the in-memory browser fingerprint profile."""
+        if not self._profile_pool:
+            self._profile_pool = self._build_profile_pool()
+        profile = random.choice(self._profile_pool)
+        self._active_profile = profile
+        self._profile_user_agent = profile.user_agent
+        self._profile_viewport = dict(profile.viewport)
+        self._profile_locale = profile.locale
+        self._profile_timezone_id = profile.timezone_id
+        self._profile_accept_language = profile.accept_language
+        self._profile_device_scale_factor = float(profile.device_scale_factor)
+        self._profile_is_mobile = bool(profile.is_mobile)
+        self._profile_has_touch = bool(profile.has_touch)
+        self._profile_family = profile.profile_family
+
+    def _retry_max_attempts(self) -> int:
+        try:
+            return max(1, int(getattr(config, "browser_retry_max_attempts", 3) or 3))
+        except Exception:
+            return 3
+
+    def _retry_backoff_seconds(self) -> float:
+        try:
+            raw_value = getattr(config, "browser_retry_backoff_seconds", 1.0)
+            if raw_value is None or raw_value == "":
+                return 1.0
+            return max(0.0, float(raw_value))
+        except Exception:
+            return 1.0
+
+    def _execute_timeout_seconds(self, *, fallback: float) -> float:
+        try:
+            return max(5.0, float(getattr(config, "browser_execute_timeout_seconds", fallback) or fallback))
+        except Exception:
+            return fallback
+
+    def _execute_script_timeout_ms(self, *, fallback: float) -> int:
+        return max(5000, int(self._execute_timeout_seconds(fallback=fallback) * 1000) - 5000)
+
+    def _attach_recaptcha_network_waiters(self, page, website_key: str) -> tuple[asyncio.Event, asyncio.Event]:
+        reload_ok_event = asyncio.Event()
+        clr_ok_event = asyncio.Event()
+
+        def handle_response(response):
+            try:
+                if response.status != 200:
+                    return
+                parsed = urlparse(response.url)
+                path = str(parsed.path or "").lower()
+                if "/recaptcha/" not in path:
+                    return
+                if "/reload" not in path and "/clr" not in path:
+                    return
+                query = parse_qs(parsed.query or "")
+                key = (query.get("k") or [None])[0]
+                if key != website_key:
+                    return
+                if "/reload" in path:
+                    reload_ok_event.set()
+                elif "/clr" in path:
+                    clr_ok_event.set()
+            except Exception:
+                pass
+
+        page.on("response", handle_response)
+        return reload_ok_event, clr_ok_event
+
+    async def _wait_recaptcha_network_ready(
+        self,
+        *,
+        reload_ok_event: asyncio.Event,
+        clr_ok_event: asyncio.Event,
+        log_prefix: str,
+    ) -> dict[str, int]:
+        timings = {"reload_wait_ms": 0, "clr_wait_ms": 0}
+
+        reload_wait_timeout_seconds = self._reload_wait_timeout_seconds()
+        if reload_wait_timeout_seconds > 0:
+            try:
+                reload_started = time.perf_counter()
+                await asyncio.wait_for(reload_ok_event.wait(), timeout=reload_wait_timeout_seconds)
+                timings["reload_wait_ms"] = int((time.perf_counter() - reload_started) * 1000)
+            except asyncio.TimeoutError:
+                debug_logger.log_warning(f"{log_prefix} Timeout waiting for recaptcha reload 200")
+                raise
+
+        clr_wait_timeout_seconds = self._clr_wait_timeout_seconds()
+        if clr_wait_timeout_seconds > 0:
+            try:
+                clr_started = time.perf_counter()
+                await asyncio.wait_for(clr_ok_event.wait(), timeout=clr_wait_timeout_seconds)
+                timings["clr_wait_ms"] = int((time.perf_counter() - clr_started) * 1000)
+            except asyncio.TimeoutError:
+                debug_logger.log_warning(f"{log_prefix} Timeout waiting for recaptcha clr 200")
+                raise
+
+        return timings
+
+    def _reload_wait_timeout_seconds(self) -> float:
+        try:
+            raw_value = getattr(config, "browser_reload_wait_timeout_seconds", 12.0)
+            if raw_value is None or raw_value == "":
+                return 12.0
+            return max(0.0, float(raw_value))
+        except Exception:
+            return 12.0
+
+    def _clr_wait_timeout_seconds(self) -> float:
+        try:
+            raw_value = getattr(config, "browser_clr_wait_timeout_seconds", 12.0)
+            if raw_value is None or raw_value == "":
+                return 12.0
+            return max(0.0, float(raw_value))
+        except Exception:
+            return 12.0
+
+    def _recaptcha_settle_seconds(self) -> float:
+        try:
+            raw_value = getattr(config, "browser_recaptcha_settle_seconds", 3.0)
+            if raw_value is None or raw_value == "":
+                return 3.0
+            return max(0.0, float(raw_value))
+        except Exception:
+            return 3.0
+
+    def _fresh_browser_close_delay_seconds(self) -> float:
+        return 3.0
+
+    def _request_finish_image_wait_seconds(self, *, flow_timeout: int, upsample_timeout: int) -> int:
+        fallback = max(max(flow_timeout, upsample_timeout) + 180, 900)
+        try:
+            return max(60, int(getattr(config, "browser_request_finish_image_wait_seconds", fallback) or fallback))
+        except Exception:
+            return fallback
+
+    def _request_finish_non_image_wait_seconds(self, *, flow_timeout: int) -> int:
+        fallback = max(flow_timeout + 300, 1800)
+        try:
+            return max(60, int(getattr(config, "browser_request_finish_non_image_wait_seconds", fallback) or fallback))
+        except Exception:
+            return fallback
+
+    def _custom_page_cache_max_pages(self) -> int:
+        try:
+            return max(1, int(getattr(config, "browser_custom_page_cache_max_pages", 3) or 3))
+        except Exception:
+            return 3
+
+    def _custom_page_idle_ttl_seconds(self) -> float:
+        try:
+            return max(30.0, float(getattr(config, "browser_custom_page_idle_ttl_seconds", 240.0) or 240.0))
+        except Exception:
+            return 240.0
+
+    def _get_slot_marker(self) -> str:
+        return f"--flow2api-browser-slot={self.token_id}"
+
+    def _read_pid_file(self) -> int | None:
+        try:
+            if not os.path.exists(self._pid_file):
+                return None
+            with open(self._pid_file, encoding='utf-8') as handle:
+                raw = (handle.read() or '').strip()
+            return int(raw or '0') or None
+        except Exception:
+            return None
+
+    def _write_pid_file(self, pid: int | None):
+        self._shared_driver_pid = pid
+        try:
+            if pid:
+                with open(self._pid_file, 'w', encoding='utf-8') as handle:
+                    handle.write(str(pid))
+            elif os.path.exists(self._pid_file):
+                os.remove(self._pid_file)
+        except Exception as e:
+            debug_logger.log_warning(f"[BrowserCaptcha] Token-{self.token_id} failed to write PID file: {e}")
+
+    def _get_pid_command_line(self, pid: int | None) -> str:
+        if not pid:
+            return ""
+        try:
+            if sys.platform.startswith('win'):
+                result = subprocess.run(
+                    [
+                        'powershell',
+                        '-NoProfile',
+                        '-Command',
+                        f'(Get-CimInstance Win32_Process -Filter "ProcessId = {pid}").CommandLine'
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=15,
+                )
+                return (result.stdout or '').strip()
+
+            cmdline_path = f'/proc/{pid}/cmdline'
+            if os.path.exists(cmdline_path):
+                with open(cmdline_path, 'rb') as handle:
+                    return handle.read().decode('utf-8', errors='ignore').replace('\x00', ' ')
+
+            result = subprocess.run(
+                ['ps', '-p', str(pid), '-o', 'command='],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            return (result.stdout or '').strip()
+        except Exception:
+            return ""
+
+    def _get_posix_process_state(self, pid: int | None) -> str | None:
+        if not pid or sys.platform.startswith('win'):
+            return None
+        try:
+            status_path = f'/proc/{pid}/status'
+            if not os.path.exists(status_path):
+                return None
+            with open(status_path, encoding='utf-8', errors='ignore') as handle:
+                for line in handle:
+                    if not line.startswith('State:'):
+                        continue
+                    parts = line.split()
+                    if len(parts) >= 2:
+                        return parts[1].strip()
+                    return None
+        except Exception:
+            return None
+        return None
+
+    def _reap_pid_if_direct_child(self, pid: int | None) -> bool:
+        if not pid or sys.platform.startswith('win'):
+            return False
+        try:
+            waited_pid, _ = os.waitpid(pid, os.WNOHANG)
+            return waited_pid == pid
+        except ChildProcessError:
+            return False
+        except ProcessLookupError:
+            return False
+        except Exception:
+            return False
+
+    def _is_pid_running(self, pid: int | None) -> bool:
+        if not pid:
+            return False
+        try:
+            if sys.platform.startswith('win'):
+                result = subprocess.run(
+                    ['tasklist', '/FI', f'PID eq {pid}'],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                )
+                return str(pid) in (result.stdout or '')
+            state = self._get_posix_process_state(pid)
+            if state == 'Z':
+                self._reap_pid_if_direct_child(pid)
+                return False
+            os.kill(pid, 0)
+            return True
+        except Exception:
+            return False
+
+    def _pid_matches_slot(self, pid: int | None) -> bool:
+        if not pid:
+            return False
+        return self._get_slot_marker() in self._get_pid_command_line(pid)
+
+    async def _wait_pid_exit(self, pid: int | None, timeout_seconds: float = 5.0) -> bool:
+        if not pid:
+            return True
+        deadline = time.time() + timeout_seconds
+        while time.time() < deadline:
+            if not self._is_pid_running(pid):
+                return True
+            await asyncio.sleep(0.2)
+        return not self._is_pid_running(pid)
+
+    def _pid_looks_like_playwright_driver(self, pid: int | None) -> bool:
+        if not pid:
+            return False
+        command_line = self._get_pid_command_line(pid).lower()
+        if not command_line:
+            return False
+        return 'run-driver' in command_line and 'playwright' in command_line
+
+    def _extract_driver_proc(self, playwright=None, browser=None):
+        candidates = [
+            lambda: playwright._impl_obj._connection._transport._proc if playwright and getattr(playwright, "_impl_obj", None) else None,
+            lambda: browser._impl_obj._connection._transport._proc if browser and getattr(browser, "_impl_obj", None) else None,
+        ]
+        for getter in candidates:
+            try:
+                proc = getter()
+                if proc is not None:
+                    return proc
+            except Exception:
+                continue
+        return None
+
+    def _extract_driver_pid(self, playwright=None, browser=None, proc=None) -> int | None:
+        try:
+            if proc is None:
+                proc = self._extract_driver_proc(playwright=playwright, browser=browser)
+            pid = getattr(proc, "pid", None)
+            if isinstance(pid, int) and pid > 0:
+                return pid
+        except Exception:
+            pass
+        return None
+
+    def _list_slot_process_pids(self) -> list[int]:
+        marker = self._get_slot_marker()
+        matched_pids: set[int] = set()
+        try:
+            if sys.platform.startswith('win'):
+                command = (
+                    f"$marker = '{marker}'; "
+                    "Get-CimInstance Win32_Process | "
+                    "Where-Object { $_.CommandLine -and $_.CommandLine.Contains($marker) } | "
+                    "ForEach-Object { $_.ProcessId }"
+                )
+                result = subprocess.run(
+                    ['powershell', '-NoProfile', '-Command', command],
+                    capture_output=True,
+                    text=True,
+                    timeout=20,
+                )
+                for line in (result.stdout or '').splitlines():
+                    text = line.strip()
+                    if text.isdigit():
+                        matched_pids.add(int(text))
+                return sorted(matched_pids)
+
+            proc_root = '/proc'
+            if os.path.isdir(proc_root):
+                for entry in os.listdir(proc_root):
+                    if not entry.isdigit():
+                        continue
+                    pid = int(entry)
+                    if marker in self._get_pid_command_line(pid):
+                        matched_pids.add(pid)
+                return sorted(matched_pids)
+
+            result = subprocess.run(
+                ['ps', '-ax', '-o', 'pid=', '-o', 'command='],
+                capture_output=True,
+                text=True,
+                timeout=20,
+            )
+            for line in (result.stdout or '').splitlines():
+                text = line.strip()
+                if not text:
+                    continue
+                parts = text.split(None, 1)
+                if len(parts) != 2 or not parts[0].isdigit():
+                    continue
+                if marker in parts[1]:
+                    matched_pids.add(int(parts[0]))
+        except Exception as e:
+            debug_logger.log_warning(f"[BrowserCaptcha] Token-{self.token_id} failed to scan slot processes: {e}")
+        return sorted(matched_pids)
+
+    async def _wait_process_exit(self, proc, timeout_seconds: float = 5.0) -> bool:
+        if proc is None:
+            return True
+        try:
+            await asyncio.wait_for(proc.wait(), timeout=timeout_seconds)
+            return True
+        except asyncio.TimeoutError:
+            return getattr(proc, "returncode", None) is not None
+        except ProcessLookupError:
+            return True
+        except Exception:
+            return getattr(proc, "returncode", None) is not None
+
+    def _detach_asyncio_subprocess_resources(self, proc) -> None:
+        """Disconnect the pipe reference on the closed asyncio child process object to avoid transport noise during Windows destruction."""
+        if proc is None:
+            return
+
+        for stream_name in ("stdin", "stdout", "stderr"):
+            try:
+                stream = getattr(proc, stream_name, None)
+            except Exception:
+                stream = None
+
+            if stream is not None:
+                transport = None
+                for attr_name in ("_transport", "transport"):
+                    try:
+                        candidate = getattr(stream, attr_name, None)
+                    except Exception:
+                        candidate = None
+                    if candidate is not None:
+                        transport = candidate
+                        break
+
+                if transport is not None:
+                    try:
+                        close_method = getattr(transport, "close", None)
+                        if callable(close_method):
+                            close_method()
+                    except Exception:
+                        pass
+
+                try:
+                    close_method = getattr(stream, "close", None)
+                    if callable(close_method):
+                        close_method()
+                except Exception:
+                    pass
+
+            with contextlib.suppress(Exception):
+                setattr(proc, stream_name, None)
+
+        try:
+            proc_transport = getattr(proc, "_transport", None)
+        except Exception:
+            proc_transport = None
+
+        if proc_transport is not None:
+            pipe_entries = None
+            try:
+                pipe_entries = getattr(proc_transport, "_pipes", None)
+            except Exception:
+                pipe_entries = None
+
+            if isinstance(pipe_entries, dict):
+                for pipe_proto in list(pipe_entries.values()):
+                    pipe_transport = getattr(pipe_proto, "pipe", None)
+                    if pipe_transport is not None:
+                        try:
+                            close_method = getattr(pipe_transport, "close", None)
+                            if callable(close_method):
+                                close_method()
+                        except Exception:
+                            pass
+                    with contextlib.suppress(Exception):
+                        pipe_proto.pipe = None
+                    with contextlib.suppress(Exception):
+                        pipe_proto.proc = None
+                with contextlib.suppress(Exception):
+                    proc_transport._pipes = {}
+
+            try:
+                close_method = getattr(proc_transport, "close", None)
+                if callable(close_method):
+                    close_method()
+            except Exception:
+                pass
+            with contextlib.suppress(Exception):
+                proc_transport._proc = None
+
+        with contextlib.suppress(Exception):
+            proc._transport = None
+
+    def _detach_playwright_connection_resources(self, playwright=None, browser=None) -> None:
+        """Disconnect residual process/pipe references on the Playwright transport to reduce transport noise during Windows shutdown."""
+        transport_candidates = [
+            lambda: playwright._impl_obj._connection._transport if playwright and getattr(playwright, "_impl_obj", None) else None,
+            lambda: browser._impl_obj._connection._transport if browser and getattr(browser, "_impl_obj", None) else None,
+        ]
+        seen_transports: set[int] = set()
+
+        for getter in transport_candidates:
+            try:
+                transport = getter()
+            except Exception:
+                transport = None
+
+            if transport is None:
+                continue
+
+            transport_key = id(transport)
+            if transport_key in seen_transports:
+                continue
+            seen_transports.add(transport_key)
+
+            try:
+                output_stream = getattr(transport, "_output", None)
+            except Exception:
+                output_stream = None
+
+            if output_stream is not None:
+                output_transport = None
+                for attr_name in ("_transport", "transport"):
+                    try:
+                        candidate = getattr(output_stream, attr_name, None)
+                    except Exception:
+                        candidate = None
+                    if candidate is not None:
+                        output_transport = candidate
+                        break
+
+                if output_transport is not None:
+                    try:
+                        close_method = getattr(output_transport, "close", None)
+                        if callable(close_method):
+                            close_method()
+                    except Exception:
+                        pass
+
+                try:
+                    close_method = getattr(output_stream, "close", None)
+                    if callable(close_method):
+                        close_method()
+                except Exception:
+                    pass
+
+                with contextlib.suppress(Exception):
+                    transport._output = None
+
+            try:
+                driver_proc = getattr(transport, "_proc", None)
+            except Exception:
+                driver_proc = None
+
+            if driver_proc is not None:
+                self._detach_asyncio_subprocess_resources(driver_proc)
+                with contextlib.suppress(Exception):
+                    transport._proc = None
+
+    def _detach_playwright_driver_refs(self, playwright=None, browser=None, proc=None) -> None:
+        """Clear the strong reference of the Playwright transport to the driver proc to avoid being dragged into the event loop destruction period after shutdown."""
+        transport_getters = [
+            lambda: playwright._impl_obj._connection._transport if playwright and getattr(playwright, "_impl_obj", None) else None,
+            lambda: browser._impl_obj._connection._transport if browser and getattr(browser, "_impl_obj", None) else None,
+        ]
+
+        for getter in transport_getters:
+            try:
+                transport = getter()
+            except Exception:
+                transport = None
+            if transport is None:
+                continue
+            try:
+                bound_proc = getattr(transport, "_proc", None)
+            except Exception:
+                bound_proc = None
+            if proc is not None and bound_proc is not None and bound_proc is not proc:
+                continue
+            with contextlib.suppress(Exception):
+                transport._proc = None
+
+    async def _terminate_pid(self, pid: int | None, reason: str, timeout_seconds: float = 3.0):
+        if not pid:
+            return
+        if not self._is_pid_running(pid):
+            self._reap_pid_if_direct_child(pid)
+            return
+
+        try:
+            debug_logger.log_warning(
+                f"[BrowserCaptcha] Token-{self.token_id} terminating PID={pid}, reason={reason}"
+            )
+            if sys.platform.startswith('win'):
+                subprocess.run(
+                    ['taskkill', '/PID', str(pid), '/T', '/F'],
+                    capture_output=True,
+                    text=True,
+                    timeout=15,
+                )
+                await self._wait_pid_exit(pid, timeout_seconds=timeout_seconds)
+                return
+
+            os.kill(pid, signal.SIGTERM)
+            if await self._wait_pid_exit(pid, timeout_seconds=timeout_seconds):
+                self._reap_pid_if_direct_child(pid)
+                return
+
+            os.kill(pid, signal.SIGKILL)
+            await self._wait_pid_exit(pid, timeout_seconds=max(1.0, timeout_seconds / 2))
+            self._reap_pid_if_direct_child(pid)
+        except ProcessLookupError:
+            self._reap_pid_if_direct_child(pid)
+        except Exception as e:
+            debug_logger.log_warning(f"[BrowserCaptcha] Token-{self.token_id} failed to terminate PID={pid}: {e}")
+
+    async def _terminate_driver_proc(self, proc, reason: str, timeout_seconds: float = 3.0):
+        if proc is None:
+            return
+
+        driver_pid = self._extract_driver_pid(proc=proc)
+        if getattr(proc, "returncode", None) is not None:
+            self._detach_asyncio_subprocess_resources(proc)
+            self._reap_pid_if_direct_child(driver_pid)
+            return
+
+        try:
+            debug_logger.log_warning(
+                f"[BrowserCaptcha] Token-{self.token_id} terminating Playwright driver PID={driver_pid or 'unknown'}, reason={reason}"
+            )
+            if sys.platform.startswith('win') and driver_pid:
+                subprocess.run(
+                    ['taskkill', '/PID', str(driver_pid), '/T', '/F'],
+                    capture_output=True,
+                    text=True,
+                    timeout=15,
+                )
+            else:
+                proc.terminate()
+        except ProcessLookupError:
+            self._reap_pid_if_direct_child(driver_pid)
+            return
+        except Exception as e:
+            debug_logger.log_warning(
+                f"[BrowserCaptcha] Token-{self.token_id} driver terminate failed PID={driver_pid or 'unknown'}: {e}"
+            )
+
+        if await self._wait_process_exit(proc, timeout_seconds=timeout_seconds):
+            self._detach_asyncio_subprocess_resources(proc)
+            self._reap_pid_if_direct_child(driver_pid)
+            return
+
+        try:
+            if sys.platform.startswith('win') and driver_pid:
+                subprocess.run(
+                    ['taskkill', '/PID', str(driver_pid), '/T', '/F'],
+                    capture_output=True,
+                    text=True,
+                    timeout=15,
+                )
+            else:
+                proc.kill()
+        except ProcessLookupError:
+            self._reap_pid_if_direct_child(driver_pid)
+            return
+        except Exception as e:
+            debug_logger.log_warning(
+                f"[BrowserCaptcha] Token-{self.token_id} driver kill failed PID={driver_pid or 'unknown'}: {e}"
+            )
+
+        await self._wait_process_exit(proc, timeout_seconds=max(1.0, timeout_seconds / 2))
+        self._detach_asyncio_subprocess_resources(proc)
+        self._reap_pid_if_direct_child(driver_pid)
+
+    async def _cleanup_stale_slot_process(self):
+        candidate_pids: set[int] = set(self._list_slot_process_pids())
+        stale_pid = self._read_pid_file()
+
+        if stale_pid and self._is_pid_running(stale_pid):
+            if self._pid_matches_slot(stale_pid) or self._pid_looks_like_playwright_driver(stale_pid):
+                candidate_pids.add(stale_pid)
+            else:
+                debug_logger.log_warning(
+                    f"[BrowserCaptcha] Token-{self.token_id} PID file points to an unrelated process; ignoring PID={stale_pid}"
+                )
+
+        if candidate_pids:
+            debug_logger.log_warning(
+                f"[BrowserCaptcha] Token-{self.token_id} detected stale slot processes: {sorted(candidate_pids)}"
+            )
+        for pid in sorted(candidate_pids):
+            await self._terminate_pid(pid, reason='stale_slot_process')
+        self._write_pid_file(None)
+
+    async def _ensure_shared_keepalive_page(self):
+        """Ensure the shared browser always keeps one keepalive page alive."""
+        keepalive_page = self._shared_keepalive_page
+        try:
+            if keepalive_page and not keepalive_page.is_closed():
+                return keepalive_page
+        except Exception:
+            keepalive_page = None
+
+        if not self._shared_context:
+            return None
+
+        keepalive_page = await self._shared_context.new_page()
+        with contextlib.suppress(Exception):
+            # await keepalive_page.goto("about:blank", wait_until="load", timeout=5000)
+            await keepalive_page.goto("https://labs.google/fx/tools/flow/project/", wait_until="load", timeout=5000)
+        self._shared_keepalive_page = keepalive_page
+        debug_logger.log_info(
+            f"[BrowserCaptcha] Token-{self.token_id} keepalive page created"
+        )
+        debug_logger.log_info(
+            f"[BrowserCaptcha] Token-{self.token_id} open google flow"
+        )
+
+        return keepalive_page
+
+    def _build_ready_page_key(self, project_id: str, website_key: str) -> str:
+        primary_host = "https://www.recaptcha.net" if self._browser_proxy_active else "https://www.google.com"
+        return f"{project_id}|{website_key}|{primary_host}"
+
+    async def _close_page_quietly(self, page):
+        if not page:
+            return
+        try:
+            if not page.is_closed():
+                await page.close()
+        except Exception:
+            pass
+
+    async def _drop_shared_ready_page(self):
+        ready_page = self._shared_ready_page
+        self._shared_ready_page = None
+        self._shared_ready_key = None
+        await self._close_page_quietly(ready_page)
+
+    async def _drop_shared_custom_page(self, custom_key: str):
+        custom_page = self._shared_custom_pages.pop(custom_key, None)
+        self._shared_custom_page_last_used.pop(custom_key, None)
+        await self._close_page_quietly(custom_page)
+
+    async def _drop_all_shared_custom_pages(self):
+        custom_pages = list(self._shared_custom_pages.values())
+        self._shared_custom_pages = {}
+        self._shared_custom_page_last_used = {}
+        for custom_page in custom_pages:
+            await self._close_page_quietly(custom_page)
+
+    def _build_custom_page_key(
+        self,
+        website_url: str,
+        website_key: str,
+        captcha_type: str,
+        enterprise: bool,
+    ) -> str:
+        primary_host = "https://www.recaptcha.net" if self._browser_proxy_active else "https://www.google.com"
+        normalized_type = str(captcha_type or "").strip().lower() or "recaptcha_v3"
+        return "|".join(
+            [
+                normalized_type,
+                "1" if enterprise else "0",
+                str(website_key or "").strip(),
+                str(website_url or "").strip(),
+                primary_host,
+            ]
+        )
+
+    def _build_custom_page_runtime(
+        self,
+        *,
+        website_key: str,
+        captcha_type: str,
+        enterprise: bool,
+    ) -> dict[str, Any]:
+        primary_host = "https://www.recaptcha.net" if self._browser_proxy_active else "https://www.google.com"
+        secondary_host = "https://www.google.com" if primary_host == "https://www.recaptcha.net" else "https://www.recaptcha.net"
+        normalized_type = str(captcha_type or "").strip().lower() or "recaptcha_v3"
+        is_turnstile = "turnstile" in normalized_type
+        is_recaptcha_v2 = "recaptcha_v2" in normalized_type or normalized_type.endswith("v2")
+        script_path = "recaptcha/enterprise.js" if enterprise else "recaptcha/api.js"
+        execute_target = "grecaptcha.enterprise.execute" if enterprise else "grecaptcha.execute"
+        ready_target = "grecaptcha.enterprise.ready" if enterprise else "grecaptcha.ready"
+        if is_turnstile:
+            wait_expression = "typeof turnstile !== 'undefined' && typeof turnstile.render === 'function'"
+            api_label = "turnstile.js"
+        elif is_recaptcha_v2:
+            wait_expression = (
+                "typeof grecaptcha !== 'undefined' && typeof grecaptcha.enterprise !== 'undefined' && "
+                "typeof grecaptcha.enterprise.render === 'function'"
+            ) if enterprise else (
+                "typeof grecaptcha !== 'undefined' && typeof grecaptcha.render === 'function'"
+            )
+            api_label = "enterprise.js" if enterprise else "api.js"
+        else:
+            wait_expression = (
+                "typeof grecaptcha !== 'undefined' && typeof grecaptcha.enterprise !== 'undefined' && "
+                "typeof grecaptcha.enterprise.execute === 'function'"
+            ) if enterprise else (
+                "typeof grecaptcha !== 'undefined' && typeof grecaptcha.execute === 'function'"
+            )
+            api_label = "enterprise.js" if enterprise else "api.js"
+        render_value = "explicit" if is_recaptcha_v2 else str(website_key or "").strip()
+        return {
+            "primary_host": primary_host,
+            "secondary_host": secondary_host,
+            "normalized_type": normalized_type,
+            "is_turnstile": is_turnstile,
+            "is_recaptcha_v2": is_recaptcha_v2,
+            "script_path": script_path,
+            "execute_target": execute_target,
+            "ready_target": ready_target,
+            "wait_expression": wait_expression,
+            "api_label": api_label,
+            "render_value": render_value,
+        }
+
+    def _build_hooked_custom_page_html(self, runtime: dict[str, Any]) -> str:
+        if runtime["is_turnstile"]:
+            return """<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>fcs-custom-hook</title>
+  <script>
+    (() => {
+      const script = document.createElement('script');
+      script.dataset.fcsTurnstileLoader = '1';
+      script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
+      script.async = true;
+      script.defer = true;
+      document.head.appendChild(script);
+    })();
+  </script>
+</head>
+<body>
+  <div id="fcs-hook-root"></div>
+</body>
+</html>"""
+
+        primary_url = f"{runtime['primary_host']}/{runtime['script_path']}?render={runtime['render_value']}"
+        secondary_url = f"{runtime['secondary_host']}/{runtime['script_path']}?render={runtime['render_value']}"
+        return f"""<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>fcs-custom-hook</title>
+  <script>
+    (() => {{
+      const urls = ['{primary_url}', '{secondary_url}'];
+      const loadScript = (index) => {{
+        if (index >= urls.length) return;
+        const script = document.createElement('script');
+        script.dataset.fcsRecaptchaLoader = '1';
+        script.src = urls[index];
+        script.async = true;
+        script.defer = true;
+        script.onerror = () => loadScript(index + 1);
+        document.head.appendChild(script);
+      }};
+      loadScript(0);
+    }})();
+  </script>
+</head>
+<body>
+  <div id="fcs-hook-root"></div>
+</body>
+</html>"""
+
+    def _custom_page_is_stale(self, custom_key: str, *, now_value: float | None = None) -> bool:
+        last_used = float(self._shared_custom_page_last_used.get(custom_key, 0.0) or 0.0)
+        if last_used <= 0:
+            return False
+        current = float(now_value if now_value is not None else time.monotonic())
+        return (current - last_used) >= self._custom_page_idle_ttl_seconds()
+
+    async def _inject_custom_page_scripts(self, page, runtime: dict[str, Any]):
+        if runtime["is_turnstile"]:
+            await page.evaluate(
+                """
+                    (scriptUrl) => {
+                        const apiReady = typeof window.turnstile !== 'undefined' && typeof window.turnstile.render === 'function';
+                        if (apiReady) return;
+                        const existing = Array.from(document.scripts || []).some((script) => {
+                            return script?.dataset?.fcsTurnstileLoader === '1';
+                        });
+                        if (existing) return;
+                        const script = document.createElement('script');
+                        script.dataset.fcsTurnstileLoader = '1';
+                        script.src = scriptUrl;
+                        script.async = true;
+                        script.defer = true;
+                        document.head.appendChild(script);
+                    }
+                """,
+                "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit",
+            )
+            return
+
+        await page.evaluate(
+            """
+                ({ primaryUrl, secondaryUrl }) => {
+                    const apiReady = (() => {
+                        try {
+                            if (typeof window.grecaptcha === 'undefined' || !window.grecaptcha) return false;
+                            if (typeof window.grecaptcha.execute === 'function' || typeof window.grecaptcha.render === 'function') {
+                                return true;
+                            }
+                            const enterprise = window.grecaptcha.enterprise;
+                            return !!enterprise && (
+                                typeof enterprise.execute === 'function' ||
+                                typeof enterprise.render === 'function'
+                            );
+                        } catch (e) {
+                            return false;
+                        }
+                    })();
+                    if (apiReady) return;
+                    const existing = Array.from(document.scripts || []).some((script) => {
+                        return script?.dataset?.fcsRecaptchaLoader === '1';
+                    });
+                    if (existing) return;
+                    const urls = [primaryUrl, secondaryUrl];
+                    const loadScript = (index) => {
+                        if (index >= urls.length) return;
+                        const script = document.createElement('script');
+                        script.dataset.fcsRecaptchaLoader = '1';
+                        script.src = urls[index];
+                        script.async = true;
+                        script.onerror = () => loadScript(index + 1);
+                        document.head.appendChild(script);
+                    };
+                    loadScript(0);
+                }
+            """,
+            {
+                "primaryUrl": f"{runtime['primary_host']}/{runtime['script_path']}?render={runtime['render_value']}",
+                "secondaryUrl": f"{runtime['secondary_host']}/{runtime['script_path']}?render={runtime['render_value']}",
+            },
+        )
+
+    async def _install_custom_page_hook(self, page, runtime: dict[str, Any]):
+        if runtime["is_turnstile"]:
+            script_url = json.dumps("https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit")
+            await page.add_init_script(
+                f"""
+                    (() => {{
+                        const scriptUrl = {script_url};
+                        const install = () => {{
+                            try {{
+                                if (window.__fcsTurnstileHookInstalled) return;
+                                window.__fcsTurnstileHookInstalled = true;
+                                const existing = Array.from(document.scripts || []).some((script) => {{
+                                    return script?.dataset?.fcsTurnstileLoader === '1';
+                                }});
+                                if (existing) return;
+                                const script = document.createElement('script');
+                                script.dataset.fcsTurnstileLoader = '1';
+                                script.src = scriptUrl;
+                                script.async = true;
+                                script.defer = true;
+                                (document.head || document.documentElement || document.body).appendChild(script);
+                            }} catch (e) {{}}
+                        }};
+                        if (document.readyState === 'loading') {{
+                            document.addEventListener('DOMContentLoaded', install, {{ once: true }});
+                        }} else {{
+                            install();
+                        }}
+                    }})();
+                """
+            )
+            return
+
+        primary_url = json.dumps(f"{runtime['primary_host']}/{runtime['script_path']}?render={runtime['render_value']}")
+        secondary_url = json.dumps(f"{runtime['secondary_host']}/{runtime['script_path']}?render={runtime['render_value']}")
+        await page.add_init_script(
+            f"""
+                (() => {{
+                    const primaryUrl = {primary_url};
+                    const secondaryUrl = {secondary_url};
+                    const install = () => {{
+                        try {{
+                            if (window.__fcsRecaptchaHookInstalled) return;
+                            window.__fcsRecaptchaHookInstalled = true;
+                            const existing = Array.from(document.scripts || []).some((script) => {{
+                                return script?.dataset?.fcsRecaptchaLoader === '1';
+                            }});
+                            if (existing) return;
+                            const urls = [primaryUrl, secondaryUrl];
+                            const loadScript = (index) => {{
+                                if (index >= urls.length) return;
+                                const script = document.createElement('script');
+                                script.dataset.fcsRecaptchaLoader = '1';
+                                script.src = urls[index];
+                                script.async = true;
+                                script.defer = true;
+                                script.onerror = () => loadScript(index + 1);
+                                (document.head || document.documentElement || document.body).appendChild(script);
+                            }};
+                            loadScript(0);
+                        }} catch (e) {{}}
+                    }};
+                    if (document.readyState === 'loading') {{
+                        document.addEventListener('DOMContentLoaded', install, {{ once: true }});
+                    }} else {{
+                        install();
+                    }}
+                }})();
+            """
+        )
+
+    async def _prepare_custom_page(
+        self,
+        page,
+        *,
+        website_url: str,
+        runtime: dict[str, Any],
+        warmup: bool,
+    ) -> dict[str, Any]:
+        stage_started = time.perf_counter()
+        goto_timeout_ms = int(self._execute_timeout_seconds(fallback=30.0) * 1000)
+        ready_timeout_ms = int(self._execute_timeout_seconds(fallback=15.0) * 1000)
+        hook_html = self._build_hooked_custom_page_html(runtime)
+
+        def is_runtime_asset(url: str) -> bool:
+            host = (urlparse(url).hostname or "").strip().lower()
+            if not host:
+                return False
+            return (
+                host.endswith("google.com")
+                or host.endswith("gstatic.com")
+                or host.endswith("recaptcha.net")
+                or host == "challenges.cloudflare.com"
+            )
+
+        async def handle_route(route):
+            request = route.request
+            request_url = request.url or ""
+            if request.resource_type == "document" and not is_runtime_asset(request_url):
+                await route.fulfill(status=200, content_type="text/html; charset=utf-8", body=hook_html)
+                return
+            if is_runtime_asset(request_url):
+                await route.continue_()
+                return
+            await route.abort()
+
+        await page.route("**/*", handle_route)
+
+        try:
+            goto_started = time.perf_counter()
+            await page.goto(website_url, wait_until="domcontentloaded", timeout=goto_timeout_ms)
+            goto_ms = int((time.perf_counter() - goto_started) * 1000)
+        except Exception as e:
+            debug_logger.log_warning(
+                f"[BrowserCaptcha] Token-{self.token_id} Custom page.goto failed: {type(e).__name__}: {str(e)[:200]}"
+            )
+            raise
+
+        try:
+            await self._inject_custom_page_scripts(page, runtime)
+        except Exception as inject_prepare_error:
+            debug_logger.log_warning(
+                f"[BrowserCaptcha] Token-{self.token_id} custom script pre-injection failed and will continue to wait for the page itself grecaptcha: "
+                f"{type(inject_prepare_error).__name__}: {str(inject_prepare_error)[:200]}"
+            )
+
+        try:
+            await page.mouse.move(320, 220)
+            await page.mouse.move(520, 320, steps=12)
+            await page.mouse.wheel(0, 240)
+            await page.bring_to_front()
+            await page.evaluate("""
+                (() => {
+                    try {
+                        window.focus();
+                        window.dispatchEvent(new Event('focus'));
+                        document.dispatchEvent(new MouseEvent('mousemove', {
+                            bubbles: true,
+                            clientX: Math.max(32, Math.floor((window.innerWidth || 1280) * 0.4)),
+                            clientY: Math.max(32, Math.floor((window.innerHeight || 720) * 0.35))
+                        }));
+                        window.scrollTo(0, Math.min(280, document.body?.scrollHeight || 280));
+                    } catch (e) {}
+                })()
+            """)
+        except Exception:
+            pass
+
+        try:
+            ready_started = time.perf_counter()
+            await page.wait_for_function(runtime["wait_expression"], timeout=ready_timeout_ms)
+            ready_ms = int((time.perf_counter() - ready_started) * 1000)
+        except Exception as e:
+            debug_logger.log_warning(
+                f"[BrowserCaptcha] Token-{self.token_id} Custom grecaptcha is not ready, try to inject the script: {type(e).__name__}: {str(e)[:200]}"
+            )
+            try:
+                await self._inject_custom_page_scripts(page, runtime)
+                ready_started = time.perf_counter()
+                await page.wait_for_function(runtime["wait_expression"], timeout=ready_timeout_ms)
+                ready_ms = int((time.perf_counter() - ready_started) * 1000)
+            except Exception as inject_error:
+                debug_logger.log_warning(
+                    f"[BrowserCaptcha] Token-{self.token_id} Custom grecaptcha is not ready at the end: {type(inject_error).__name__}: {str(inject_error)[:200]}"
+                )
+                raise
+
+        return {
+            "goto_ms": goto_ms,
+            "grecaptcha_ready_ms": ready_ms,
+            "ready_page_prepare_ms": int((time.perf_counter() - stage_started) * 1000),
+        }
+
+    async def _trim_shared_custom_pages(self, *, keep_key: str | None = None, max_pages: int | None = None):
+        safe_max_pages = max(1, int(max_pages or self._custom_page_cache_max_pages()))
+        now_value = time.monotonic()
+
+        stale_keys = [
+            page_key
+            for page_key in list(self._shared_custom_pages.keys())
+            if page_key != keep_key and self._custom_page_is_stale(page_key, now_value=now_value)
+        ]
+        for stale_key in stale_keys:
+            await self._drop_shared_custom_page(stale_key)
+
+        while len(self._shared_custom_pages) > safe_max_pages:
+            evictable = [
+                (page_key, self._shared_custom_page_last_used.get(page_key, 0.0))
+                for page_key in self._shared_custom_pages
+                if page_key != keep_key
+            ]
+            if not evictable:
+                return
+            evict_key = min(evictable, key=lambda item: item[1])[0]
+            await self._drop_shared_custom_page(evict_key)
+
+    async def _get_or_create_custom_page(
+        self,
+        context,
+        *,
+        website_url: str,
+        website_key: str,
+        captcha_type: str,
+        enterprise: bool,
+    ):
+        custom_key = self._build_custom_page_key(website_url, website_key, captcha_type, enterprise)
+        runtime = self._build_custom_page_runtime(
+            website_key=website_key,
+            captcha_type=captcha_type,
+            enterprise=enterprise,
+        )
+        custom_page = self._shared_custom_pages.get(custom_key)
+        ready_hit = False
+
+        await self._trim_shared_custom_pages(keep_key=custom_key)
+
+        try:
+            if custom_page and not custom_page.is_closed():
+                if self._custom_page_is_stale(custom_key):
+                    await self._drop_shared_custom_page(custom_key)
+                    custom_page = None
+                else:
+                    ready_ok = await custom_page.evaluate(runtime["wait_expression"])
+                    if ready_ok:
+                        ready_hit = True
+                        self._shared_custom_page_last_used[custom_key] = time.monotonic()
+                        return custom_page, custom_key, runtime, ready_hit
+        except Exception:
+            pass
+
+        await self._drop_shared_custom_page(custom_key)
+        custom_page = await context.new_page()
+        await custom_page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined});")
+        await self._install_custom_page_hook(custom_page, runtime)
+        custom_page.on("requestfailed", lambda request: None)
+        await self._prepare_custom_page(
+            custom_page,
+            website_url=website_url,
+            runtime=runtime,
+            warmup=True,
+        )
+        self._shared_custom_pages[custom_key] = custom_page
+        self._shared_custom_page_last_used[custom_key] = time.monotonic()
+        await self._trim_shared_custom_pages(keep_key=custom_key)
+        return custom_page, custom_key, runtime, ready_hit
+
+    async def _create_ready_page(self, context, project_id: str, website_key: str):
+        stage_started = time.perf_counter()
+        page = await context.new_page()
+        await page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined});")
+
+        page_url = f"https://labs.google/fx/tools/flow/project/{project_id}"
+
+        def handle_request_failed(request):
+            try:
+                failed_url = request.url or ""
+                if not any(d in failed_url for d in ["google.com", "gstatic.com", "recaptcha.net", "labs.google"]):
+                    return
+                failure = request.failure or ""
+                debug_logger.log_warning(
+                    f"[BrowserCaptcha] Token-{self.token_id} resource loading failed: url={failed_url[:200]}, error={failure}"
+                )
+            except Exception:
+                pass
+
+        page.on("requestfailed", handle_request_failed)
+
+        try:
+            goto_started = time.perf_counter()
+            await page.goto(
+                page_url,
+                wait_until="domcontentloaded",
+                timeout=int(self._execute_timeout_seconds(fallback=30.0) * 1000),
+            )
+            goto_ms = int((time.perf_counter() - goto_started) * 1000)
+            with contextlib.suppress(Exception):
+                await page.wait_for_load_state(
+                    "networkidle",
+                    timeout=min(10000, int(self._execute_timeout_seconds(fallback=30.0) * 1000)),
+                )
+            ready_started = time.perf_counter()
+            await page.wait_for_function(
+                "typeof grecaptcha !== 'undefined' && "
+                "typeof grecaptcha.enterprise !== 'undefined' && "
+                "typeof grecaptcha.enterprise.execute === 'function'",
+                timeout=int(self._execute_timeout_seconds(fallback=15.0) * 1000),
+            )
+            ready_ms = int((time.perf_counter() - ready_started) * 1000)
+        except Exception:
+            await self._close_page_quietly(page)
+            raise
+        return page, {
+            "goto_ms": goto_ms,
+            "grecaptcha_ready_ms": ready_ms,
+            "ready_page_prepare_ms": int((time.perf_counter() - stage_started) * 1000),
+        }
+
+    async def _get_or_create_ready_page(self, context, project_id: str, website_key: str):
+        ready_key = self._build_ready_page_key(project_id, website_key)
+        ready_page = self._shared_ready_page
+        ready_hit = False
+
+        try:
+            if (
+                ready_page
+                and self._shared_ready_key == ready_key
+                and not ready_page.is_closed()
+            ):
+                ready_ok = await ready_page.evaluate(
+                    "typeof grecaptcha !== 'undefined' && "
+                    "typeof grecaptcha.enterprise !== 'undefined' && "
+                    "typeof grecaptcha.enterprise.execute === 'function'"
+                )
+                if ready_ok:
+                    ready_hit = True
+                    return ready_page, ready_hit, {
+                        "goto_ms": 0,
+                        "grecaptcha_ready_ms": 0,
+                        "ready_page_prepare_ms": 0,
+                    }
+        except Exception:
+            pass
+
+        await self._drop_shared_ready_page()
+        ready_page, stage_timings = await self._create_ready_page(context, project_id, website_key)
+        self._shared_ready_page = ready_page
+        self._shared_ready_key = ready_key
+        return ready_page, ready_hit, stage_timings
+
+    def get_browser_epoch(self) -> int:
+        return int(self._browser_epoch)
+
+    async def _resolve_proxy_runtime_config(self, token_proxy_url: str | None = None) -> tuple:
+        """Resolve runtime proxy configuration."""
+        proxy_option = None
+        raw_proxy_url = None
+        proxy_source = "none"
+        self._browser_proxy_active = False
+        try:
+            candidate_proxy_url = None
+            if token_proxy_url and token_proxy_url.strip():
+                candidate_proxy_url = token_proxy_url.strip()
+                proxy_source = "token"
+            elif self.db:
+                captcha_config = await self.db.get_captcha_config()
+                if captcha_config.browser_proxy_enabled and captcha_config.browser_proxy_url:
+                    candidate_proxy_url = captcha_config.browser_proxy_url.strip()
+                    proxy_source = "global"
+
+            if candidate_proxy_url:
+                normalized_proxy_url, proxy_warning = normalize_browser_proxy_url(candidate_proxy_url)
+                if proxy_warning:
+                    debug_logger.log_warning(f"[BrowserCaptcha] Token-{self.token_id} {proxy_warning}")
+                proxy_option = parse_proxy_url(normalized_proxy_url)
+                if proxy_option:
+                    raw_proxy_url = normalized_proxy_url
+                    self._browser_proxy_active = True
+                    debug_logger.log_info(
+                        f"[BrowserCaptcha] Token-{self.token_id} using {proxy_source} proxy: {proxy_option['server']}"
+                    )
+                else:
+                    debug_logger.log_warning(
+                        f"[BrowserCaptcha] Token-{self.token_id} {proxy_source} proxy format is invalid and has been ignored"
+                    )
+        except Exception as e:
+            debug_logger.log_warning(f"[BrowserCaptcha] Token-{self.token_id} failed to read proxy configuration: {e}")
+
+        return proxy_option, raw_proxy_url, proxy_source
+
+    def _resolve_browser_executable_path(self) -> str | None:
+        configured_path = str(os.environ.get("BROWSER_EXECUTABLE_PATH", "") or "").strip()
+        if configured_path:
+            if os.path.exists(configured_path):
+                return configured_path
+            debug_logger.log_warning(
+                f"[BrowserCaptcha] Token-{self.token_id} configured browser executable does not exist: {configured_path}"
+            )
+
+        candidates: list[str] = []
+        if sys.platform.startswith("win"):
+            candidates = [
+                r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+                r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+                r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
+                r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+            ]
+        elif sys.platform == "darwin":
+            candidates = [
+                "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+                "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+            ]
+        else:
+            candidates = [
+                "/usr/bin/google-chrome",
+                "/usr/bin/google-chrome-stable",
+                "/usr/bin/microsoft-edge",
+                "/usr/bin/chromium",
+                "/usr/bin/chromium-browser",
+            ]
+
+        for candidate in candidates:
+            if os.path.exists(candidate):
+                return candidate
+        return None
+
+    async def _create_browser(self, token_proxy_url: str | None = None, manage_slot_pid: bool = True) -> tuple:
+        """Create a browser instance; shared-slot browsers track the Playwright driver PID."""
+        random_ua = self._profile_user_agent
+        width = self._profile_viewport["width"]
+        height = self._profile_viewport["height"]
+        viewport = {"width": width, "height": height}
+        launch_in_background = bool(getattr(config, "browser_launch_background", True))
+
+        if manage_slot_pid:
+            await self._cleanup_stale_slot_process()
+        playwright = await async_playwright().start()
+        browser_executable_path = self._resolve_browser_executable_path()
+        proxy_option, raw_proxy_url, _ = await self._resolve_proxy_runtime_config(token_proxy_url=token_proxy_url)
+
+        # Record the initial fingerprint; sec-ch-* values are filled later from the page.
+        self._last_fingerprint = {
+            "user_agent": random_ua,
+            "accept_language": self._profile_accept_language,
+            "locale": self._profile_locale,
+            "timezone_id": self._profile_timezone_id,
+            "device_scale_factor": self._profile_device_scale_factor,
+            "is_mobile": self._profile_is_mobile,
+            "has_touch": self._profile_has_touch,
+            "profile_family": self._profile_family,
+            "viewport": dict(viewport),
+            "proxy_url": raw_proxy_url if raw_proxy_url else None,
+        }
+
+        try:
+            browser_args = [
+                '--disable-blink-features=AutomationControlled',
+                '--disable-quic',
+                '--disable-features=UseDnsHttpsSvcb',
+                '--no-sandbox',
+                '--disable-dev-shm-usage',
+                '--disable-setuid-sandbox',
+                '--no-first-run',
+                '--no-zygote',
+                f'--window-size={width},{height}',
+                '--disable-infobars',
+                '--hide-scrollbars',
+            ]
+            if manage_slot_pid:
+                browser_args.append(self._get_slot_marker())
+
+            if launch_in_background:
+                browser_args.extend([
+                    '--start-minimized',
+                    '--disable-background-timer-throttling',
+                    '--disable-renderer-backgrounding',
+                    '--disable-backgrounding-occluded-windows',
+                ])
+                if sys.platform.startswith("win"):
+                    browser_args.append('--window-position=-32000,-32000')
+                debug_logger.log_info(
+                    f"[BrowserCaptcha] Token-{self.token_id} headed browser will launch in background mode"
+                )
+
+            if browser_executable_path:
+                debug_logger.log_info(
+                    f"[BrowserCaptcha] Token-{self.token_id} using custom browser executable: {browser_executable_path}"
+                )
+
+            browser = await playwright.chromium.launch(
+                headless=False,
+                channel="chrome",
+                executable_path=browser_executable_path,
+                proxy=proxy_option,
+                args=browser_args,
+            )
+            context_kwargs = dict(
+                viewport=viewport,
+                locale=self._profile_locale,
+                timezone_id=self._profile_timezone_id,
+                device_scale_factor=self._profile_device_scale_factor,
+                is_mobile=self._profile_is_mobile,
+                has_touch=self._profile_has_touch,
+                ignore_https_errors=True,
+                extra_http_headers={"Accept-Language": self._profile_accept_language},
+            )
+            if not browser_executable_path:
+                context_kwargs["user_agent"] = random_ua
+            context = await browser.new_context(**context_kwargs)
+            driver_proc = self._extract_driver_proc(playwright=playwright, browser=browser)
+            driver_pid = self._extract_driver_pid(proc=driver_proc)
+            if manage_slot_pid:
+                self._shared_driver_proc = driver_proc
+                self._write_pid_file(driver_pid)
+            debug_logger.log_info(
+                f"[BrowserCaptcha] Token-{self.token_id} shared browser started (proxy={'yes' if raw_proxy_url else 'no'})"
+            )
+            return playwright, browser, context
+        except Exception as e:
+            debug_logger.log_error(f"[BrowserCaptcha] Token-{self.token_id} browser launch failed: {type(e).__name__}: {str(e)[:200]}")
+            try:
+                if playwright:
+                    await playwright.stop()
+            except Exception:
+                pass
+            if manage_slot_pid:
+                self._shared_driver_proc = None
+                self._write_pid_file(None)
+            raise
+
+    async def _recycle_browser_locked(self, reason: str = "unknown", rotate_profile: bool = True):
+        """Recycle the shared browser instance and reset its state."""
+        playwright = self._shared_playwright
+        browser = self._shared_browser
+        context = self._shared_context
+        keepalive_page = self._shared_keepalive_page
+        ready_page = self._shared_ready_page
+        custom_pages = list(self._shared_custom_pages.values())
+        driver_proc = self._shared_driver_proc
+        driver_pid = self._shared_driver_pid or self._read_pid_file()
+        had_browser = bool(playwright or browser or context or keepalive_page or ready_page or custom_pages or driver_proc or driver_pid)
+
+        self._shared_playwright = None
+        self._shared_browser = None
+        self._shared_context = None
+        self._shared_keepalive_page = None
+        self._shared_ready_page = None
+        self._shared_ready_key = None
+        self._shared_custom_pages = {}
+        self._shared_custom_page_last_used = {}
+        self._shared_driver_pid = None
+        self._shared_driver_proc = None
+        self._shared_proxy_url = None
+        self._consecutive_browser_failures = 0
+        self._shared_reuse_count = 0
+
+        if rotate_profile:
+            self._refresh_browser_profile()
+
+        if had_browser:
+            self._browser_epoch += 1
+            debug_logger.log_info(
+                f"[BrowserCaptcha] Token-{self.token_id} shared browser recycled, reason={reason}"
+            )
+        await self._close_browser(playwright, browser, context, driver_pid=driver_pid, driver_proc=driver_proc)
+
+    async def recycle_browser(self, reason: str = "unknown", rotate_profile: bool = True):
+        """Recycle the current shared browser."""
+        async with self._shared_browser_lock:
+            await self._recycle_browser_locked(reason=reason, rotate_profile=rotate_profile)
+
+    async def _get_or_create_shared_browser(self, token_proxy_url: str | None = None) -> tuple:
+        """Get or create the shared browser for this slot."""
+        _, expected_proxy_url, _ = await self._resolve_proxy_runtime_config(token_proxy_url=token_proxy_url)
+
+        async with self._shared_browser_lock:
+            has_shared_browser = bool(self._shared_playwright and self._shared_browser and self._shared_context)
+
+            if has_shared_browser:
+                is_connected = True
+                try:
+                    checker = getattr(self._shared_browser, "is_connected", None)
+                    if callable(checker):
+                        is_connected = bool(checker())
+                except Exception:
+                    is_connected = False
+
+                if not is_connected:
+                    await self._recycle_browser_locked(reason="browser_disconnected", rotate_profile=False)
+                    has_shared_browser = False
+
+            if has_shared_browser and self._shared_proxy_url != expected_proxy_url:
+                # If the proxy configuration changed, recycle the slot before reusing it.
+                await self._recycle_browser_locked(reason="proxy_changed", rotate_profile=False)
+                has_shared_browser = False
+
+            if has_shared_browser:
+                try:
+                    await self._ensure_shared_keepalive_page()
+                except Exception:
+                    await self._recycle_browser_locked(reason="keepalive_page_broken", rotate_profile=False)
+                    has_shared_browser = False
+
+            if has_shared_browser:
+                self._shared_reuse_count += 1
+                debug_logger.log_info(
+                    f"[BrowserCaptcha] Token-{self.token_id} reusing shared browser (reuse={self._shared_reuse_count})"
+                )
+                return self._shared_playwright, self._shared_browser, self._shared_context
+
+            playwright, browser, context = await self._create_browser(token_proxy_url=token_proxy_url)
+            self._shared_playwright = playwright
+            self._shared_browser = browser
+            self._shared_context = context
+            self._browser_epoch += 1
+            await self._ensure_shared_keepalive_page()
+            self._shared_proxy_url = (self._last_fingerprint or {}).get("proxy_url")
+            self._shared_launch_count += 1
+            self._shared_reuse_count = 0
+            self.note_idle()
+            return playwright, browser, context
+
+    async def _capture_page_fingerprint(self, page):
+        """Extract the UA and client prompt headers from the browser page to ensure they are consistent with the coding browser."""
+        try:
+            fingerprint = await page.evaluate("""
+                () => {
+                    const ua = navigator.userAgent || "";
+                    const lang = navigator.language || "";
+                    const uaData = navigator.userAgentData || null;
+                    let secChUa = "";
+                    let secChUaMobile = "";
+                    let secChUaPlatform = "";
+
+                    if (uaData) {
+                        if (Array.isArray(uaData.brands) && uaData.brands.length > 0) {
+                            secChUa = uaData.brands
+                                .map((item) => `"${item.brand}";v="${item.version}"`)
+                                .join(", ");
+                        }
+                        secChUaMobile = uaData.mobile ? "?1" : "?0";
+                        if (uaData.platform) {
+                            secChUaPlatform = `"${uaData.platform}"`;
+                        }
+                    }
+
+                    return {
+                        user_agent: ua,
+                        accept_language: lang,
+                        sec_ch_ua: secChUa,
+                        sec_ch_ua_mobile: secChUaMobile,
+                        sec_ch_ua_platform: secChUaPlatform,
+                        timezone_id: Intl.DateTimeFormat().resolvedOptions().timeZone || "",
+                        device_scale_factor: Number(window.devicePixelRatio || 1),
+                        has_touch: Number(navigator.maxTouchPoints || 0) > 0,
+                        viewport: {
+                            width: Number(window.innerWidth || 0),
+                            height: Number(window.innerHeight || 0),
+                        },
+                    };
+                }
+            """)
+
+            if not isinstance(fingerprint, dict):
+                return
+
+            if self._last_fingerprint is None:
+                self._last_fingerprint = {}
+
+            for key in ("user_agent", "accept_language", "sec_ch_ua", "sec_ch_ua_mobile", "sec_ch_ua_platform"):
+                value = fingerprint.get(key)
+                if isinstance(value, str) and value:
+                    self._last_fingerprint[key] = value
+            timezone_id = fingerprint.get("timezone_id")
+            if isinstance(timezone_id, str) and timezone_id:
+                self._last_fingerprint["timezone_id"] = timezone_id
+            device_scale_factor = fingerprint.get("device_scale_factor")
+            if isinstance(device_scale_factor, (int, float)) and device_scale_factor > 0:
+                self._last_fingerprint["device_scale_factor"] = float(device_scale_factor)
+            has_touch = fingerprint.get("has_touch")
+            if isinstance(has_touch, bool):
+                self._last_fingerprint["has_touch"] = has_touch
+            viewport = fingerprint.get("viewport")
+            if isinstance(viewport, dict):
+                width = viewport.get("width")
+                height = viewport.get("height")
+                if isinstance(width, (int, float)) and isinstance(height, (int, float)) and width > 0 and height > 0:
+                    self._last_fingerprint["viewport"] = {
+                        "width": int(width),
+                        "height": int(height),
+                    }
+        except Exception as e:
+            debug_logger.log_warning(f"[BrowserCaptcha] Token-{self.token_id} failed to extract browser fingerprint: {type(e).__name__}: {str(e)[:200]}")
+
+    async def _verify_score_in_page(self, page, token: str, verify_url: str) -> dict[str, Any]:
+        """Directly read the scores displayed on the test page to avoid inconsistency between verify.php and the page display caliber."""
+        _ = token
+        _ = verify_url
+        started_at = time.time()
+        timeout_seconds = 25.0
+        refresh_clicked = False
+        last_snapshot: dict[str, Any] = {}
+
+        with contextlib.suppress(Exception):
+            timeout_seconds = float(getattr(config, "browser_score_dom_wait_seconds", 25) or 25)
+
+        while (time.time() - started_at) < timeout_seconds:
+            try:
+                result = await page.evaluate(
+                    """
+                        () => {
+                            const bodyText = ((document.body && document.body.innerText) || "")
+                                .replace(/\\u00a0/g, " ")
+                                .replace(/\\r/g, "");
+                            const patterns = [
+                                { source: "current_score", regex: /Your score is:\\s*([01](?:\\.\\d+)?)/i },
+                                { source: "selected_score", regex: /Selected Score Test:[\\s\\S]{0,400}?Score:\\s*([01](?:\\.\\d+)?)/i },
+                                { source: "history_score", regex: /(?:^|\\n)\\s*Score:\\s*([01](?:\\.\\d+)?)\\s*;/i },
+                            ];
+                            let score = null;
+                            let source = "";
+                            for (const item of patterns) {
+                                const match = bodyText.match(item.regex);
+                                if (!match) continue;
+                                const parsed = Number(match[1]);
+                                if (!Number.isNaN(parsed) && parsed >= 0 && parsed <= 1) {
+                                    score = parsed;
+                                    source = item.source;
+                                    break;
+                                }
+                            }
+                            const uaMatch = bodyText.match(/Current User Agent:\\s*([^\\n]+)/i);
+                            const ipMatch = bodyText.match(/Current IP Address:\\s*([^\\n]+)/i);
+                            return {
+                                score,
+                                source,
+                                raw_text: bodyText.slice(0, 4000),
+                                current_user_agent: uaMatch ? uaMatch[1].trim() : "",
+                                current_ip_address: ipMatch ? ipMatch[1].trim() : "",
+                                title: document.title || "",
+                                url: location.href || "",
+                            };
+                        }
+                    """
+                )
+            except Exception as e:
+                result = {"error": f"{type(e).__name__}: {str(e)[:200]}"}
+
+            if isinstance(result, dict):
+                last_snapshot = result
+                score = result.get("score")
+                if isinstance(score, (int, float)):
+                    elapsed_ms = int((time.time() - started_at) * 1000)
+                    return {
+                        "verify_mode": "browser_page_dom",
+                        "verify_elapsed_ms": elapsed_ms,
+                        "verify_http_status": None,
+                        "verify_result": {
+                            "success": True,
+                            "score": score,
+                            "source": result.get("source") or "antcpt_dom",
+                            "raw_text": result.get("raw_text") or "",
+                            "current_user_agent": result.get("current_user_agent") or "",
+                            "current_ip_address": result.get("current_ip_address") or "",
+                            "page_title": result.get("title") or "",
+                            "page_url": result.get("url") or "",
+                        },
+                    }
+
+            if not refresh_clicked and (time.time() - started_at) >= 2:
+                refresh_clicked = True
+                with contextlib.suppress(Exception):
+                    await page.evaluate(
+                        """
+                            () => {
+                                const nodes = Array.from(
+                                    document.querySelectorAll('button, input[type="button"], input[type="submit"], a')
+                                );
+                                const target = nodes.find((node) => {
+                                    const text = (node.innerText || node.textContent || node.value || "").trim();
+                                    return /Refresh score now!?/i.test(text);
+                                });
+                                if (target) {
+                                    target.click();
+                                    return true;
+                                }
+                                return false;
+                            }
+                        """
+                    )
+
+            await asyncio.sleep(0.5)
+
+        elapsed_ms = int((time.time() - started_at) * 1000)
+        if not isinstance(last_snapshot, dict):
+            last_snapshot = {"raw": last_snapshot}
+
+        return {
+            "verify_mode": "browser_page_dom",
+            "verify_elapsed_ms": elapsed_ms,
+            "verify_http_status": None,
+            "verify_result": {
+                "success": False,
+                "score": None,
+                "source": "antcpt_dom_timeout",
+                "raw_text": last_snapshot.get("raw_text") or "",
+                "current_user_agent": last_snapshot.get("current_user_agent") or "",
+                "current_ip_address": last_snapshot.get("current_ip_address") or "",
+                "page_title": last_snapshot.get("title") or "",
+                "page_url": last_snapshot.get("url") or "",
+                "error": last_snapshot.get("error") or "Score not read in page",
+            },
+        }
+
+    async def _close_browser(
+        self,
+        playwright,
+        browser,
+        context,
+        driver_pid: int | None = None,
+        driver_proc=None,
+        clear_slot_pid: bool = True,
+    ):
+        """Close a browser instance and clean both the Playwright driver and Chromium tree."""
+        is_shared_browser = any([
+            context is not None and context is self._shared_context,
+            browser is not None and browser is self._shared_browser,
+            playwright is not None and playwright is self._shared_playwright,
+        ])
+        effective_driver_proc = driver_proc or self._extract_driver_proc(playwright=playwright, browser=browser)
+        effective_driver_pid = driver_pid or self._extract_driver_pid(
+            playwright=playwright,
+            browser=browser,
+            proc=effective_driver_proc,
+        )
+        if clear_slot_pid and not effective_driver_pid:
+            effective_driver_pid = self._shared_driver_pid or self._read_pid_file()
+        if effective_driver_pid and effective_driver_proc is None and not self._pid_looks_like_playwright_driver(effective_driver_pid):
+            effective_driver_pid = None
+        if is_shared_browser:
+            self._shared_playwright = None
+            self._shared_browser = None
+            self._shared_context = None
+            self._shared_keepalive_page = None
+            self._shared_ready_page = None
+            self._shared_ready_key = None
+            self._shared_custom_pages = {}
+            self._shared_custom_page_last_used = {}
+            self._shared_driver_pid = None
+            self._shared_driver_proc = None
+            self._shared_proxy_url = None
+        try:
+            if context:
+                await asyncio.wait_for(context.close(), timeout=10)
+        except Exception:
+            pass
+        try:
+            if browser:
+                await asyncio.wait_for(browser.close(), timeout=10)
+        except Exception:
+            pass
+        try:
+            if playwright:
+                await asyncio.wait_for(playwright.stop(), timeout=10)
+        except Exception:
+            pass
+        self._detach_playwright_connection_resources(playwright=playwright, browser=browser)
+        if sys.platform.startswith("win"):
+            await asyncio.sleep(0)
+            await asyncio.sleep(0.05)
+        if effective_driver_proc:
+            await self._terminate_driver_proc(
+                effective_driver_proc,
+                reason='driver_close_timeout_or_orphan',
+                timeout_seconds=4,
+            )
+        elif effective_driver_pid:
+            await self._terminate_pid(
+                effective_driver_pid,
+                reason='driver_close_timeout_or_orphan',
+                timeout_seconds=4,
+            )
+        self._detach_playwright_driver_refs(
+            playwright=playwright,
+            browser=browser,
+            proc=effective_driver_proc,
+        )
+
+        if clear_slot_pid:
+            for slot_pid in self._list_slot_process_pids():
+                await self._terminate_pid(
+                    slot_pid,
+                    reason='slot_process_tree_cleanup',
+                    timeout_seconds=3,
+                )
+            self._write_pid_file(None)
+
+    async def _wait_and_close_after_request(
+        self,
+        request_ref: str,
+        release_event: asyncio.Event,
+        wait_timeout: int,
+        playwright,
+        browser,
+        context,
+        action: str
+    ):
+        """Wait for the upstream request to end before closing the browser (timeout guarantee)."""
+        close_reason = "Upstream request completed"
+        try:
+            await asyncio.wait_for(release_event.wait(), timeout=wait_timeout)
+        except asyncio.TimeoutError:
+            close_reason = f"Timeout waiting for upstream request to complete ({wait_timeout}s)"
+            debug_logger.log_warning(
+                f"[BrowserCaptcha] Token-{self.token_id} {close_reason}, execute full closure"
+            )
+        except Exception as e:
+            close_reason = f"Waiting for upstream request to complete exception: {type(e).__name__}"
+            debug_logger.log_warning(
+                f"[BrowserCaptcha] Token-{self.token_id} {close_reason}, execute full closure"
+            )
+        finally:
+            await self._close_browser(playwright, browser, context)
+            debug_logger.log_info(
+                f"[BrowserCaptcha] Token-{self.token_id} {close_reason}, the browser has been closed (action={action}, request_ref={request_ref[:8]})"
+            )
+            async with self._pending_release_lock:
+                self._pending_release_entries.pop(request_ref, None)
+
+    async def _defer_browser_close_until_request_done(
+        self,
+        playwright,
+        browser,
+        context,
+        action: str
+    ) -> str:
+        """After successful coding, delay closing the browser and wait for the Flow request completion notification."""
+        flow_timeout = int(getattr(config, "flow_timeout", 300) or 300)
+        upsample_timeout = int(getattr(config, "upsample_timeout", 300) or 300)
+        if action == "IMAGE_GENERATION":
+            wait_timeout = self._request_finish_image_wait_seconds(
+                flow_timeout=flow_timeout,
+                upsample_timeout=upsample_timeout,
+            )
+        else:
+            wait_timeout = self._request_finish_non_image_wait_seconds(flow_timeout=flow_timeout)
+        request_ref = uuid.uuid4().hex
+        release_event = asyncio.Event()
+        release_task = asyncio.create_task(
+            self._wait_and_close_after_request(
+                request_ref=request_ref,
+                release_event=release_event,
+                wait_timeout=wait_timeout,
+                playwright=playwright,
+                browser=browser,
+                context=context,
+                action=action,
+            )
+        )
+
+        async with self._pending_release_lock:
+            self._pending_release_entries[request_ref] = {
+                "event": release_event,
+                "task": release_task,
+            }
+        debug_logger.log_info(
+            f"[BrowserCaptcha] Token-{self.token_id} enters delayed shutdown after successful coding and waits for the upstream request to be completed. "
+            f"(action={action}, timeout={wait_timeout}s, request_ref={request_ref[:8]})"
+        )
+        return request_ref
+
+    async def notify_generation_request_finished(self, request_ref: str | None = None):
+        """Notify that the upstream image/video request corresponding to the current Token has ended."""
+        async with self._pending_release_lock:
+            release_event = None
+            matched_ref = request_ref
+            if matched_ref and matched_ref in self._pending_release_entries:
+                entry = self._pending_release_entries.pop(matched_ref)
+                release_event = entry.get("event")
+            elif not matched_ref and self._pending_release_entries:
+                # Compatible with old callers (without request_ref), only the earliest items to be released are recycled to avoid affecting all requests at once.
+                matched_ref = next(iter(self._pending_release_entries.keys()))
+                entry = self._pending_release_entries.pop(matched_ref)
+                release_event = entry.get("event")
+        if release_event and not release_event.is_set():
+            release_event.set()
+            debug_logger.log_info(
+                f"[BrowserCaptcha] Token-{self.token_id} receives the upstream request completion notification and starts to close the browser "
+                f"(request_ref={(matched_ref or 'unknown')[:8]})"
+            )
+
+    async def force_close_pending_browser(self, request_ref: str | None = None, close_all: bool = False):
+        """Force close pending browsers tracked by this slot."""
+        async with self._pending_release_lock:
+            entries: list[dict[str, Any]] = []
+            if close_all:
+                entries = list(self._pending_release_entries.values())
+                self._pending_release_entries.clear()
+            elif request_ref and request_ref in self._pending_release_entries:
+                entry = self._pending_release_entries.pop(request_ref)
+                entries = [entry]
+            elif self._pending_release_entries:
+                first_ref = next(iter(self._pending_release_entries.keys()))
+                entry = self._pending_release_entries.pop(first_ref)
+                entries = [entry]
+
+        release_events = [entry.get("event") for entry in entries if isinstance(entry, dict)]
+        release_tasks = [entry.get("task") for entry in entries if isinstance(entry, dict)]
+
+        for release_event in release_events:
+            if not release_event:
+                continue
+            if not release_event.is_set():
+                release_event.set()
+        for release_task in release_tasks:
+            if not release_task:
+                continue
+            with contextlib.suppress(Exception):
+                await asyncio.wait_for(release_task, timeout=5)
+
+        if close_all:
+            background_tasks = list(self._background_close_tasks)
+            self._background_close_tasks.clear()
+            background_wait_timeout = max(
+                8.0,
+                float(self._fresh_browser_close_delay_seconds() or 0.0) + 6.0,
+            )
+            for background_task in background_tasks:
+                if not background_task:
+                    continue
+                try:
+                    await asyncio.wait_for(
+                        asyncio.shield(background_task),
+                        timeout=background_wait_timeout,
+                    )
+                except asyncio.TimeoutError:
+                    background_task.cancel()
+                    with contextlib.suppress(Exception):
+                        await background_task
+                except Exception:
+                    pass
+            await self.recycle_browser(reason="force_close_all", rotate_profile=False)
+
+    def _schedule_background_close(
+        self,
+        playwright,
+        browser,
+        context,
+        *,
+        close_wait_seconds: float,
+    ):
+        if not playwright and not browser and not context:
+            return
+
+        task = asyncio.create_task(
+            self._close_fresh_browser_context(
+                playwright,
+                browser,
+                context,
+                close_wait_seconds=close_wait_seconds,
+            )
+        )
+        self._background_close_tasks.add(task)
+
+        def _discard(_task: asyncio.Task):
+            self._background_close_tasks.discard(_task)
+
+        task.add_done_callback(_discard)
+
+    async def _warm_native_page_before_execute(self, page):
+        try:
+            await page.bring_to_front()
+            await page.mouse.move(320, 220)
+            await page.mouse.move(520, 320, steps=12)
+            await page.mouse.wheel(0, 240)
+            await page.evaluate(
+                """
+                    (() => {
+                        try {
+                            window.focus();
+                            window.dispatchEvent(new Event('focus'));
+                            document.dispatchEvent(new MouseEvent('mousemove', {
+                                bubbles: true,
+                                clientX: Math.max(32, Math.floor((window.innerWidth || 1280) * 0.4)),
+                                clientY: Math.max(32, Math.floor((window.innerHeight || 720) * 0.35))
+                            }));
+                            window.scrollTo(0, Math.min(280, document.body?.scrollHeight || 280));
+                        } catch (e) {}
+                    })()
+                """
+            )
+        except Exception:
+            pass
+
+    async def _execute_captcha(self, context, project_id: str, website_key: str, action: str) -> TokenAcquireResult | None:
+        """Execute coding logic in a given context"""
+        page = None
+        stage_timings: dict[str, int] = {}
+        total_started = time.perf_counter()
+        try:
+            _ = project_id
+            page = await context.new_page()
+            await page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined});")
+
+            page_url = "https://labs.google/fx/api/auth/providers"
+            primary_host = "https://www.recaptcha.net" if self._browser_proxy_active else "https://www.google.com"
+            secondary_host = "https://www.google.com" if primary_host == "https://www.recaptcha.net" else "https://www.recaptcha.net"
+            debug_logger.log_info(
+                f"[BrowserCaptcha] Token-{self.token_id} loads enterprise.js: primary={primary_host}, secondary={secondary_host}"
+            )
+
+            async def handle_route(route):
+                if route.request.url.rstrip("/") == page_url.rstrip("/"):
+                    html = f"""<html><head><script>
+                    (() => {{
+                        const urls = [
+                            '{primary_host}/recaptcha/enterprise.js?render={website_key}',
+                            '{secondary_host}/recaptcha/enterprise.js?render={website_key}'
+                        ];
+                        const loadScript = (index) => {{
+                            if (index >= urls.length) return;
+                            const script = document.createElement('script');
+                            script.src = urls[index];
+                            script.async = true;
+                            script.onerror = () => loadScript(index + 1);
+                            document.head.appendChild(script);
+                        }};
+                        loadScript(0);
+                    }})();
+                    </script></head><body></body></html>"""
+                    await route.fulfill(status=200, content_type="text/html", body=html)
+                elif any(domain in route.request.url for domain in ["google.com", "gstatic.com", "recaptcha.net"]):
+                    await route.continue_()
+                else:
+                    await route.abort()
+
+            def handle_request_failed(request):
+                try:
+                    failed_url = request.url or ""
+                    if not any(domain in failed_url for domain in ["google.com", "gstatic.com", "recaptcha.net"]):
+                        return
+                    failure = request.failure or ""
+                    debug_logger.log_warning(
+                        f"[BrowserCaptcha] Token-{self.token_id} resource loading failed: url={failed_url[:200]}, error={failure}"
+                    )
+                except Exception:
+                    pass
+
+            await page.route("**/*", handle_route)
+            page.on("requestfailed", handle_request_failed)
+
+            try:
+                goto_started = time.perf_counter()
+                await page.goto(page_url, wait_until="load", timeout=15000)
+                stage_timings["goto_ms"] = int((time.perf_counter() - goto_started) * 1000)
+            except Exception as e:
+                debug_logger.log_warning(
+                    f"[BrowserCaptcha] Token-{self.token_id} page.goto failed: {type(e).__name__}: {str(e)[:200]}"
+                )
+                return None
+
+            try:
+                ready_started = time.perf_counter()
+                await page.wait_for_function("typeof grecaptcha !== 'undefined'", timeout=10000)
+                stage_timings["grecaptcha_ready_ms"] = int((time.perf_counter() - ready_started) * 1000)
+            except Exception as e:
+                debug_logger.log_warning(
+                    f"[BrowserCaptcha] Token-{self.token_id} grecaptcha not ready: {type(e).__name__}: {str(e)[:200]}"
+                )
+                return None
+
+            await self._capture_page_fingerprint(page)
+
+            # Warm up page with human mouse moves/scroll to bypass bot detection on first load
+            await self._warm_native_page_before_execute(page)
+
+            execute_started = time.perf_counter()
+            execute_timeout_seconds = self._execute_timeout_seconds(fallback=30.0)
+            execute_script_timeout_ms = self._execute_script_timeout_ms(fallback=30.0)
+            token = await asyncio.wait_for(
+                page.evaluate(f"""
+                    (actionName) => {{
+                        return new Promise((resolve, reject) => {{
+                            const timeout = setTimeout(() => reject(new Error('timeout')), {execute_script_timeout_ms});
+                            try {{
+                                grecaptcha.enterprise.ready(() => {{
+                                    grecaptcha.enterprise.execute('{website_key}', {{action: actionName}})
+                                        .then(t => {{
+                                            clearTimeout(timeout);
+                                            resolve(t);
+                                        }})
+                                        .catch(e => {{
+                                            clearTimeout(timeout);
+                                            reject(e);
+                                        }});
+                                }});
+                            }} catch (e) {{
+                                clearTimeout(timeout);
+                                reject(e);
+                            }}
+                        }});
+                    }}
+                """, action),
+                timeout=execute_timeout_seconds
+            )
+            stage_timings["execute_ms"] = int((time.perf_counter() - execute_started) * 1000)
+
+            post_wait_seconds = self._recaptcha_settle_seconds()
+            if post_wait_seconds > 0:
+                debug_logger.log_info(
+                    f"[BrowserCaptcha] Token-{self.token_id} token has been obtained, wait for additional {post_wait_seconds:.1f}s before returning"
+                )
+                settle_started = time.perf_counter()
+                await asyncio.sleep(post_wait_seconds)
+                stage_timings["settle_ms"] = int((time.perf_counter() - settle_started) * 1000)
+            else:
+                stage_timings["settle_ms"] = 0
+
+            total_ms = int((time.perf_counter() - total_started) * 1000)
+            stage_timings["total_ms"] = total_ms
+            return TokenAcquireResult(
+                token=token,
+                browser_ref=self.token_id,
+                browser_id=self.token_id,
+                fingerprint=self.get_last_fingerprint(),
+                source="live",
+                elapsed_ms=total_ms,
+                browser_epoch=self.get_browser_epoch(),
+                timings=stage_timings,
+            )
+        except Exception as e:
+            msg = f"{type(e).__name__}: {str(e)}"
+            debug_logger.log_warning(f"[BrowserCaptcha] Token-{self.token_id} failed to code: {msg[:200]}")
+            return None
+        finally:
+            if page:
+                with contextlib.suppress(Exception):
+                    await page.close()
+
+    async def _execute_custom_captcha(
+        self,
+        context,
+        website_url: str,
+        website_key: str,
+        action: str,
+        verify_url: str | None = None,
+        enterprise: bool = False,
+        captcha_type: str = "recaptcha_v3",
+        is_invisible: bool = True,
+        reuse_ready_page: bool = False,
+    ) -> Any:
+        """Execute reCAPTCHA at any site for non-Flow scenarios such as score testing."""
+        page = None
+        custom_key: str | None = None
+        runtime = self._build_custom_page_runtime(
+            website_key=website_key,
+            captcha_type=captcha_type,
+            enterprise=enterprise,
+        )
+        try:
+            if reuse_ready_page:
+                page, custom_key, runtime, ready_hit = await self._get_or_create_custom_page(
+                    context,
+                    website_url=website_url,
+                    website_key=website_key,
+                    captcha_type=captcha_type,
+                    enterprise=enterprise,
+                )
+                debug_logger.log_info(
+                    f"[BrowserCaptcha] Token-{self.token_id} Reuse custom hot page={ready_hit} "
+                    f"type={runtime['normalized_type']} url={website_url}"
+                )
+            else:
+                page = await context.new_page()
+                await page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined});")
+                await self._install_custom_page_hook(page, runtime)
+                debug_logger.log_info(
+                    f"[BrowserCaptcha] Token-{self.token_id} loads the real custom page {runtime['api_label']}: "
+                    f"type={runtime['normalized_type']}, primary={runtime['primary_host']}, "
+                    f"secondary={runtime['secondary_host']}, url={website_url}"
+                )
+                await self._prepare_custom_page(
+                    page,
+                    website_url=website_url,
+                    runtime=runtime,
+                    warmup=bool(verify_url),
+                )
+
+            await self._capture_page_fingerprint(page)
+            execute_timeout_seconds = self._execute_timeout_seconds(fallback=45.0)
+            execute_script_timeout_ms = self._execute_script_timeout_ms(fallback=45.0)
+            should_wait_recaptcha_network = not runtime["is_turnstile"] and not runtime["is_recaptcha_v2"]
+            reload_ok_event = clr_ok_event = None
+            if should_wait_recaptcha_network:
+                reload_ok_event, clr_ok_event = self._attach_recaptcha_network_waiters(page, website_key)
+
+            if runtime["is_turnstile"]:
+                token = await asyncio.wait_for(
+                    page.evaluate(
+                        """
+                            ({ siteKey, actionName }) => {
+                                return new Promise((resolve, reject) => {
+                                    const api = window.turnstile;
+                                    if (!api || typeof api.render !== 'function') {
+                                        reject(new Error('turnstile_unavailable'));
+                                        return;
+                                    }
+
+                                    let settled = false;
+                                    const timeout = setTimeout(() => {
+                                        if (settled) return;
+                                        settled = true;
+                                        reject(new Error('timeout'));
+                                    }, """ + str(execute_script_timeout_ms) + """);
+
+                                    const done = (token) => {
+                                        if (settled || !token) return;
+                                        settled = true;
+                                        clearTimeout(timeout);
+                                        resolve(token);
+                                    };
+
+                                    const fail = (reason) => {
+                                        if (settled) return;
+                                        settled = true;
+                                        clearTimeout(timeout);
+                                        reject(new Error(String(reason || 'turnstile_failed')));
+                                    };
+
+                                    try {
+                                        const host = document.createElement('div');
+                                        host.id = `fcs-turnstile-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+                                        host.style.position = 'fixed';
+                                        host.style.left = '-9999px';
+                                        host.style.top = '0';
+                                        host.style.width = '320px';
+                                        host.style.height = '65px';
+                                        document.body.appendChild(host);
+
+                                        const widgetId = api.render(host, {
+                                            sitekey: siteKey,
+                                            action: actionName || undefined,
+                                            execution: 'execute',
+                                            appearance: 'execute',
+                                            callback: done,
+                                            'error-callback': fail,
+                                            'expired-callback': () => fail('expired'),
+                                            'timeout-callback': () => fail('timeout'),
+                                        });
+
+                                        if (typeof api.execute === 'function') {
+                                            try { api.execute(widgetId); } catch (e) {}
+                                            try { api.execute(host); } catch (e) {}
+                                        }
+
+                                        const probe = () => {
+                                            if (settled) return;
+                                            const input = document.querySelector('input[name="cf-turnstile-response"]');
+                                            const currentToken = input && input.value ? String(input.value).trim() : '';
+                                            if (currentToken) {
+                                                done(currentToken);
+                                                return;
+                                            }
+                                            setTimeout(probe, 500);
+                                        };
+                                        setTimeout(probe, 600);
+                                    } catch (e) {
+                                        fail(e && e.message ? e.message : String(e));
+                                    }
+                                });
+                            }
+                        """,
+                        {"siteKey": website_key, "actionName": action},
+                    ),
+                    timeout=execute_timeout_seconds,
+                )
+            elif runtime["is_recaptcha_v2"]:
+                token = await asyncio.wait_for(
+                    page.evaluate(
+                        """
+                            ({ siteKey, actionName, enterpriseMode, invisibleMode }) => {
+                                return new Promise((resolve, reject) => {
+                                    const apiRoot = enterpriseMode
+                                        ? (window.grecaptcha && window.grecaptcha.enterprise)
+                                        : window.grecaptcha;
+                                    if (!apiRoot || typeof apiRoot.render !== 'function') {
+                                        reject(new Error('recaptcha_render_unavailable'));
+                                        return;
+                                    }
+
+                                    let settled = false;
+                                    const timeout = setTimeout(() => {
+                                        if (settled) return;
+                                        settled = true;
+                                        reject(new Error('timeout'));
+                                    }, """ + str(execute_script_timeout_ms) + """);
+
+                                    const done = (token) => {
+                                        if (settled || !token) return;
+                                        settled = true;
+                                        clearTimeout(timeout);
+                                        resolve(token);
+                                    };
+
+                                    const fail = (reason) => {
+                                        if (settled) return;
+                                        settled = true;
+                                        clearTimeout(timeout);
+                                        reject(new Error(String(reason || 'recaptcha_v2_failed')));
+                                    };
+
+                                    try {
+                                        const host = document.createElement('div');
+                                        host.id = `fcs-recaptcha-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+                                        host.style.position = 'fixed';
+                                        host.style.left = '-9999px';
+                                        host.style.top = '0';
+                                        document.body.appendChild(host);
+
+                                        const widgetId = apiRoot.render(host, {
+                                            sitekey: siteKey,
+                                            size: invisibleMode ? 'invisible' : 'normal',
+                                            badge: 'bottomright',
+                                            callback: done,
+                                            'error-callback': () => fail('error-callback'),
+                                            'expired-callback': () => fail('expired-callback'),
+                                            action: actionName || undefined,
+                                        });
+
+                                        if (typeof apiRoot.execute === 'function') {
+                                            try {
+                                                const executeResult = apiRoot.execute(widgetId);
+                                                if (executeResult && typeof executeResult.then === 'function') {
+                                                    executeResult
+                                                        .then((resultToken) => {
+                                                            if (resultToken) done(resultToken);
+                                                        })
+                                                        .catch((error) => fail(error && error.message ? error.message : String(error)));
+                                                }
+                                            } catch (e) {
+                                                if (invisibleMode) {
+                                                    fail(e && e.message ? e.message : String(e));
+                                                    return;
+                                                }
+                                            }
+                                        }
+
+                                        const probe = () => {
+                                            if (settled) return;
+                                            const input = document.querySelector('textarea[name="g-recaptcha-response"]');
+                                            const currentToken = input && input.value ? String(input.value).trim() : '';
+                                            if (currentToken) {
+                                                done(currentToken);
+                                                return;
+                                            }
+                                            setTimeout(probe, 500);
+                                        };
+                                        setTimeout(probe, 800);
+                                    } catch (e) {
+                                        fail(e && e.message ? e.message : String(e));
+                                    }
+                                });
+                            }
+                        """,
+                        {
+                            "siteKey": website_key,
+                            "actionName": action,
+                            "enterpriseMode": enterprise,
+                            "invisibleMode": bool(is_invisible),
+                        },
+                    ),
+                    timeout=execute_timeout_seconds,
+                )
+            else:
+                token = await asyncio.wait_for(
+                    page.evaluate(
+                        f"""
+                            (actionName) => {{
+                                return new Promise((resolve, reject) => {{
+                                    const timeout = setTimeout(() => reject(new Error('timeout')), {execute_script_timeout_ms});
+                                    try {{
+                                        {runtime['ready_target']}(function() {{
+                                            {runtime['execute_target']}('{website_key}', {{action: actionName}})
+                                                .then(t => {{
+                                                    clearTimeout(timeout);
+                                                    resolve(t);
+                                                }})
+                                                .catch(e => {{
+                                                    clearTimeout(timeout);
+                                                    reject(e);
+                                                }});
+                                        }});
+                                    }} catch (e) {{
+                                        clearTimeout(timeout);
+                                        reject(e);
+                                    }}
+                                }});
+                            }}
+                        """,
+                        action,
+                    ),
+                    timeout=self._execute_timeout_seconds(fallback=30.0),
+                )
+
+            if should_wait_recaptcha_network and reload_ok_event and clr_ok_event:
+                await self._wait_recaptcha_network_ready(
+                    reload_ok_event=reload_ok_event,
+                    clr_ok_event=clr_ok_event,
+                    log_prefix=f"[BrowserCaptcha] Token-{self.token_id} custom coding",
+                )
+
+            post_wait_seconds = self._recaptcha_settle_seconds()
+            if post_wait_seconds > 0:
+                debug_logger.log_info(
+                    f"[BrowserCaptcha] Token-{self.token_id} custom coding has been completed, wait for additional {post_wait_seconds:.1f}s before returning token"
+                )
+                await asyncio.sleep(post_wait_seconds)
+
+            if verify_url:
+                verify_payload = await self._verify_score_in_page(page, token, verify_url)
+                return {
+                    "token": token,
+                    **verify_payload,
+                }
+
+            return token
+        except Exception as e:
+            msg = f"{type(e).__name__}: {str(e)}"
+            debug_logger.log_warning(f"[BrowserCaptcha] Token-{self.token_id} custom coding failed: {msg[:200]}")
+            if reuse_ready_page and custom_key:
+                await self._drop_shared_custom_page(custom_key)
+            return None
+        finally:
+            if page and not reuse_ready_page:
+                with contextlib.suppress(BaseException):
+                    await page.close()
+
+    def is_busy(self) -> bool:
+        return self._solve_inflight > 0
+
+    def note_idle(self):
+        if self._solve_inflight <= 0:
+            self._last_idle_since = time.monotonic()
+
+    def idle_seconds(self) -> float:
+        if self.is_busy():
+            return 0.0
+        return max(0.0, time.monotonic() - self._last_idle_since)
+
+    def has_shared_browser(self) -> bool:
+        return bool(
+            self._shared_browser
+            or self._shared_context
+            or self._shared_keepalive_page
+            or self._shared_ready_page
+            or self._shared_custom_pages
+        )
+
+    def get_last_fingerprint(self) -> dict[str, Any] | None:
+        """Returns the fingerprint snapshot of the most recent coded browser."""
+        if not self._last_fingerprint:
+            return None
+        sanitized = dict(self._last_fingerprint)
+        sanitized.pop("proxy_url", None)
+        return sanitized
+
+    async def _open_fresh_browser_context(self, token_proxy_url: str | None = None) -> tuple:
+        """One-time browser mode: Refresh the fingerprint and open a new browser on every request."""
+        if self.has_shared_browser():
+            await self.recycle_browser(reason="fresh_browser_mode_reset", rotate_profile=False)
+
+        self._refresh_browser_profile()
+        playwright, browser, context = await self._create_browser(
+            token_proxy_url=token_proxy_url,
+            manage_slot_pid=False,
+        )
+        self._browser_epoch += 1
+        return playwright, browser, context
+
+    async def _close_fresh_browser_context(
+        self,
+        playwright,
+        browser,
+        context,
+        close_wait_seconds: float = 0.0,
+    ):
+        """Close the one-time browser and clear the hot page status left by this request."""
+        if not playwright and not browser and not context:
+            return
+
+        with contextlib.suppress(Exception):
+            await self._drop_shared_ready_page()
+
+        self._shared_ready_key = None
+        custom_keys = list(self._shared_custom_pages.keys())
+        for custom_key in custom_keys:
+            with contextlib.suppress(Exception):
+                await self._drop_shared_custom_page(custom_key)
+        self._shared_custom_pages = {}
+        self._shared_custom_page_last_used = {}
+
+        if close_wait_seconds > 0:
+            debug_logger.log_info(
+                f"[BrowserCaptcha] Token-{self.token_id} Wait additional {close_wait_seconds:.1f}s before closing the browser"
+            )
+            await asyncio.sleep(close_wait_seconds)
+
+        try:
+            await self._close_browser(playwright, browser, context, clear_slot_pid=False)
+        except Exception as e:
+            debug_logger.log_warning(
+                f"[BrowserCaptcha] Token-{self.token_id} close fresh browser failed: {type(e).__name__}: {str(e)[:200]}"
+            )
+
+    async def get_token(
+        self,
+        project_id: str,
+        website_key: str,
+        action: str = "IMAGE_GENERATION",
+        token_proxy_url: str | None = None,
+        defer_close_until_request_done: bool = False,
+    ) -> TokenAcquireResult:
+        """Reuse the shared browser for coding and keep the browser resident except for fatal errors."""
+        async with self._semaphore:
+            self._solve_inflight += 1
+            max_retries = self._retry_max_attempts()
+            retry_backoff_seconds = self._retry_backoff_seconds()
+
+            try:
+                for attempt in range(max_retries):
+                    try:
+                        start_ts = time.perf_counter()
+                        _ = defer_close_until_request_done
+                        _, _, context = await self._get_or_create_shared_browser(
+                            token_proxy_url=token_proxy_url,
+                        )
+                        result = await self._execute_captcha(context, project_id, website_key, action)
+                        if result and result.token:
+                            self._solve_count += 1
+                            self._consecutive_browser_failures = 0
+                            elapsed_ms = result.elapsed_ms or int((time.perf_counter() - start_ts) * 1000)
+                            result.browser_ref = self.token_id
+                            result.browser_id = self.token_id
+                            result.fingerprint = result.fingerprint or self.get_last_fingerprint()
+                            result.browser_epoch = self.get_browser_epoch()
+                            result.elapsed_ms = elapsed_ms
+                            debug_logger.log_info(
+                                f"[BrowserCaptcha] Token-{self.token_id} token acquired "
+                                f"({elapsed_ms}ms, launches={self._shared_launch_count}, reuse={self._shared_reuse_count})"
+                            )
+                            if result.timings:
+                                debug_logger.log_info(
+                                    f"[BrowserCaptcha] Token-{self.token_id} solve timings "
+                                    f"goto={result.timings.get('goto_ms', 0)}ms "
+                                    f"ready={result.timings.get('grecaptcha_ready_ms', 0)}ms "
+                                    f"execute={result.timings.get('execute_ms', 0)}ms "
+                                    f"settle={result.timings.get('settle_ms', 0)}ms "
+                                    f"total={result.timings.get('total_ms', elapsed_ms)}ms"
+                                )
+                            return result
+
+                        self._error_count += 1
+                        self._consecutive_browser_failures += 1
+                        debug_logger.log_warning(
+                            f"[BrowserCaptcha] Token-{self.token_id} token attempt {attempt + 1}/{max_retries} failed"
+                        )
+                        if self._consecutive_browser_failures >= 2:
+                            await self.recycle_browser(
+                                reason=f"captcha_failed_{attempt + 1}",
+                                rotate_profile=False,
+                            )
+                    except Exception as e:
+                        self._error_count += 1
+                        self._consecutive_browser_failures += 1
+                        error_message = f"{type(e).__name__}: {str(e)}"
+                        debug_logger.log_error(
+                            f"[BrowserCaptcha] Token-{self.token_id} browser error: {error_message[:200]}"
+                        )
+                        error_lower = error_message.lower()
+                        if any(keyword in error_lower for keyword in [
+                            "context or browser has been closed",
+                            "target closed",
+                            "browser has been closed",
+                            "connection closed",
+                            "crash",
+                            "closed",
+                        ]):
+                            await self.recycle_browser(
+                                reason="browser_runtime_error",
+                                rotate_profile=False,
+                            )
+
+                    if attempt < max_retries - 1:
+                        await asyncio.sleep(retry_backoff_seconds)
+
+                return TokenAcquireResult(
+                    token=None,
+                    browser_ref=None,
+                    browser_id=self.token_id,
+                    fingerprint=None,
+                    source="live",
+                    elapsed_ms=0,
+                    browser_epoch=self.get_browser_epoch(),
+                )
+            finally:
+                self._solve_inflight = max(0, self._solve_inflight - 1)
+                self.note_idle()
+
+    async def get_custom_token(
+        self,
+        website_url: str,
+        website_key: str,
+        action: str = "homepage",
+        enterprise: bool = False,
+        token_proxy_url: str | None = None,
+        captcha_type: str = "recaptcha_v3",
+        is_invisible: bool = True,
+    ) -> str | None:
+        """One-time browser mode: A new browser is opened for each custom token request and the browser is closed after success."""
+        async with self._semaphore:
+            self._solve_inflight += 1
+            max_retries = self._retry_max_attempts()
+            retry_backoff_seconds = self._retry_backoff_seconds()
+
+            try:
+                for attempt in range(max_retries):
+                    playwright = browser = context = None
+                    close_wait_seconds = 0.0
+                    try:
+                        start_ts = time.time()
+                        playwright, browser, context = await self._open_fresh_browser_context(
+                            token_proxy_url=token_proxy_url,
+                        )
+                        token = await self._execute_custom_captcha(
+                            context=context,
+                            website_url=website_url,
+                            website_key=website_key,
+                            action=action,
+                            enterprise=enterprise,
+                            captcha_type=captcha_type,
+                            is_invisible=is_invisible,
+                            reuse_ready_page=False,
+                        )
+
+                        if token:
+                            self._solve_count += 1
+                            self._consecutive_browser_failures = 0
+                            debug_logger.log_info(
+                                f"[BrowserCaptcha] Token-{self.token_id} custom token acquired "
+                                f"({(time.time()-start_ts)*1000:.0f}ms, fresh_browser=yes)"
+                            )
+                            if str(captcha_type or "").strip().lower() == "recaptcha_v3":
+                                close_wait_seconds = self._fresh_browser_close_delay_seconds()
+                            self._shared_ready_page = None
+                            self._shared_ready_key = None
+                            self._shared_custom_pages = {}
+                            self._shared_custom_page_last_used = {}
+                            self._schedule_background_close(
+                                playwright,
+                                browser,
+                                context,
+                                close_wait_seconds=close_wait_seconds,
+                            )
+                            playwright = browser = context = None
+                            return token
+
+                        self._error_count += 1
+                        self._consecutive_browser_failures += 1
+                        debug_logger.log_warning(
+                            f"[BrowserCaptcha] Token-{self.token_id} custom token attempt {attempt+1}/{max_retries} failed"
+                        )
+                    except Exception as e:
+                        self._error_count += 1
+                        self._consecutive_browser_failures += 1
+                        debug_logger.log_error(
+                            f"[BrowserCaptcha] Token-{self.token_id} custom browser error: {type(e).__name__}: {str(e)[:200]}"
+                        )
+                    finally:
+                        if playwright or browser or context:
+                            await self._close_fresh_browser_context(
+                                playwright,
+                                browser,
+                                context,
+                                close_wait_seconds=close_wait_seconds,
+                            )
+
+                    if attempt < max_retries - 1:
+                        await asyncio.sleep(retry_backoff_seconds)
+
+                return None
+            finally:
+                self._solve_inflight = max(0, self._solve_inflight - 1)
+                self.note_idle()
+
+    async def get_custom_score(
+        self,
+        website_url: str,
+        website_key: str,
+        verify_url: str,
+        action: str = "homepage",
+        enterprise: bool = False,
+        token_proxy_url: str | None = None,
+    ) -> dict[str, Any]:
+        """One-time browser mode: A new browser is opened for each score verification and buffered and closed after success."""
+        async with self._semaphore:
+            self._solve_inflight += 1
+            max_retries = self._retry_max_attempts()
+            retry_backoff_seconds = self._retry_backoff_seconds()
+
+            try:
+                for attempt in range(max_retries):
+                    playwright = browser = context = None
+                    close_wait_seconds = 0.0
+                    try:
+                        started_at = time.time()
+                        playwright, browser, context = await self._open_fresh_browser_context(
+                            token_proxy_url=token_proxy_url,
+                        )
+                        payload = await self._execute_custom_captcha(
+                            context=context,
+                            website_url=website_url,
+                            website_key=website_key,
+                            action=action,
+                            verify_url=verify_url,
+                            enterprise=enterprise,
+                            reuse_ready_page=False,
+                        )
+
+                        if isinstance(payload, dict) and payload.get("token"):
+                            self._solve_count += 1
+                            self._consecutive_browser_failures = 0
+                            payload.setdefault("token_elapsed_ms", int((time.time() - started_at) * 1000))
+                            payload.setdefault("fingerprint", self.get_last_fingerprint())
+                            debug_logger.log_info(
+                                f"[BrowserCaptcha] Token-{self.token_id} in-page score verification succeeded "
+                                f"({(time.time()-started_at)*1000:.0f}ms, fresh_browser=yes)"
+                            )
+                            close_wait_seconds = self._fresh_browser_close_delay_seconds()
+                            self._shared_ready_page = None
+                            self._shared_ready_key = None
+                            self._shared_custom_pages = {}
+                            self._shared_custom_page_last_used = {}
+                            self._schedule_background_close(
+                                playwright,
+                                browser,
+                                context,
+                                close_wait_seconds=close_wait_seconds,
+                            )
+                            playwright = browser = context = None
+                            return payload
+
+                        self._error_count += 1
+                        self._consecutive_browser_failures += 1
+                        debug_logger.log_warning(
+                            f"[BrowserCaptcha] Token-{self.token_id} in-page score attempt {attempt+1}/{max_retries} failed"
+                        )
+                        if self._consecutive_browser_failures >= 2:
+                            await self.recycle_browser(reason=f"custom_score_failed_{attempt + 1}", rotate_profile=False)
+                    except Exception as e:
+                        self._error_count += 1
+                        self._consecutive_browser_failures += 1
+                        debug_logger.log_error(
+                            f"[BrowserCaptcha] Token-{self.token_id} in-page score browser error: {type(e).__name__}: {str(e)[:200]}"
+                        )
+                    finally:
+                        if playwright or browser or context:
+                            await self._close_fresh_browser_context(
+                                playwright,
+                                browser,
+                                context,
+                                close_wait_seconds=close_wait_seconds,
+                            )
+
+                    if attempt < max_retries - 1:
+                        await asyncio.sleep(retry_backoff_seconds)
+
+                return {
+                    "token": None,
+                    "verify_mode": "browser_page",
+                    "verify_elapsed_ms": 0,
+                    "verify_http_status": None,
+                    "verify_result": {}
+                }
+            finally:
+                self._solve_inflight = max(0, self._solve_inflight - 1)
+                self.note_idle()
+
+
+class BrowserCaptchaService:
+    """Multi-browser polling coding service (single case mode)
+
+    Supports configuring the number of browsers. Each browser can only open 1 tab page and request polling allocation.
+    """
+
+    _instance: Optional['BrowserCaptchaService'] = None
+    _lock = asyncio.Lock()
+    _DEFAULT_FLOW_WEBSITE_KEY = RECAPTCHA_SITE_KEY
+
+    def __init__(self, db=None):
+        self.db = db
+        self.website_key = self._configured_flow_website_key()
+        self.base_user_data_dir = os.path.join(os.getcwd(), "browser_data_rt")
+        self._browsers: dict[int, TokenBrowser] = {}
+        self._browsers_lock = asyncio.Lock()
+        self._slot_allocation_lock = asyncio.Lock()
+        self._slot_reservations: dict[int, int] = {}
+
+        # Browser slot configuration
+        self._browser_count = 1  # Default to 1; loaded from the database later
+        self._round_robin_index = 0  # Round-robin cursor
+        self._proxy_pool_cursor_by_key: dict[str, int] = {}
+        self._proxy_pool_lock = asyncio.Lock()
+        self._project_slot_affinity: dict[str, list[int]] = {}
+        self._project_slot_last_used: dict[str, float] = {}
+        self._project_slot_lock = asyncio.Lock()
+        self._standby_tokens: dict[str, list[StandbyTokenEntry]] = {}
+        self._standby_bucket_last_used: dict[str, float] = {}
+        self._standby_lock = asyncio.Lock()
+        self._standby_refill_tasks: dict[str, set[asyncio.Task]] = {}
+        self._standby_refill_browser_claims: set[int] = set()
+        self._standby_live_tasks: dict[str, asyncio.Task] = {}
+        self._standby_live_lock = asyncio.Lock()
+        self._foreground_solves_inflight = 0
+        self._auto_warmup_task: asyncio.Task | None = None
+        self._warmup_settings_signature = ""
+        self._closing = False
+
+        # Metrics
+        self._stats = {
+            "req_total": 0,
+            "gen_ok": 0,
+            "gen_fail": 0,
+            "api_403": 0,
+            "standby_hit": 0,
+            "standby_miss": 0,
+            "standby_fill_ok": 0,
+            "standby_fill_fail": 0,
+        }
+
+        # The concurrency limit is initialized by _load_browser_count.
+        self._token_semaphore = None
+        self._idle_reaper_task: asyncio.Task | None = None
+
+    def _idle_reaper_interval_seconds(self) -> float:
+        try:
+            return max(1.0, float(getattr(config, "browser_idle_reaper_interval_seconds", 15.0) or 15.0))
+        except Exception:
+            return 15.0
+
+    def _configured_flow_website_key(self) -> str:
+        raw_value = str(
+            getattr(
+                config,
+                "browser_flow_website_key",
+                self._DEFAULT_FLOW_WEBSITE_KEY,
+            ) or ""
+        ).strip()
+        return raw_value or self._DEFAULT_FLOW_WEBSITE_KEY
+
+    def _configured_auto_warm_project_id(self) -> str:
+        return str(
+            getattr(
+                config,
+                "browser_auto_warm_project_id",
+                "",
+            ) or ""
+        ).strip()
+
+    def _configured_auto_warmup_action(self) -> str:
+        raw_value = str(
+            getattr(
+                config,
+                "browser_auto_warmup_action",
+                "IMAGE_GENERATION",
+            ) or ""
+        ).strip().upper()
+        if raw_value in {"IMAGE_GENERATION", "VIDEO_GENERATION"}:
+            return raw_value
+        return "IMAGE_GENERATION"
+
+    def _configured_auto_custom_warm_target(self) -> dict[str, Any] | None:
+        website_url = str(getattr(config, "browser_auto_warm_website_url", "") or "").strip()
+        website_key = str(getattr(config, "browser_auto_warm_website_key", "") or "").strip()
+        action = str(getattr(config, "browser_auto_warm_action", "homepage") or "").strip() or "homepage"
+        if not website_url or not website_key:
+            return None
+        return {
+            "website_url": website_url,
+            "website_key": website_key,
+            "action": action,
+            "enterprise": False,
+            "captcha_type": "recaptcha_v3",
+            "is_invisible": True,
+        }
+
+    def _configured_native_warmup_actions(self) -> list[str]:
+        primary = self._configured_auto_warmup_action()
+        actions = [primary]
+        for action in ("IMAGE_GENERATION", "VIDEO_GENERATION"):
+            if action not in actions:
+                actions.append(action)
+        return actions
+
+    @staticmethod
+    def _normalize_standby_match_signature(value: str | None) -> str:
+        return str(value or "").strip()
+
+    @classmethod
+    def _build_native_standby_match_signature(cls, project_id: str, action: str) -> str:
+        project_key = str(project_id or "").strip()
+        action_key = str(action or "IMAGE_GENERATION").strip().upper() or "IMAGE_GENERATION"
+        return f"native|{project_key}|{action_key}"
+
+    @classmethod
+    def _build_custom_standby_match_signature(
+        cls,
+        website_url: str,
+        website_key: str,
+        action: str,
+        enterprise: bool,
+        captcha_type: str,
+        is_invisible: bool,
+    ) -> str:
+        joined = "\n".join(
+            [
+                str(website_url or "").strip(),
+                str(website_key or "").strip(),
+                str(action or "homepage").strip(),
+                str(captcha_type or "recaptcha_v3").strip().lower(),
+                "1" if enterprise else "0",
+                "1" if is_invisible else "0",
+            ]
+        )
+        digest = hashlib.sha1(joined.encode("utf-8")).hexdigest()[:24]
+        return f"custom|{digest}"
+
+    def _current_warmup_settings_signature(self) -> str:
+        custom_target = self._configured_auto_custom_warm_target() or {}
+        payload = {
+            "flow_website_key": self._configured_flow_website_key(),
+            "native_project_id": self._configured_auto_warm_project_id(),
+            "native_actions": self._configured_native_warmup_actions(),
+            "custom_target": custom_target,
+        }
+        return json.dumps(payload, sort_keys=True, ensure_ascii=True)
+
+    def _auto_warmup_refresh_seconds(self) -> float:
+        return max(2.0, min(10.0, self._standby_token_ttl_seconds() / 4.0))
+
+    async def _clear_all_standby_tokens(self):
+        async with self._standby_lock:
+            refill_tasks = [
+                task
+                for tasks in self._standby_refill_tasks.values()
+                for task in tasks
+                if task is not None
+            ]
+            self._standby_tokens.clear()
+            self._standby_bucket_last_used.clear()
+            self._standby_refill_tasks.clear()
+            self._standby_refill_browser_claims.clear()
+
+        for task in refill_tasks:
+            if not task or task.done():
+                continue
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+
+    async def _ensure_auto_warmup_loop(self):
+        if self._closing:
+            return
+        if self._auto_warmup_task is None or self._auto_warmup_task.done():
+            self._auto_warmup_task = asyncio.create_task(self._auto_warmup_loop())
+
+    async def _schedule_configured_warmup_targets(self):
+        if self._closing:
+            return
+        if not self._standby_pool_enabled():
+            return
+
+        token_proxy_url = await self._resolve_global_proxy_url()
+        native_project_id = self._configured_auto_warm_project_id()
+        if native_project_id:
+            for action in self._configured_native_warmup_actions():
+                await self._schedule_standby_refill(
+                    bucket_key=self._build_standby_bucket_key(native_project_id, action, token_proxy_url),
+                    project_id=native_project_id,
+                    action=action,
+                    token_proxy_url=token_proxy_url,
+                    preferred_browser_id=None,
+                    keep_warm=True,
+                )
+
+        custom_target = self._configured_auto_custom_warm_target()
+        if not custom_target:
+            return
+
+        custom_slot_key = (
+            f"custom:{custom_target['captcha_type']}:{1 if custom_target['enterprise'] else 0}:"
+            f"{custom_target['website_key']}:{custom_target['website_url']}"
+        )
+        await self._schedule_custom_standby_refill(
+            bucket_key=self._build_custom_standby_bucket_key(
+                website_url=custom_target["website_url"],
+                website_key=custom_target["website_key"],
+                action=custom_target["action"],
+                enterprise=bool(custom_target["enterprise"]),
+                captcha_type=custom_target["captcha_type"],
+                is_invisible=bool(custom_target["is_invisible"]),
+                token_proxy_url=token_proxy_url,
+            ),
+            custom_slot_key=custom_slot_key,
+            website_url=custom_target["website_url"],
+            website_key=custom_target["website_key"],
+            action=custom_target["action"],
+            enterprise=bool(custom_target["enterprise"]),
+            captcha_type=custom_target["captcha_type"],
+            is_invisible=bool(custom_target["is_invisible"]),
+            token_proxy_url=token_proxy_url,
+            preferred_browser_id=None,
+            keep_warm=True,
+        )
+
+    async def _auto_warmup_loop(self):
+        while True:
+            try:
+                if self._closing:
+                    return
+                if self._standby_pool_enabled():
+                    self.website_key = self._configured_flow_website_key()
+                    await self._schedule_configured_warmup_targets()
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                debug_logger.log_warning(f"[BrowserCaptcha] auto warmup loop failed: {exc}")
+
+            await asyncio.sleep(self._auto_warmup_refresh_seconds())
+
+    async def refresh_warmup_settings(self):
+        new_signature = self._current_warmup_settings_signature()
+        self.website_key = self._configured_flow_website_key()
+        if new_signature != self._warmup_settings_signature:
+            await self._clear_all_standby_tokens()
+            self._warmup_settings_signature = new_signature
+        await self.warmup_browser_slots()
+
+    async def _ensure_idle_reaper(self):
+        if self._idle_reaper_task is None or self._idle_reaper_task.done():
+            self._idle_reaper_task = asyncio.create_task(self._idle_reaper_loop())
+
+    async def _idle_reaper_loop(self):
+        while True:
+            try:
+                await asyncio.sleep(self._idle_reaper_interval_seconds())
+                idle_ttl = int(getattr(config, "browser_idle_ttl_seconds", 600) or 600)
+                browsers = []
+                async with self._browsers_lock:
+                    browsers = list(self._browsers.values())
+                for browser in browsers:
+                    try:
+                        if browser.is_busy():
+                            continue
+                        if not browser.has_shared_browser():
+                            continue
+                        if browser.idle_seconds() < idle_ttl:
+                            continue
+                        await browser.recycle_browser(reason=f"idle_ttl_{idle_ttl}s", rotate_profile=False)
+                    except Exception as e:
+                        debug_logger.log_warning(f"[BrowserCaptcha] idle reaper failed: {e}")
+            except asyncio.CancelledError:
+                return
+            except Exception as e:
+                debug_logger.log_warning(f"[BrowserCaptcha] idle reaper loop error: {e}")
+
+    @classmethod
+    async def get_instance(cls, db=None) -> 'BrowserCaptchaService':
+        if cls._instance is None or getattr(cls._instance, "_closing", False):
+            async with cls._lock:
+                if cls._instance is None or getattr(cls._instance, "_closing", False):
+                    cls._instance = cls(db)
+                    # Load browser_count configuration from database
+                    await cls._instance._load_browser_count()
+                    await cls._instance._ensure_idle_reaper()
+        return cls._instance
+
+    def _check_available(self):
+        """Check if the service is available"""
+        if DOCKER_HEADED_BLOCKED:
+            raise RuntimeError(
+                "Docker environments are detected and head browser coding is disabled by default."
+                "To enable it, set the environment variable ALLOW_DOCKER_HEADED_CAPTCHA=true and provide DISPLAY/Xvfb."
+            )
+        if IS_DOCKER and not os.environ.get("DISPLAY"):
+            raise RuntimeError(
+                "Docker head browser coding is enabled, but DISPLAY is not set."
+                "Please set DISPLAY (eg :99) and start Xvfb."
+            )
+        if not PLAYWRIGHT_AVAILABLE or async_playwright is None:
+            raise RuntimeError(
+                "playwright is not installed or unavailable."
+                "Please install manually: pip install playwright && python -m playwright install chromium"
+            )
+
+    async def _load_browser_count(self):
+        """Load browser number configuration from database"""
+        if self.db:
+            try:
+                captcha_config = await self.db.get_captcha_config()
+                self._browser_count = max(1, captcha_config.browser_count)
+                debug_logger.log_info(f"[BrowserCaptcha] Browser count configuration: {self._browser_count}")
+            except Exception as e:
+                debug_logger.log_warning(f"[BrowserCaptcha] Failed to load browser_count configuration: {e}, using default value 1")
+                self._browser_count = 1
+        # Concurrency limit = number of browsers, no more hardcoded limits
+        self._token_semaphore = asyncio.Semaphore(self._browser_count)
+        debug_logger.log_info(f"[BrowserCaptcha] Concurrency upper limit: {self._browser_count}")
+
+    async def reload_browser_count(self):
+        """???????????????????????"""
+        old_count = self._browser_count
+        await self._load_browser_count()
+
+        browsers_to_close: list[TokenBrowser] = []
+        await self._ensure_idle_reaper()
+        if self._browser_count < old_count:
+            async with self._browsers_lock:
+                for browser_id in list(self._browsers.keys()):
+                    if browser_id >= self._browser_count:
+                        browsers_to_close.append(self._browsers.pop(browser_id))
+                        debug_logger.log_info(f"[BrowserCaptcha] ????????? {browser_id}")
+
+        for browser in browsers_to_close:
+            try:
+                await browser.force_close_pending_browser(close_all=True)
+                await browser.recycle_browser(reason="browser_slot_removed", rotate_profile=False)
+            except Exception as e:
+                debug_logger.log_warning(f"[BrowserCaptcha] ???????????: {e}")
+
+        async with self._project_slot_lock:
+            pruned: dict[str, list[int]] = {}
+            for project_key, slots in self._project_slot_affinity.items():
+                valid_slots = [slot for slot in slots if 0 <= slot < self._browser_count]
+                if valid_slots:
+                    pruned[project_key] = valid_slots
+            self._project_slot_affinity = pruned
+            self._project_slot_last_used = {
+                project_key: float(self._project_slot_last_used.get(project_key, time.monotonic()))
+                for project_key in self._project_slot_affinity
+            }
+            self._trim_project_affinity_locked()
+
+        async with self._slot_allocation_lock:
+            self._slot_reservations = {
+                slot_id: count
+                for slot_id, count in self._slot_reservations.items()
+                if 0 <= slot_id < self._browser_count and count > 0
+            }
+
+    def _log_stats(self):
+        total = self._stats["req_total"]
+        self._stats["gen_fail"]
+        api_403 = self._stats["api_403"]
+        gen_ok = self._stats["gen_ok"]
+
+        valid_success = gen_ok - api_403
+        if valid_success < 0: valid_success = 0
+
+        (valid_success / total * 100) if total > 0 else 0.0
+
+
+    async def _warmup_browser_slot(self, browser_id: int):
+        await self._get_or_create_browser(browser_id)
+        debug_logger.log_info(f"[BrowserCaptcha] prepared browser slot {browser_id}")
+
+    async def warmup_browser_slots(self):
+        if self._closing:
+            return
+        tasks = [self._warmup_browser_slot(browser_id) for browser_id in range(self._browser_count)]
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+        self.website_key = self._configured_flow_website_key()
+        self._warmup_settings_signature = self._current_warmup_settings_signature()
+        await self._ensure_auto_warmup_loop()
+        await self._schedule_configured_warmup_targets()
+
+    def _project_affinity_max_keys(self) -> int:
+        fallback = max(32, self._browser_count * 16)
+        try:
+            return max(1, int(getattr(config, "browser_project_affinity_max_keys", fallback) or fallback))
+        except Exception:
+            return fallback
+
+    def _project_affinity_ttl_seconds(self) -> float:
+        try:
+            return max(60.0, float(getattr(config, "browser_project_affinity_ttl_seconds", 1800.0) or 1800.0))
+        except Exception:
+            return 1800.0
+
+    def _standby_bucket_max_count(self) -> int:
+        fallback = max(32, self._browser_count * 12)
+        try:
+            return max(1, int(getattr(config, "browser_standby_bucket_max_count", fallback) or fallback))
+        except Exception:
+            return fallback
+
+    def _standby_bucket_idle_ttl_seconds(self) -> float:
+        fallback = max(self._standby_token_ttl_seconds() * 2.0, 180.0)
+        try:
+            return max(30.0, float(getattr(config, "browser_standby_bucket_idle_ttl_seconds", fallback) or fallback))
+        except Exception:
+            return fallback
+
+    @staticmethod
+    def _compact_standby_fingerprint(fingerprint: dict[str, Any] | None) -> dict[str, Any] | None:
+        if not isinstance(fingerprint, dict):
+            return fingerprint
+        compact: dict[str, Any] = {}
+        for key in (
+            "user_agent",
+            "userAgent",
+            "accept_language",
+            "sec_ch_ua",
+            "sec_ch_ua_mobile",
+            "sec_ch_ua_platform",
+            "locale",
+            "timezone_id",
+            "profile_family",
+        ):
+            value = fingerprint.get(key)
+            if isinstance(value, str) and value:
+                compact[key] = value
+        for key in ("device_scale_factor",):
+            value = fingerprint.get(key)
+            if isinstance(value, (int, float)) and value > 0:
+                compact[key] = value
+        for key in ("is_mobile", "has_touch"):
+            value = fingerprint.get(key)
+            if isinstance(value, bool):
+                compact[key] = value
+        viewport = fingerprint.get("viewport")
+        if isinstance(viewport, dict):
+            width = viewport.get("width")
+            height = viewport.get("height")
+            if isinstance(width, int) and isinstance(height, int):
+                compact["viewport"] = {"width": width, "height": height}
+        return compact or None
+
+    def _touch_project_affinity_locked(self, project_key: str, *, now_value: float | None = None):
+        normalized_key = str(project_key or "").strip()
+        if not normalized_key:
+            return
+        self._project_slot_last_used[normalized_key] = float(now_value if now_value is not None else time.monotonic())
+
+    def _trim_project_affinity_locked(self):
+        now_value = time.monotonic()
+        ttl_seconds = self._project_affinity_ttl_seconds()
+        stale_keys = [
+            project_key
+            for project_key, last_used in self._project_slot_last_used.items()
+            if (now_value - float(last_used or 0.0)) >= ttl_seconds
+        ]
+        for project_key in stale_keys:
+            self._project_slot_affinity.pop(project_key, None)
+            self._project_slot_last_used.pop(project_key, None)
+
+        max_keys = self._project_affinity_max_keys()
+        while len(self._project_slot_affinity) > max_keys:
+            evictable = [
+                (project_key, float(self._project_slot_last_used.get(project_key, 0.0) or 0.0))
+                for project_key in self._project_slot_affinity
+            ]
+            if not evictable:
+                break
+            evict_key = min(evictable, key=lambda item: item[1])[0]
+            self._project_slot_affinity.pop(evict_key, None)
+            self._project_slot_last_used.pop(evict_key, None)
+
+    def _get_active_refill_tasks_locked(self, bucket_key: str) -> set[asyncio.Task]:
+        tasks = {
+            task
+            for task in self._standby_refill_tasks.get(bucket_key, set())
+            if task is not None and not task.done()
+        }
+        if tasks:
+            self._standby_refill_tasks[bucket_key] = tasks
+        else:
+            self._standby_refill_tasks.pop(bucket_key, None)
+        return tasks
+
+    def _pop_refill_tasks_locked(self, bucket_key: str) -> list[asyncio.Task]:
+        tasks = self._standby_refill_tasks.pop(bucket_key, set())
+        return [task for task in tasks if task is not None and not task.done()]
+
+    def _trim_standby_buckets_locked(self, *, now_value: float | None = None) -> list[asyncio.Task]:
+        current = float(now_value if now_value is not None else time.monotonic())
+        idle_ttl = self._standby_bucket_idle_ttl_seconds()
+        next_state: dict[str, list[StandbyTokenEntry]] = {}
+        cancelled_tasks: list[asyncio.Task] = []
+
+        for bucket_key, entries in list(self._standby_tokens.items()):
+            kept = [entry for entry in entries if self._is_standby_entry_valid(entry, now_monotonic=current)]
+            last_used = float(self._standby_bucket_last_used.get(bucket_key, 0.0) or 0.0)
+            is_idle = last_used > 0 and (current - last_used) >= idle_ttl
+            if kept and not is_idle:
+                next_state[bucket_key] = kept
+            else:
+                self._standby_bucket_last_used.pop(bucket_key, None)
+                cancelled_tasks.extend(self._pop_refill_tasks_locked(bucket_key))
+
+        self._standby_tokens = next_state
+
+        max_buckets = self._standby_bucket_max_count()
+        while len(self._standby_tokens) > max_buckets:
+            evictable = [
+                (bucket_key, float(self._standby_bucket_last_used.get(bucket_key, 0.0) or 0.0))
+                for bucket_key in self._standby_tokens
+            ]
+            if not evictable:
+                break
+            evict_key = min(evictable, key=lambda item: item[1])[0]
+            self._standby_tokens.pop(evict_key, None)
+            self._standby_bucket_last_used.pop(evict_key, None)
+            cancelled_tasks.extend(self._pop_refill_tasks_locked(evict_key))
+
+        return cancelled_tasks
+
+    def _is_slot_busy_for_allocation(self, slot_id: int) -> bool:
+        if self._slot_reservations.get(slot_id, 0) > 0:
+            return True
+        browser = self._browsers.get(slot_id)
+        return bool(browser and getattr(browser, "is_busy", lambda: False)())
+
+    def _has_warmed_browser_for_allocation(self, slot_id: int) -> bool:
+        browser = self._browsers.get(slot_id)
+        return bool(browser and getattr(browser, "has_shared_browser", lambda: False)())
+
+    def _reserve_slot_locked(self, slot_id: int):
+        self._slot_reservations[slot_id] = self._slot_reservations.get(slot_id, 0) + 1
+
+    async def _release_slot_reservation(self, slot_id: int | None):
+        if slot_id is None:
+            return
+        async with self._slot_allocation_lock:
+            current = self._slot_reservations.get(slot_id, 0)
+            if current <= 1:
+                self._slot_reservations.pop(slot_id, None)
+            else:
+                self._slot_reservations[slot_id] = current - 1
+
+    async def _select_browser_id(
+        self,
+        project_id: str | None,
+        *,
+        prefer_warmed_shared: bool = False,
+        use_project_affinity: bool = True,
+    ) -> int:
+        project_key = str(project_id or "").strip() if use_project_affinity else ""
+        affinity_slots: list[int] = []
+        if project_key:
+            async with self._project_slot_lock:
+                self._trim_project_affinity_locked()
+                affinity_slots = [
+                    slot
+                    for slot in self._project_slot_affinity.get(project_key, [])
+                    if 0 <= slot < self._browser_count
+                ]
+                self._project_slot_affinity[project_key] = affinity_slots
+                self._touch_project_affinity_locked(project_key)
+
+        selected_slot: int | None = None
+        async with self._slot_allocation_lock:
+            async with self._browsers_lock:
+                if prefer_warmed_shared:
+                    warmed_idle_slot: int | None = None
+                    idle_slot: int | None = None
+                    for offset in range(self._browser_count):
+                        slot_id = (self._round_robin_index + offset) % self._browser_count
+                        if self._is_slot_busy_for_allocation(slot_id):
+                            continue
+
+                        if idle_slot is None:
+                            idle_slot = slot_id
+                        if warmed_idle_slot is None and self._has_warmed_browser_for_allocation(slot_id):
+                            warmed_idle_slot = slot_id
+                            break
+
+                    selected_slot = warmed_idle_slot if warmed_idle_slot is not None else idle_slot
+                    if selected_slot is not None:
+                        self._round_robin_index = (selected_slot + 1) % self._browser_count
+                else:
+                    for slot_id in affinity_slots:
+                        if not self._is_slot_busy_for_allocation(slot_id):
+                            selected_slot = slot_id
+                            break
+
+                    if selected_slot is None:
+                        for offset in range(self._browser_count):
+                            slot_id = (self._round_robin_index + offset) % self._browser_count
+                            if self._is_slot_busy_for_allocation(slot_id):
+                                continue
+                            selected_slot = slot_id
+                            self._round_robin_index = (slot_id + 1) % self._browser_count
+                            break
+
+                if selected_slot is None:
+                    selected_slot = self._get_next_browser_id()
+
+                self._reserve_slot_locked(selected_slot)
+
+        if project_key:
+            async with self._project_slot_lock:
+                self._trim_project_affinity_locked()
+                slots = [slot for slot in self._project_slot_affinity.get(project_key, []) if 0 <= slot < self._browser_count]
+                if selected_slot not in slots:
+                    slots.append(selected_slot)
+                self._project_slot_affinity[project_key] = slots
+                self._touch_project_affinity_locked(project_key)
+        return selected_slot
+
+    async def _get_or_create_browser(self, browser_id: int) -> TokenBrowser:
+        """Get or create a browser instance with the specified ID"""
+        async with self._browsers_lock:
+            if browser_id not in self._browsers:
+                user_data_dir = os.path.join(self.base_user_data_dir, f"browser_{browser_id}")
+                browser = TokenBrowser(browser_id, user_data_dir, db=self.db)
+                self._browsers[browser_id] = browser
+                debug_logger.log_info(f"[BrowserCaptcha] Create browser instance {browser_id}")
+            return self._browsers[browser_id]
+
+    def _get_next_browser_id(self) -> int:
+        """Poll to get next browser ID"""
+        browser_id = self._round_robin_index % self._browser_count
+        self._round_robin_index += 1
+        return browser_id
+
+    @staticmethod
+    def _compose_browser_ref(browser_id: int, request_ref: str | None) -> int | str:
+        """Combine browser_id and request_ref into a post-backable request handle."""
+        if request_ref:
+            return f"{browser_id}:{request_ref}"
+        return browser_id
+
+    @staticmethod
+    def _parse_browser_ref(browser_ref: int | str | None) -> tuple[int | None, str | None]:
+        """Parse request handle, compatible with old pure int browser_id."""
+        if browser_ref is None:
+            return None, None
+
+        if isinstance(browser_ref, int):
+            return browser_ref, None
+
+        if isinstance(browser_ref, str):
+            raw = browser_ref.strip()
+            if raw.isdigit():
+                return int(raw), None
+            browser_id_part, sep, request_ref = raw.partition(":")
+            if sep and browser_id_part.isdigit() and request_ref:
+                return int(browser_id_part), request_ref
+
+        return None, None
+
+    async def _resolve_token_proxy_url(self, token_id: int | None) -> str | None:
+        """Read token-level proxy configuration with proxy-pool rotation."""
+        if not token_id or not self.db:
+            return None
+        try:
+            token = await self.db.get_token(token_id)
+            if token and token.captcha_proxy_url and token.captcha_proxy_url.strip():
+                return await self._pick_proxy_from_pool(
+                    token.captcha_proxy_url.strip(),
+                    cursor_key=f"token:{token_id}",
+                )
+        except Exception as e:
+            debug_logger.log_warning(f"[BrowserCaptcha] failed to read token({token_id}) proxy config: {e}")
+        return None
+
+    async def _resolve_global_proxy_url(self) -> str | None:
+        """Read the global proxy configuration with proxy-pool rotation."""
+        if self._closing:
+            return None
+        if not self.db:
+            return None
+        try:
+            captcha_config = await self.db.get_captcha_config()
+            if not captcha_config.browser_proxy_enabled:
+                return None
+            if not captcha_config.browser_proxy_url:
+                return None
+            return await self._pick_proxy_from_pool(
+                captcha_config.browser_proxy_url.strip(),
+                cursor_key="global",
+            )
+        except Exception as e:
+            debug_logger.log_warning(f"[BrowserCaptcha] failed to read the global proxy pool: {e}")
+            return None
+
+    async def _pick_proxy_from_pool(self, proxy_value: str, cursor_key: str) -> str | None:
+        """Resolve runtime proxy configuration."""
+        normalized_pool, warning_messages = normalize_browser_proxy_pool(proxy_value)
+        for warning in warning_messages:
+            debug_logger.log_warning(f"[BrowserCaptcha] {warning}")
+
+        valid_pool: list[str] = []
+        for index, normalized_proxy in enumerate(normalized_pool, start=1):
+            if parse_proxy_url(normalized_proxy):
+                valid_pool.append(normalized_proxy)
+            else:
+                debug_logger.log_warning(f"[BrowserCaptcha] proxy pool entry {index} has an invalid format and was ignored")
+
+        if not valid_pool:
+            return None
+
+        async with self._proxy_pool_lock:
+            cursor = int(self._proxy_pool_cursor_by_key.get(cursor_key, 0))
+            selected_proxy = valid_pool[cursor % len(valid_pool)]
+            self._proxy_pool_cursor_by_key[cursor_key] = (cursor + 1) % len(valid_pool)
+        return selected_proxy
+
+    async def _resolve_effective_proxy_url(self, token_id: int | None) -> str | None:
+        """Prefer the token proxy pool; otherwise fall back to the global proxy pool."""
+        token_proxy = await self._resolve_token_proxy_url(token_id)
+        if token_proxy:
+            return token_proxy
+        return await self._resolve_global_proxy_url()
+
+    def _build_standby_bucket_key(
+        self,
+        project_id: str,
+        action: str,
+        token_proxy_url: str | None,
+    ) -> str:
+        project_key = str(project_id or "").strip()
+        action_key = str(action or "IMAGE_GENERATION").strip().upper()
+        proxy_key = str(token_proxy_url or "").strip()
+        if proxy_key:
+            proxy_key = hashlib.sha1(proxy_key.encode("utf-8")).hexdigest()[:16]
+        else:
+            proxy_key = "direct"
+        return f"{project_key}|{action_key}|{proxy_key}"
+
+    def _build_custom_standby_bucket_key(
+        self,
+        website_url: str,
+        website_key: str,
+        action: str,
+        enterprise: bool,
+        captcha_type: str,
+        is_invisible: bool,
+        token_proxy_url: str | None,
+    ) -> str:
+        target_fingerprint = hashlib.sha1(
+            "\n".join(
+                [
+                    str(website_url or "").strip(),
+                    str(website_key or "").strip(),
+                    str(action or "").strip(),
+                    str(captcha_type or "").strip(),
+                    "1" if enterprise else "0",
+                    "1" if is_invisible else "0",
+                ]
+            ).encode("utf-8")
+        ).hexdigest()[:20]
+        proxy_key = str(token_proxy_url or "").strip()
+        if proxy_key:
+            proxy_key = hashlib.sha1(proxy_key.encode("utf-8")).hexdigest()[:16]
+        else:
+            proxy_key = "direct"
+        return f"custom|{target_fingerprint}|{proxy_key}"
+
+    def _standby_pool_enabled(self) -> bool:
+        try:
+            if not bool(getattr(config, "browser_standby_token_pool_enabled", True)):
+                return False
+            return max(0, int(getattr(config, "browser_standby_token_pool_depth", 2) or 2)) > 0
+        except Exception:
+            return True
+
+    def _standby_pool_depth(self) -> int:
+        try:
+            return max(0, int(getattr(config, "browser_standby_token_pool_depth", 2) or 2))
+        except Exception:
+            return 2
+
+    def _standby_token_ttl_seconds(self) -> float:
+        try:
+            raw_value = float(getattr(config, "browser_standby_token_ttl_seconds", 60) or 60)
+            return min(60.0, max(5.0, raw_value))
+        except Exception:
+            return 60.0
+
+    def _standby_refill_wait_seconds(self) -> float:
+        try:
+            return max(0.05, float(getattr(config, "browser_standby_refill_idle_seconds", 0.8) or 0.8))
+        except Exception:
+            return 0.8
+
+    def _standby_refill_retry_rounds(self) -> int:
+        depth = max(1, self._standby_pool_depth())
+        refill_wait = max(0.05, self._standby_refill_wait_seconds())
+        idle_window_rounds = int(self._standby_bucket_idle_ttl_seconds() / refill_wait) + depth
+        return max(4, self._browser_count * depth * 2, idle_window_rounds)
+
+    def _get_browser_epoch_for_standby(self, browser_id: int) -> int | None:
+        browser = self._browsers.get(browser_id)
+        if not browser:
+            return None
+        if not getattr(browser, "has_shared_browser", lambda: False)():
+            return None
+        getter = getattr(browser, "get_browser_epoch", None)
+        if callable(getter):
+            try:
+                return int(getter())
+            except Exception:
+                return None
+        return None
+
+    def _is_standby_entry_valid(self, entry: StandbyTokenEntry, now_monotonic: float | None = None) -> bool:
+        if not entry or not entry.token:
+            return False
+        now_value = now_monotonic if now_monotonic is not None else time.monotonic()
+        if entry.expires_monotonic <= now_value:
+            return False
+        # In fresh-browser mode, every time a token is generated, the browser epoch may be rotated.
+        # However, tokens that have been produced should be allowed to be reused directly as long as they are still within the TTL.
+        return True
+
+    async def _select_idle_browser_id_for_refill(
+        self,
+        project_id: str,
+        preferred_browser_id: int | None,
+        excluded_browser_ids: set[int] | None = None,
+    ) -> int | None:
+        project_key = str(project_id or "").strip()
+        affinity_slots: list[int] = []
+        excluded_slots = set(excluded_browser_ids or set())
+        if project_key:
+            async with self._project_slot_lock:
+                self._trim_project_affinity_locked()
+                affinity_slots = [
+                    slot
+                    for slot in self._project_slot_affinity.get(project_key, [])
+                    if 0 <= slot < self._browser_count
+                ]
+
+        async with self._slot_allocation_lock, self._browsers_lock:
+            def is_slot_idle(slot_id: int) -> bool:
+                if slot_id in excluded_slots:
+                    return False
+                return not self._is_slot_busy_for_allocation(slot_id)
+
+            if preferred_browser_id is not None and 0 <= preferred_browser_id < self._browser_count:
+                if is_slot_idle(preferred_browser_id):
+                    self._reserve_slot_locked(preferred_browser_id)
+                    return preferred_browser_id
+
+            for slot_id in affinity_slots:
+                if slot_id == preferred_browser_id:
+                    continue
+                if is_slot_idle(slot_id):
+                    self._reserve_slot_locked(slot_id)
+                    return slot_id
+
+            for offset in range(self._browser_count):
+                slot_id = (self._round_robin_index + offset) % self._browser_count
+                if slot_id == preferred_browser_id:
+                    continue
+                if is_slot_idle(slot_id):
+                    self._reserve_slot_locked(slot_id)
+                    return slot_id
+
+        return None
+
+    async def _claim_idle_browser_id_for_refill(
+        self,
+        project_id: str,
+        preferred_browser_id: int | None,
+    ) -> int | None:
+        attempted: set[int] = set()
+        max_rounds = max(1, self._browser_count + 1)
+        for _ in range(max_rounds):
+            async with self._standby_lock:
+                excluded = set(self._standby_refill_browser_claims)
+            excluded.update(attempted)
+
+            browser_id = await self._select_idle_browser_id_for_refill(
+                project_id=project_id,
+                preferred_browser_id=preferred_browser_id,
+                excluded_browser_ids=excluded,
+            )
+            if browser_id is None:
+                return None
+
+            async with self._standby_lock:
+                if browser_id in self._standby_refill_browser_claims:
+                    attempted.add(browser_id)
+                    await self._release_slot_reservation(browser_id)
+                    continue
+                self._standby_refill_browser_claims.add(browser_id)
+                return browser_id
+
+        return None
+
+    async def _release_refill_browser_claim(self, browser_id: int | None):
+        if browser_id is None:
+            return
+        async with self._standby_lock:
+            self._standby_refill_browser_claims.discard(int(browser_id))
+        await self._release_slot_reservation(browser_id)
+
+    async def _take_standby_token(self, bucket_key: str) -> TokenAcquireResult | None:
+        now_value = time.monotonic()
+        selected: StandbyTokenEntry | None = None
+        cancelled_tasks: list[asyncio.Task] = []
+
+        async with self._standby_lock:
+            cancelled_tasks = self._trim_standby_buckets_locked(now_value=now_value)
+            entries = list(self._standby_tokens.get(bucket_key, []))
+            remaining: list[StandbyTokenEntry] = []
+            for entry in entries:
+                if not self._is_standby_entry_valid(entry, now_monotonic=now_value):
+                    continue
+                if selected is None:
+                    selected = entry
+                    continue
+                remaining.append(entry)
+
+            if remaining:
+                self._standby_tokens[bucket_key] = remaining
+                self._standby_bucket_last_used[bucket_key] = now_value
+            else:
+                self._standby_tokens.pop(bucket_key, None)
+                self._standby_bucket_last_used.pop(bucket_key, None)
+
+        for task in cancelled_tasks:
+            task.cancel()
+
+        if not selected:
+            return None
+
+        return TokenAcquireResult(
+            token=selected.token,
+            browser_ref=selected.browser_id,
+            browser_id=selected.browser_id,
+            fingerprint=dict(selected.fingerprint) if isinstance(selected.fingerprint, dict) else selected.fingerprint,
+            source="standby",
+            elapsed_ms=0,
+            browser_epoch=selected.browser_epoch,
+        )
+
+    async def _store_standby_token(
+        self,
+        bucket_key: str,
+        result: TokenAcquireResult,
+        project_id: str,
+        action: str,
+        match_signature: str = "",
+    ):
+        if not self._standby_pool_enabled():
+            return
+        if not result or not result.token or result.browser_id is None:
+            return
+
+        now_value = time.monotonic()
+        proxy_signature = bucket_key.rsplit("|", 1)[-1]
+        entry = StandbyTokenEntry(
+            token=result.token,
+            browser_id=int(result.browser_id),
+            fingerprint=self._compact_standby_fingerprint(
+                dict(result.fingerprint) if isinstance(result.fingerprint, dict) else result.fingerprint
+            ),
+            browser_epoch=int(result.browser_epoch),
+            project_id=str(project_id or "").strip(),
+            action=str(action or "IMAGE_GENERATION").strip().upper(),
+            proxy_signature=proxy_signature,
+            created_monotonic=now_value,
+            expires_monotonic=now_value + self._standby_token_ttl_seconds(),
+            match_signature=self._normalize_standby_match_signature(match_signature),
+        )
+
+        async with self._standby_lock:
+            cancelled_tasks = self._trim_standby_buckets_locked(now_value=now_value)
+            entries = [
+                existing
+                for existing in self._standby_tokens.get(bucket_key, [])
+                if self._is_standby_entry_valid(existing, now_monotonic=now_value)
+            ]
+            entries.append(entry)
+            depth = self._standby_pool_depth()
+            if depth > 0:
+                entries = entries[-depth:]
+            if entries:
+                self._standby_tokens[bucket_key] = entries
+                if bucket_key not in self._standby_bucket_last_used:
+                    self._standby_bucket_last_used[bucket_key] = now_value
+            else:
+                self._standby_tokens.pop(bucket_key, None)
+                self._standby_bucket_last_used.pop(bucket_key, None)
+
+        for task in cancelled_tasks:
+            task.cancel()
+
+    async def _invalidate_standby_tokens_for_browser(self, browser_id: int):
+        async with self._standby_lock:
+            next_state: dict[str, list[StandbyTokenEntry]] = {}
+            for bucket_key, entries in self._standby_tokens.items():
+                kept = [entry for entry in entries if entry.browser_id != browser_id]
+                if kept:
+                    next_state[bucket_key] = kept
+                else:
+                    self._standby_bucket_last_used.pop(bucket_key, None)
+            self._standby_tokens = next_state
+
+    async def _acquire_live_token(
+        self,
+        project_id: str,
+        action: str,
+        token_proxy_url: str | None,
+        browser_id: int | None = None,
+    ) -> TokenAcquireResult:
+        reserved_here = False
+        if browser_id is None:
+            reserved_here = True
+            browser_id = await self._select_browser_id(
+                project_id,
+                prefer_warmed_shared=True,
+                use_project_affinity=False,
+            )
+        try:
+            browser = await self._get_or_create_browser(browser_id)
+            result = await browser.get_token(
+                project_id,
+                self.website_key,
+                action,
+                token_proxy_url=token_proxy_url,
+            )
+            result.browser_id = browser_id
+            result.browser_ref = self._compose_browser_ref(browser_id, None)
+            return result
+        finally:
+            if reserved_here:
+                await self._release_slot_reservation(browser_id)
+
+    async def _acquire_live_custom_token(
+        self,
+        website_url: str,
+        website_key: str,
+        action: str,
+        enterprise: bool,
+        captcha_type: str,
+        is_invisible: bool,
+        token_proxy_url: str | None,
+        custom_slot_key: str,
+        browser_id: int | None = None,
+    ) -> TokenAcquireResult:
+        reserved_here = False
+        if browser_id is None:
+            reserved_here = True
+            browser_id = await self._select_browser_id(custom_slot_key)
+        try:
+            browser = await self._get_or_create_browser(browser_id)
+            token = await browser.get_custom_token(
+                website_url=website_url,
+                website_key=website_key,
+                action=action,
+                enterprise=enterprise,
+                token_proxy_url=token_proxy_url,
+                captcha_type=captcha_type,
+                is_invisible=is_invisible,
+            )
+            return TokenAcquireResult(
+                token=str(token or "").strip() or None,
+                browser_ref=self._compose_browser_ref(browser_id, None),
+                browser_id=browser_id,
+                fingerprint=browser.get_last_fingerprint(),
+                source="live",
+                elapsed_ms=0,
+                browser_epoch=browser.get_browser_epoch(),
+            )
+        finally:
+            if reserved_here:
+                await self._release_slot_reservation(browser_id)
+
+    async def _coalesce_live_bucket_acquire(
+        self,
+        bucket_key: str,
+        acquire_live: Callable[[], Awaitable[TokenAcquireResult]],
+    ) -> TokenAcquireResult:
+        """The same bucket only allows one front-end request for on-site token production at the same time, and other requests will be reviewed after waiting for the pool."""
+        if not self._standby_pool_enabled():
+            return await acquire_live()
+
+        while True:
+            owner = False
+            async with self._standby_live_lock:
+                task = self._standby_live_tasks.get(bucket_key)
+                if task is None or task.done():
+                    task = asyncio.create_task(acquire_live())
+                    self._standby_live_tasks[bucket_key] = task
+                    owner = True
+
+            if owner:
+                try:
+                    return await task
+                finally:
+                    async with self._standby_live_lock:
+                        if self._standby_live_tasks.get(bucket_key) is task:
+                            self._standby_live_tasks.pop(bucket_key, None)
+
+            task_error: Exception | None = None
+            try:
+                await task
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                task_error = exc
+
+            # Give the owner a chance to suspend the pool replenishment task first, and the waiting party will first review the standby.
+            await asyncio.sleep(0)
+            standby_result = await self._take_standby_token(bucket_key)
+            if standby_result and standby_result.token:
+                return standby_result
+            if task_error is not None:
+                raise task_error
+            await asyncio.sleep(0)
+
+    async def _schedule_standby_refill(
+        self,
+        bucket_key: str,
+        project_id: str,
+        action: str,
+        token_proxy_url: str | None,
+        preferred_browser_id: int | None,
+        keep_warm: bool = True,
+    ):
+        if self._closing:
+            return
+        if not self._standby_pool_enabled():
+            return
+
+        async with self._standby_lock:
+            cancelled_tasks = self._trim_standby_buckets_locked()
+            self._standby_bucket_last_used[bucket_key] = time.monotonic()
+            current_depth = len(self._standby_tokens.get(bucket_key, []))
+            active_tasks = self._get_active_refill_tasks_locked(bucket_key)
+            target_depth = self._standby_pool_depth()
+            missing = max(0, target_depth - current_depth - len(active_tasks))
+            if missing <= 0:
+                for task in cancelled_tasks:
+                    task.cancel()
+                return
+
+            tasks = set(active_tasks)
+            spawn_count = min(missing, max(1, self._browser_count))
+            for _ in range(spawn_count):
+                task = asyncio.create_task(
+                    self._refill_standby_token(
+                        bucket_key=bucket_key,
+                        project_id=project_id,
+                        action=action,
+                        token_proxy_url=token_proxy_url,
+                        preferred_browser_id=preferred_browser_id,
+                        keep_warm=keep_warm,
+                    )
+                )
+                tasks.add(task)
+            self._standby_refill_tasks[bucket_key] = tasks
+
+        for task in cancelled_tasks:
+            task.cancel()
+
+    async def _refill_standby_token(
+        self,
+        bucket_key: str,
+        project_id: str,
+        action: str,
+        token_proxy_url: str | None,
+        preferred_browser_id: int | None,
+        keep_warm: bool = False,
+    ):
+        current_task = asyncio.current_task()
+        try:
+            if self._closing:
+                return
+            refill_wait_seconds = self._standby_refill_wait_seconds()
+            next_preferred_browser_id = preferred_browser_id
+            first_round = True
+
+            for _ in range(self._standby_refill_retry_rounds()):
+                if first_round:
+                    first_round = False
+                else:
+                    await asyncio.sleep(refill_wait_seconds)
+
+                now_value = time.monotonic()
+                async with self._standby_lock:
+                    last_used = float(self._standby_bucket_last_used.get(bucket_key, 0.0) or 0.0)
+                    if last_used <= 0:
+                        return
+                    if (now_value - last_used) >= self._standby_bucket_idle_ttl_seconds():
+                        return
+                    current_depth = len(
+                        [
+                            entry
+                            for entry in self._standby_tokens.get(bucket_key, [])
+                            if self._is_standby_entry_valid(entry, now_monotonic=now_value)
+                        ]
+                    )
+                target_depth = self._standby_pool_depth()
+                if target_depth <= 0:
+                    return
+                if current_depth >= target_depth:
+                    if keep_warm:
+                        continue
+                    return
+
+                refill_browser_id = await self._claim_idle_browser_id_for_refill(
+                    project_id=project_id,
+                    preferred_browser_id=next_preferred_browser_id,
+                )
+                if refill_browser_id is None:
+                    continue
+
+                try:
+                    result = await self._acquire_live_token(
+                        project_id=project_id,
+                        action=action,
+                        token_proxy_url=token_proxy_url,
+                        browser_id=refill_browser_id,
+                    )
+                finally:
+                    await self._release_refill_browser_claim(refill_browser_id)
+
+                if not result.token:
+                    self._stats["standby_fill_fail"] += 1
+                    return
+
+                result.source = "standby_fill"
+                await self._store_standby_token(
+                    bucket_key=bucket_key,
+                    result=result,
+                    project_id=project_id,
+                    action=action,
+                    match_signature=self._build_native_standby_match_signature(project_id, action),
+                )
+                self._stats["standby_fill_ok"] += 1
+                next_preferred_browser_id = result.browser_id
+                debug_logger.log_info(
+                    f"[BrowserCaptcha] standby token refilled bucket={bucket_key[:120]} browser={result.browser_id}"
+                )
+                return
+        except Exception as e:
+            self._stats["standby_fill_fail"] += 1
+            debug_logger.log_warning(f"[BrowserCaptcha] standby refill failed bucket={bucket_key[:120]}: {e}")
+        finally:
+            async with self._standby_lock:
+                tasks = self._standby_refill_tasks.get(bucket_key, set())
+                tasks = {
+                    task
+                    for task in tasks
+                    if task is not None and task is not current_task and not task.done()
+                }
+                if tasks:
+                    self._standby_refill_tasks[bucket_key] = tasks
+                else:
+                    self._standby_refill_tasks.pop(bucket_key, None)
+
+    async def _schedule_custom_standby_refill(
+        self,
+        bucket_key: str,
+        custom_slot_key: str,
+        website_url: str,
+        website_key: str,
+        action: str,
+        enterprise: bool,
+        captcha_type: str,
+        is_invisible: bool,
+        token_proxy_url: str | None,
+        preferred_browser_id: int | None,
+        keep_warm: bool = True,
+    ):
+        if self._closing:
+            return
+        if not self._standby_pool_enabled():
+            return
+
+        async with self._standby_lock:
+            cancelled_tasks = self._trim_standby_buckets_locked()
+            self._standby_bucket_last_used[bucket_key] = time.monotonic()
+            current_depth = len(self._standby_tokens.get(bucket_key, []))
+            active_tasks = self._get_active_refill_tasks_locked(bucket_key)
+            target_depth = self._standby_pool_depth()
+            missing = max(0, target_depth - current_depth - len(active_tasks))
+            if missing <= 0:
+                for task in cancelled_tasks:
+                    task.cancel()
+                return
+
+            tasks = set(active_tasks)
+            spawn_count = min(missing, max(1, self._browser_count))
+            for _ in range(spawn_count):
+                task = asyncio.create_task(
+                    self._refill_custom_standby_token(
+                        bucket_key=bucket_key,
+                        custom_slot_key=custom_slot_key,
+                        website_url=website_url,
+                        website_key=website_key,
+                        action=action,
+                        enterprise=enterprise,
+                        captcha_type=captcha_type,
+                        is_invisible=is_invisible,
+                        token_proxy_url=token_proxy_url,
+                        preferred_browser_id=preferred_browser_id,
+                        keep_warm=keep_warm,
+                    )
+                )
+                tasks.add(task)
+            self._standby_refill_tasks[bucket_key] = tasks
+
+        for task in cancelled_tasks:
+            task.cancel()
+
+    async def _refill_custom_standby_token(
+        self,
+        bucket_key: str,
+        custom_slot_key: str,
+        website_url: str,
+        website_key: str,
+        action: str,
+        enterprise: bool,
+        captcha_type: str,
+        is_invisible: bool,
+        token_proxy_url: str | None,
+        preferred_browser_id: int | None,
+        keep_warm: bool = False,
+    ):
+        current_task = asyncio.current_task()
+        try:
+            if self._closing:
+                return
+            refill_wait_seconds = self._standby_refill_wait_seconds()
+            next_preferred_browser_id = preferred_browser_id
+            first_round = True
+
+            for _ in range(self._standby_refill_retry_rounds()):
+                if first_round:
+                    first_round = False
+                else:
+                    await asyncio.sleep(refill_wait_seconds)
+
+                now_value = time.monotonic()
+                async with self._standby_lock:
+                    last_used = float(self._standby_bucket_last_used.get(bucket_key, 0.0) or 0.0)
+                    if last_used <= 0:
+                        return
+                    if (now_value - last_used) >= self._standby_bucket_idle_ttl_seconds():
+                        return
+                    current_depth = len(
+                        [
+                            entry
+                            for entry in self._standby_tokens.get(bucket_key, [])
+                            if self._is_standby_entry_valid(entry, now_monotonic=now_value)
+                        ]
+                    )
+                target_depth = self._standby_pool_depth()
+                if target_depth <= 0:
+                    return
+                if current_depth >= target_depth:
+                    if keep_warm:
+                        continue
+                    return
+
+                refill_browser_id = await self._claim_idle_browser_id_for_refill(
+                    project_id=custom_slot_key,
+                    preferred_browser_id=next_preferred_browser_id,
+                )
+                if refill_browser_id is None:
+                    continue
+
+                try:
+                    result = await self._acquire_live_custom_token(
+                        website_url=website_url,
+                        website_key=website_key,
+                        action=action,
+                        enterprise=enterprise,
+                        captcha_type=captcha_type,
+                        is_invisible=is_invisible,
+                        token_proxy_url=token_proxy_url,
+                        custom_slot_key=custom_slot_key,
+                        browser_id=refill_browser_id,
+                    )
+                finally:
+                    await self._release_refill_browser_claim(refill_browser_id)
+
+                if not result.token:
+                    self._stats["standby_fill_fail"] += 1
+                    return
+
+                result.source = "standby_fill"
+                await self._store_standby_token(
+                    bucket_key=bucket_key,
+                    result=result,
+                    project_id=custom_slot_key,
+                    action=action,
+                    match_signature=self._build_custom_standby_match_signature(
+                        website_url=website_url,
+                        website_key=website_key,
+                        action=action,
+                        enterprise=enterprise,
+                        captcha_type=captcha_type,
+                        is_invisible=is_invisible,
+                    ),
+                )
+                self._stats["standby_fill_ok"] += 1
+                next_preferred_browser_id = result.browser_id
+                debug_logger.log_info(
+                    f"[BrowserCaptcha] custom standby token refilled bucket={bucket_key[:120]} browser={result.browser_id}"
+                )
+                return
+        except Exception as e:
+            self._stats["standby_fill_fail"] += 1
+            debug_logger.log_warning(f"[BrowserCaptcha] custom standby refill failed bucket={bucket_key[:120]}: {e}")
+        finally:
+            async with self._standby_lock:
+                tasks = self._standby_refill_tasks.get(bucket_key, set())
+                tasks = {
+                    task
+                    for task in tasks
+                    if task is not None and task is not current_task and not task.done()
+                }
+                if tasks:
+                    self._standby_refill_tasks[bucket_key] = tasks
+                else:
+                    self._standby_refill_tasks.pop(bucket_key, None)
+
+    async def get_token(self, project_id: str, action: str = "IMAGE_GENERATION", token_id: int = None) -> TokenAcquireResult:
+        """Get a reCAPTCHA token and recycle the shared browser only after fatal browser errors.
+
+        Args:
+            project_id: project ID
+            action: reCAPTCHA action
+            token_id: business token ID used to resolve token-level proxy settings
+
+        Returns:
+            token result with browser_ref/fingerprint/source metadata
+        """
+        self._check_available()
+
+        self._stats["req_total"] += 1
+        token_proxy_url = await self._resolve_effective_proxy_url(token_id)
+        bucket_key = self._build_standby_bucket_key(project_id, action, token_proxy_url)
+        standby_result = None
+        if self._standby_pool_enabled():
+            standby_result = await self._take_standby_token(bucket_key)
+        if standby_result and standby_result.token:
+            self._stats["gen_ok"] += 1
+            self._stats["standby_hit"] += 1
+            await self._schedule_standby_refill(
+                bucket_key=bucket_key,
+                project_id=project_id,
+                action=action,
+                token_proxy_url=token_proxy_url,
+                preferred_browser_id=standby_result.browser_id,
+            )
+            self._log_stats()
+            return standby_result
+
+        if self._standby_pool_enabled():
+            self._stats["standby_miss"] += 1
+
+        self._foreground_solves_inflight += 1
+        try:
+            async def acquire_live() -> TokenAcquireResult:
+                if self._token_semaphore:
+                    async with self._token_semaphore:
+                        return await self._acquire_live_token(
+                            project_id=project_id,
+                            action=action,
+                            token_proxy_url=token_proxy_url,
+                        )
+                return await self._acquire_live_token(
+                    project_id=project_id,
+                    action=action,
+                    token_proxy_url=token_proxy_url,
+                )
+
+            live_result = await self._coalesce_live_bucket_acquire(
+                bucket_key=bucket_key,
+                acquire_live=acquire_live,
+            )
+        finally:
+            self._foreground_solves_inflight = max(0, self._foreground_solves_inflight - 1)
+
+        if live_result.token:
+            self._stats["gen_ok"] += 1
+            await self._schedule_standby_refill(
+                bucket_key=bucket_key,
+                project_id=project_id,
+                action=action,
+                token_proxy_url=token_proxy_url,
+                preferred_browser_id=live_result.browser_id,
+            )
+        else:
+            self._stats["gen_fail"] += 1
+
+        self._log_stats()
+        return live_result
+
+    async def get_custom_token(
+        self,
+        website_url: str,
+        website_key: str,
+        action: str = "homepage",
+        enterprise: bool = False,
+        captcha_type: str = "recaptcha_v3",
+        is_invisible: bool = True,
+    ) -> TokenAcquireResult:
+        """Get the token of any site, hit the short-term pool first, and wait for new token output if it misses."""
+        self._check_available()
+        self._stats["req_total"] += 1
+        token_proxy_url = await self._resolve_global_proxy_url()
+        custom_slot_key = f"custom:{captcha_type}:{1 if enterprise else 0}:{website_key}:{website_url}"
+        bucket_key = self._build_custom_standby_bucket_key(
+            website_url=website_url,
+            website_key=website_key,
+            action=action,
+            enterprise=enterprise,
+            captcha_type=captcha_type,
+            is_invisible=is_invisible,
+            token_proxy_url=token_proxy_url,
+        )
+
+        standby_result = await self._take_standby_token(bucket_key) if self._standby_pool_enabled() else None
+        if standby_result and standby_result.token:
+            self._stats["gen_ok"] += 1
+            self._stats["standby_hit"] += 1
+            await self._schedule_custom_standby_refill(
+                bucket_key=bucket_key,
+                custom_slot_key=custom_slot_key,
+                website_url=website_url,
+                website_key=website_key,
+                action=action,
+                enterprise=enterprise,
+                captcha_type=captcha_type,
+                is_invisible=is_invisible,
+                token_proxy_url=token_proxy_url,
+                preferred_browser_id=standby_result.browser_id,
+            )
+            self._log_stats()
+            return standby_result
+
+        if self._standby_pool_enabled():
+            self._stats["standby_miss"] += 1
+
+        self._foreground_solves_inflight += 1
+        try:
+            async def acquire_live() -> TokenAcquireResult:
+                if self._token_semaphore:
+                    async with self._token_semaphore:
+                        return await self._acquire_live_custom_token(
+                            website_url=website_url,
+                            website_key=website_key,
+                            action=action,
+                            enterprise=enterprise,
+                            captcha_type=captcha_type,
+                            is_invisible=is_invisible,
+                            token_proxy_url=token_proxy_url,
+                            custom_slot_key=custom_slot_key,
+                        )
+                return await self._acquire_live_custom_token(
+                    website_url=website_url,
+                    website_key=website_key,
+                    action=action,
+                    enterprise=enterprise,
+                    captcha_type=captcha_type,
+                    is_invisible=is_invisible,
+                    token_proxy_url=token_proxy_url,
+                    custom_slot_key=custom_slot_key,
+                )
+
+            live_result = await self._coalesce_live_bucket_acquire(
+                bucket_key=bucket_key,
+                acquire_live=acquire_live,
+            )
+        finally:
+            self._foreground_solves_inflight = max(0, self._foreground_solves_inflight - 1)
+
+        if live_result.token:
+            self._stats["gen_ok"] += 1
+            await self._schedule_custom_standby_refill(
+                bucket_key=bucket_key,
+                custom_slot_key=custom_slot_key,
+                website_url=website_url,
+                website_key=website_key,
+                action=action,
+                enterprise=enterprise,
+                captcha_type=captcha_type,
+                is_invisible=is_invisible,
+                token_proxy_url=token_proxy_url,
+                preferred_browser_id=live_result.browser_id,
+            )
+        else:
+            self._stats["gen_fail"] += 1
+
+        self._log_stats()
+        return live_result
+
+    async def prime_token_pool(
+        self,
+        project_id: str,
+        action: str = "IMAGE_GENERATION",
+        token_id: int = None,
+    ) -> dict[str, Any]:
+        """Replenish the pool in advance according to bucket, so that the upstream can let the local pool start producing code before actually taking the token."""
+        self._check_available()
+        token_proxy_url = await self._resolve_effective_proxy_url(token_id)
+        bucket_key = self._build_standby_bucket_key(project_id, action, token_proxy_url)
+        await self._schedule_standby_refill(
+            bucket_key=bucket_key,
+            project_id=project_id,
+            action=action,
+            token_proxy_url=token_proxy_url,
+            preferred_browser_id=None,
+        )
+
+        now_value = time.monotonic()
+        async with self._standby_lock:
+            current_depth = len(
+                [
+                    entry
+                    for entry in self._standby_tokens.get(bucket_key, [])
+                    if self._is_standby_entry_valid(entry, now_monotonic=now_value)
+                ]
+            )
+
+        return {
+            "project_id": project_id,
+            "action": action,
+            "current_depth": current_depth,
+            "target_depth": self._standby_pool_depth(),
+            "pool_enabled": self._standby_pool_enabled(),
+        }
+
+    async def get_custom_score(
+        self,
+        website_url: str,
+        website_key: str,
+        verify_url: str,
+        action: str = "homepage",
+        enterprise: bool = False,
+    ) -> tuple[dict[str, Any], int]:
+        """Complete token acquisition and score verification within the browser page."""
+        self._check_available()
+        token_proxy_url = await self._resolve_global_proxy_url()
+        custom_slot_key = f"custom_score:{1 if enterprise else 0}:{website_key}:{website_url}"
+
+        async def run_score() -> tuple[dict[str, Any], int]:
+            browser_id = await self._select_browser_id(custom_slot_key)
+            try:
+                browser = await self._get_or_create_browser(browser_id)
+                payload = await browser.get_custom_score(
+                    website_url=website_url,
+                    website_key=website_key,
+                    verify_url=verify_url,
+                    action=action,
+                    enterprise=enterprise,
+                    token_proxy_url=token_proxy_url,
+                )
+                return payload, browser_id
+            finally:
+                await self._release_slot_reservation(browser_id)
+
+        if self._token_semaphore:
+            async with self._token_semaphore:
+                return await run_score()
+
+        return await run_score()
+
+    async def get_fingerprint(self, browser_ref: int | str | None) -> dict[str, Any] | None:
+        """Obtain the fingerprint snapshot of the specified browser's latest coding time."""
+        browser_id, _ = self._parse_browser_ref(browser_ref)
+        if browser_id is None:
+            return None
+
+        async with self._browsers_lock:
+            browser = self._browsers.get(browser_id)
+            if not browser:
+                return None
+            return browser.get_last_fingerprint()
+
+    async def report_error(self, browser_ref: int | str | None = None, error_reason: str | None = None):
+        """Handle upstream errors; recycle the browser only for explicit reCAPTCHA evaluation failures."""
+        browser_id, request_ref = self._parse_browser_ref(browser_ref)
+
+        async with self._browsers_lock:
+            browser = self._browsers.get(browser_id) if browser_id is not None else None
+            error_text = error_reason or ""
+            error_lower = error_text.lower()
+            has_recaptcha = "recaptcha" in error_lower
+            should_recycle = has_recaptcha and (
+                "evaluation failed" in error_lower
+                or "verification failed" in error_lower or "Authentication failed" in error_text
+                or "failed" in error_lower
+            )
+            if should_recycle:
+                self._stats["api_403"] += 1
+            if browser_id is not None:
+                debug_logger.log_info(
+                    f"[BrowserCaptcha] browser {browser_id} failure reported, reason={error_reason or 'unknown'}, recycle={should_recycle}"
+                )
+
+        has_live_shared_browser = bool(browser and getattr(browser, "has_shared_browser", lambda: False)())
+
+        if browser and request_ref:
+            try:
+                await browser.force_close_pending_browser(request_ref=request_ref)
+            except Exception as e:
+                debug_logger.log_warning(f"[BrowserCaptcha] browser {browser_id} force close pending failed: {e}")
+
+        if browser and should_recycle and has_live_shared_browser:
+            try:
+                await browser.recycle_browser(
+                    reason=error_reason or "recaptcha_evaluation_failed",
+                    rotate_profile=True,
+                )
+                await self._invalidate_standby_tokens_for_browser(browser_id)
+            except Exception as e:
+                debug_logger.log_warning(f"[BrowserCaptcha] browser {browser_id} recycle failed: {e}")
+
+    async def report_request_finished(self, browser_ref: int | str | None = None):
+        """The upper layer notifies that this request has been completed; in shared browser mode, only compatibility logs and old request_ref recycling are retained."""
+        browser_id, request_ref = self._parse_browser_ref(browser_ref)
+        if browser_id is None:
+            return
+
+        async with self._browsers_lock:
+            browser = self._browsers.get(browser_id)
+
+        if browser:
+            if request_ref:
+                try:
+                    await browser.notify_generation_request_finished(request_ref=request_ref)
+                except Exception as e:
+                    debug_logger.log_warning(f"[BrowserCaptcha] browser {browser_id} notify finish failed: {e}")
+            shared_alive = bool(getattr(browser, "has_shared_browser", lambda: False)())
+            keepalive_alive = False
+            keepalive_page = getattr(browser, "_shared_keepalive_page", None)
+            try:
+                keepalive_alive = bool(keepalive_page and not keepalive_page.is_closed())
+            except Exception:
+                keepalive_alive = False
+            debug_logger.log_info(
+                f"[BrowserCaptcha] browser {browser_id} request finished; "
+                f"shared_alive={shared_alive} keepalive_alive={keepalive_alive}"
+            )
+
+    async def remove_browser(self, browser_id: int):
+        browser = None
+        async with self._browsers_lock:
+            browser = self._browsers.pop(browser_id, None)
+
+        if browser:
+            try:
+                await self._invalidate_standby_tokens_for_browser(browser_id)
+                await browser.force_close_pending_browser(close_all=True)
+                await browser.recycle_browser(reason="browser_slot_removed", rotate_profile=False)
+            except Exception:
+                pass
+
+    async def close(self):
+        if self._closing:
+            return
+        self._closing = True
+
+        async with self._browsers_lock:
+            browsers = list(self._browsers.values())
+            self._browsers.clear()
+
+        self.db = None
+        for browser in browsers:
+            with contextlib.suppress(Exception):
+                browser.db = None
+
+        if self._auto_warmup_task and not self._auto_warmup_task.done():
+            self._auto_warmup_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._auto_warmup_task
+        self._auto_warmup_task = None
+
+        if self._idle_reaper_task and not self._idle_reaper_task.done():
+            self._idle_reaper_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._idle_reaper_task
+        self._idle_reaper_task = None
+
+        async with self._standby_lock:
+            refill_tasks = [
+                task
+                for tasks in self._standby_refill_tasks.values()
+                for task in tasks
+                if task is not None
+            ]
+            self._standby_refill_tasks.clear()
+            self._standby_refill_browser_claims.clear()
+            self._standby_tokens.clear()
+            self._standby_bucket_last_used.clear()
+
+        async with self._standby_live_lock:
+            live_tasks = list(self._standby_live_tasks.values())
+            self._standby_live_tasks.clear()
+
+        async with self._project_slot_lock:
+            self._project_slot_affinity.clear()
+            self._project_slot_last_used.clear()
+
+        for task in refill_tasks:
+            if not task or task.done():
+                continue
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+
+        for task in live_tasks:
+            if not task or task.done():
+                continue
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+
+        for browser in browsers:
+            try:
+                await browser.force_close_pending_browser(close_all=True)
+                await browser.recycle_browser(reason="service_shutdown", rotate_profile=False)
+            except Exception:
+                pass
+
+        self._warmup_settings_signature = ""
+        if type(self)._instance is self:
+            type(self)._instance = None
+        if sys.platform.startswith("win"):
+            gc.collect()
+            await asyncio.sleep(0)
+            await asyncio.sleep(0.1)
+
+    async def open_login_browser(self): return {"success": False, "error": "Not implemented"}
+    async def create_browser_for_token(self, t, s=None): pass
+    def get_stats(self):
+        browsers = list(self._browsers.values())
+        busy_browser_count = sum(1 for browser in browsers if getattr(browser, "is_busy", lambda: False)())
+        standby_now = time.monotonic()
+        standby_signature_counts: dict[str, int] = {}
+        standby_token_count = sum(
+            1
+            for entries in self._standby_tokens.values()
+            for entry in entries
+            if self._is_standby_entry_valid(entry, now_monotonic=standby_now)
+        )
+        for entries in self._standby_tokens.values():
+            for entry in entries:
+                if not self._is_standby_entry_valid(entry, now_monotonic=standby_now):
+                    continue
+                signature = self._normalize_standby_match_signature(getattr(entry, "match_signature", ""))
+                if not signature:
+                    continue
+                standby_signature_counts[signature] = standby_signature_counts.get(signature, 0) + 1
+
+        standby_bucket_signatures = [
+            signature
+            for signature, _count in sorted(
+                standby_signature_counts.items(),
+                key=lambda item: (-item[1], item[0]),
+            )[:128]
+        ]
+        base_stats = {
+            "total_solve_count": self._stats["gen_ok"],
+            "total_error_count": self._stats["gen_fail"],
+            "risk_403_count": self._stats["api_403"],
+            "browser_count": len(self._browsers),
+            "configured_browser_count": self._browser_count,
+            "busy_browser_count": busy_browser_count,
+            "idle_browser_count": max(self._browser_count - busy_browser_count, 0),
+            "project_affinity_count": len(self._project_slot_affinity),
+            "standby_hit": self._stats["standby_hit"],
+            "standby_miss": self._stats["standby_miss"],
+            "standby_fill_ok": self._stats["standby_fill_ok"],
+            "standby_fill_fail": self._stats["standby_fill_fail"],
+            "standby_bucket_count": len(self._standby_tokens),
+            "standby_token_count": standby_token_count,
+            "standby_bucket_signatures": standby_bucket_signatures,
+            "browsers": []
+        }
+        return base_stats
+

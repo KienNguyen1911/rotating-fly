@@ -142,7 +142,14 @@ Hãy thực hiện nghiên cứu chuyên sâu (Deep Research) về chủ đề s
         # STEP 2B: CHAT TẠO FULL TEXT TRANSCRIPT (ONLY SPOKEN WORDS)
         # ----------------------------------------------------------------------
         print("\n[STEP 2B] Đang gửi Prompt tạo Transcript thuần (spoken words only)...")
-        transcript_prompt = "Write a complete, high-quality script of approximately 1600 - 2000 words based on these guidelines. Remember: output ONLY the spoken words."
+        transcript_prompt = """Write a complete, high-quality script of approximately 1600 - 2000 words in English based on the deep research guidelines.
+CRITICAL RULES FOR OUTPUT FORMAT:
+1. You are generating raw input for a Text-To-Speech (TTS) engine.
+2. Output ONLY the raw spoken words.
+3. DO NOT include any titles, headers, or part numbers (e.g., NO "PART 1:", NO "Title:").
+4. DO NOT include any visual descriptions, character names, or scene directions (e.g., NO "(Visual Mascot...)", NO "Host:").
+5. DO NOT include any audio cues, pauses, or timestamps (e.g., NO "[Pause 2 seconds]", NO "00:00 - 00:30").
+6. The final output must consist EXCLUSIVELY of the paragraphs of text to be read aloud, with no other formatting."""
         
         transcript_msg = await chat_research.send_message(transcript_prompt)
         transcript_text = getattr(transcript_msg, "text", "") or ""
