@@ -51,6 +51,11 @@ Modules/*/profiles/
 # Generated module outputs
 Modules/*/output/
 Modules/*/screenshots/
+Modules/*/tmp/
+
+# Runtime PIDs/sockets for module process managers
+Modules/*/*.pid
+Modules/*/*.sock
 
 # Local runtime and diagnostic artifacts
 logs/
