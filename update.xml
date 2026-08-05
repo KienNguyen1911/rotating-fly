@@ -1,7 +1,7 @@
-<?xml version="1.0" encoding="UTF-8"?>
+﻿<?xml version="1.0" encoding="UTF-8"?>
 <item>
-    <version>1.6.1</version>
-    <url>https://github.com/KienNguyen1911/AssetAutomator-Releases/releases/download/v1.6.1/AssetAutomator_v1.6.1.zip</url>
-    <changelog>https://github.com/KienNguyen1911/AssetAutomator-Releases/releases/tag/v1.6.1</changelog>
+    <version>2.0.0</version>
+    <url>https://github.com/KienNguyen1911/AssetAutomator-Releases/releases/download/v2.0.0/AssetAutomator_v2.0.0.zip</url>
+    <changelog>https://github.com/KienNguyen1911/AssetAutomator-Releases/releases/tag/v2.0.0</changelog>
     <mandatory>false</mandatory>
 </item>
