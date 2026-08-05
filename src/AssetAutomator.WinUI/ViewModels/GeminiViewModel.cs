@@ -15,6 +15,7 @@ using AssetAutomator.Application.Services;
 using AssetAutomator.Application.Steps;
 using AssetAutomator.Infrastructure.Helpers;
 using AssetAutomator.Infrastructure.Logging;
+using AssetAutomator.Infrastructure.Services;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -42,10 +43,15 @@ public partial class GeminiViewModel : ObservableObject
     private readonly System.Collections.Concurrent.ConcurrentQueue<(GeminiTaskModel Task, string Message)> _pendingTaskLogs = new();
     private bool _hasTaskStatusChanged = false;
 
+    private readonly TaskProfileManager _taskProfileManager;
+    [ObservableProperty]
+    private TaskProfile? _selectedProfile;
+
     public ObservableCollection<GeminiTaskModel> GeminiTasks { get; } = new();
     public ObservableCollection<GemOptionItem> AvailableScriptwriterGems { get; } = new();
     public ObservableCollection<GemOptionItem> AvailableSceneCreatorGems { get; } = new();
     public ObservableCollection<string> AvailableImageProviders { get; } = new() { "flow_local" };
+    public ObservableCollection<TaskProfile> TaskProfiles { get; } = new();
 
     public ObservableCollection<string> AvailableAiModels { get; } = new()
     {
@@ -82,38 +88,97 @@ public partial class GeminiViewModel : ObservableObject
     private bool _isSuggestingTopics;
 
     // ─────────────────────────────────────────────────────
-    //  Task Live Logs Drawer & Console Log Control
+    //  Detail Panel (master-detail layout: replaces the old dual-drawer UI)
     // ─────────────────────────────────────────────────────
 
-    [ObservableProperty]
-    private bool _isTaskLogsDrawerOpen;
+    /// <summary>Which tab is active inside the right-hand Detail Panel.</summary>
+    public enum DetailTab { Configuration, LiveLogs }
 
     [ObservableProperty]
-    private double _taskLogsDrawerWidth = 450;
+    private DetailTab _activeDetailTab = DetailTab.Configuration;
 
+    /// <summary>When true, the right-hand Detail Panel is visible.
+    /// Replaces both IsRowDetailsDrawerOpen and IsTaskLogsDrawerOpen.</summary>
     [ObservableProperty]
-    private bool _isRowDetailsDrawerOpen;
+    private bool _isDetailPanelVisible;
+
+    /// <summary>Width of the right Detail Panel (resizable by user).</summary>
+    [ObservableProperty]
+    private double _detailPanelWidth = 520;
 
     [RelayCommand]
-    private void CloseRowDetailsDrawer()
+    private void CloseDetailPanel()
     {
-        IsRowDetailsDrawerOpen = false;
+        IsDetailPanelVisible = false;
     }
 
     [RelayCommand]
-    private void OpenTaskLogs(GeminiTaskModel? task)
+    private void ShowTaskConfiguration(GeminiTaskModel? task)
     {
         if (task != null)
         {
             SelectedTask = task;
         }
-        IsTaskLogsDrawerOpen = true;
+        ActiveDetailTab = DetailTab.Configuration;
+        IsDetailPanelVisible = true;
     }
 
     [RelayCommand]
-    private void CloseTaskLogs()
+    private void ShowTaskLiveLogs(GeminiTaskModel? task)
     {
-        IsTaskLogsDrawerOpen = false;
+        if (task != null)
+        {
+            SelectedTask = task;
+        }
+        ActiveDetailTab = DetailTab.LiveLogs;
+        IsDetailPanelVisible = true;
+    }
+
+    [RelayCommand]
+    private void SwitchToConfigTab()
+    {
+        ActiveDetailTab = DetailTab.Configuration;
+    }
+
+    [RelayCommand]
+    private void SwitchToLogsTab()
+    {
+        ActiveDetailTab = DetailTab.LiveLogs;
+    }
+
+    /// <summary>Runs the currently selected task from the detail-panel header.</summary>
+    [RelayCommand]
+    private async Task RunSelectedTaskAsync()
+    {
+        if (SelectedTask == null) return;
+        await RunSingleTaskAsync(SelectedTask);
+    }
+
+    /// <summary>Opens the configuration tab for the currently selected task.</summary>
+    [RelayCommand]
+    private void OpenConfigForSelectedTask()
+    {
+        if (SelectedTask == null) return;
+        ActiveDetailTab = DetailTab.Configuration;
+        IsDetailPanelVisible = true;
+    }
+
+    /// <summary>Opens the live-logs tab for the currently selected task.</summary>
+    [RelayCommand]
+    private void OpenLogsForSelectedTask()
+    {
+        if (SelectedTask == null) return;
+        ActiveDetailTab = DetailTab.LiveLogs;
+        IsDetailPanelVisible = true;
+    }
+
+    /// <summary>Deletes the currently selected task from the detail-panel header.</summary>
+    [RelayCommand]
+    private void DeleteSelectedTask()
+    {
+        if (SelectedTask == null) return;
+        DeleteSingleTask(SelectedTask);
+        IsDetailPanelVisible = false;
     }
 
     /// <summary>True = bottom Console Logs panel is shown. Default false to keep page compact.</summary>
@@ -176,6 +241,10 @@ public partial class GeminiViewModel : ObservableObject
         _logTimer.Tick += OnLogTimerTick;
         _logTimer.Start();
 
+        // Load task profiles
+        _taskProfileManager = new TaskProfileManager();
+        RefreshProfilesFromManager();
+
         if (_logService != null)
         {
             _logService.OnLogEntry += OnLogServiceEntry;
@@ -197,6 +266,15 @@ public partial class GeminiViewModel : ObservableObject
         if (_geminiCreatorService != null)
         {
             _ = LoadGemsAsync();
+        }
+    }
+
+    private void RefreshProfilesFromManager()
+    {
+        TaskProfiles.Clear();
+        foreach (var p in _taskProfileManager.Profiles)
+        {
+            TaskProfiles.Add(p);
         }
     }
 
@@ -842,10 +920,11 @@ public partial class GeminiViewModel : ObservableObject
             ResetTaskStatuses(t);
         }
 
-        // Mirror WPF: auto-open logs drawer for the first task so the user can see
-        // per-step progress immediately without having to click the row manually.
+        // Mirror WPF: auto-open the detail panel on the Live Logs tab for the first task
+        // so the user can see per-step progress immediately without clicking manually.
         SelectedTask = tasks[0];
-        IsTaskLogsDrawerOpen = true;
+        ActiveDetailTab = DetailTab.LiveLogs;
+        IsDetailPanelVisible = true;
         IsConsoleLogVisible = true;
 
         _runCts?.Dispose();
@@ -862,11 +941,34 @@ public partial class GeminiViewModel : ObservableObject
         try
         {
             string? apiKey = _configService?.CurrentSettings.Ai84ApiKey;
-            foreach (var t in tasks)
+            if (!string.IsNullOrEmpty(apiKey))
             {
-                if (string.IsNullOrEmpty(t.TargetLanguage) && !string.IsNullOrEmpty(t.VoiceId) && !string.IsNullOrEmpty(apiKey))
+                // Deduplicate by VoiceId so we only fire one HTTP call per unique voice
+                // (the per-VoiceId cache inside GeminiCreatorService makes repeats O(1)).
+                var tasksNeedingResolve = tasks
+                    .Where(t => string.IsNullOrEmpty(t.TargetLanguage) && !string.IsNullOrEmpty(t.VoiceId))
+                    .ToList();
+
+                if (tasksNeedingResolve.Count > 0)
                 {
-                    await _geminiCreatorService.ResolveTaskLanguageAsync(t, apiKey);
+                    // Run language lookups in parallel with a small concurrency cap so we don't
+                    // hammer AI84 with N simultaneous /v1/shared-voices calls when the user
+                    // runs a big batch. 6 is generous; the per-attempt timeout is 60s anyway.
+                    const int maxParallel = 6;
+                    using var langSem = new System.Threading.SemaphoreSlim(maxParallel, maxParallel);
+                    var langJobs = tasksNeedingResolve.Select(t => Task.Run(async () =>
+                    {
+                        await langSem.WaitAsync(ct);
+                        try
+                        {
+                            await _geminiCreatorService.ResolveTaskLanguageAsync(t, apiKey);
+                        }
+                        finally
+                        {
+                            langSem.Release();
+                        }
+                    }));
+                    await Task.WhenAll(langJobs);
                 }
             }
 
@@ -1176,5 +1278,69 @@ public partial class GeminiViewModel : ObservableObject
     {
         ConsoleLogs = string.Empty;
         StatusLog = "ℹ️ Đã xóa console logs.";
+    }
+
+    // ─────────────────────────────────────────────────────
+    //  Task Profile Management
+    // ─────────────────────────────────────────────────────
+
+    [RelayCommand]
+    private void ApplyProfileToSelectedTasks(TaskProfile? profile)
+    {
+        if (profile == null) return;
+
+        var targets = GeminiTasks.Where(t => t.IsSelected).ToList();
+        if (targets.Count == 0 && SelectedTask != null)
+        {
+            targets.Add(SelectedTask);
+        }
+
+        if (targets.Count == 0)
+        {
+            StatusLog = "⚠️ Không có task nào được chọn để áp dụng profile.";
+            return;
+        }
+
+        foreach (var task in targets)
+        {
+            profile.ApplyTo(task);
+        }
+
+        StatusLog = $"✅ Đã áp dụng profile '{profile.Name}' cho {targets.Count} task(s).";
+        _logService?.Info(LogCategory.GeminiCreator, $"Applied profile '{profile.Name}' to {targets.Count} tasks.");
+
+        // Refresh the detail panel content so the UI reflects the new values
+        if (SelectedTask != null)
+        {
+            var prop = typeof(GeminiViewModel).GetProperty("PropertyChanged");
+            OnPropertyChanged(nameof(SelectedTask));
+        }
+    }
+
+    /// <summary>
+    /// Applies a profile to all tasks in the queue.
+    /// </summary>
+    [RelayCommand]
+    private void ApplyProfileToAllTasks(TaskProfile? profile)
+    {
+        if (profile == null) return;
+
+        foreach (var task in GeminiTasks)
+        {
+            profile.ApplyTo(task);
+        }
+
+        StatusLog = $"✅ Đã áp dụng profile '{profile.Name}' cho tất cả {GeminiTasks.Count} task(s).";
+        _logService?.Info(LogCategory.GeminiCreator, $"Applied profile '{profile.Name}' to all {GeminiTasks.Count} tasks.");
+        OnPropertyChanged(nameof(SelectedTask));
+    }
+
+    /// <summary>
+    /// Opens the profile editor dialog. Pass a profile to edit, or null to create a new one.
+    /// Returns the edited/created profile, or null if cancelled.
+    /// </summary>
+    public TaskProfile? ShowProfileEditor(TaskProfile? profileToEdit)
+    {
+        return null; // Placeholder; real implementation is in the dialog
     }
 }

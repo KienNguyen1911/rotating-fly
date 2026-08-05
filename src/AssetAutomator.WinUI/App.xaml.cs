@@ -5,6 +5,7 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using AssetAutomator.Core;
@@ -12,6 +13,7 @@ using AssetAutomator.Core.Interfaces;
 using AssetAutomator.Core.Models;
 using AssetAutomator.Application.Services;
 using AssetAutomator.Application.Steps;
+using AssetAutomator.Infrastructure.Http;
 
 namespace AssetAutomator.WinUI;
 
@@ -39,6 +41,24 @@ public partial class App : Microsoft.UI.Xaml.Application
             var ex = e.ExceptionObject as Exception;
             System.Diagnostics.Debug.WriteLine($"[UnhandledException] {ex?.Message}");
         };
+
+        // Safety net: when the WinUI process is about to exit (graceful close,
+        // crash, or taskkill), make sure the Google Flow Local Python launcher
+        // we spawned gets killed. Without this, the orphan python.exe keeps
+        // port 8787 bound and the next launch fails with "address already in use".
+        // ProcessExit is a best-effort sync hook — Windows gives us ~1-2s.
+        AppDomain.CurrentDomain.ProcessExit += (s, e) =>
+        {
+            try
+            {
+                var launcher = Services?.GetService<Infrastructure.Helpers.GoogleFlow2ServerLauncher>();
+                launcher?.Stop();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[ProcessExit] {ex.Message}");
+            }
+        };
     }
 
     protected override async void OnLaunched(LaunchActivatedEventArgs args)
@@ -49,6 +69,41 @@ public partial class App : Microsoft.UI.Xaml.Application
                 // Core Infrastructure Services
                 services.AddSingleton<IConfigService, Infrastructure.Services.ConfigService>();
                 services.AddSingleton<ILogService, Infrastructure.Logging.LogService>();
+
+                // ─────────────────────────────────────────────────────
+                //  Named HttpClient + Polly resilience pipelines
+                //  All AI84 HTTP call sites MUST go through these so
+                //  they get a sane timeout (default 100s is way too long)
+                //  plus retry / circuit-breaker protection.
+                // ─────────────────────────────────────────────────────
+                // Standard client: lookup, submit, download. 60s per-attempt timeout,
+                // 3 retries with exponential backoff + jitter, 50% circuit breaker
+                // over a 30s window after 5 calls.
+                services
+                    .AddHttpClient(VoiceoverGenerationStep.Ai84HttpClientName, client =>
+                    {
+                        // Outer ceiling — slightly larger than the inner per-attempt timeout
+                        // so a successful retry that takes 60s is still allowed to complete
+                        // before the HttpClient itself throws TimeoutException.
+                        client.Timeout = TimeSpan.FromSeconds(180);
+                    })
+                    .AddResilienceHandler("ai84-std", builder =>
+                    {
+                        ResiliencePipelineDefaults.ConfigureStandardPipeline(builder);
+                    });
+
+                // Long-polling client: AI84 job-status polling. No circuit breaker
+                // (server is responding, just slowly), 120s per-attempt timeout,
+                // 5 retries.
+                services
+                    .AddHttpClient(VoiceoverGenerationStep.Ai84PollingHttpClientName, client =>
+                    {
+                        client.Timeout = TimeSpan.FromSeconds(300); // outer ceiling for 5 × 120s attempts
+                    })
+                    .AddResilienceHandler("ai84-polling", builder =>
+                    {
+                        ResiliencePipelineDefaults.ConfigureLongPollingPipeline(builder);
+                    });
 
                 // Application Services with Logging Callbacks
                 services.AddSingleton<HistoryService>(sp =>
@@ -80,7 +135,8 @@ public partial class App : Microsoft.UI.Xaml.Application
                     var config = sp.GetRequiredService<IConfigService>();
                     var geminiApi = sp.GetRequiredService<GeminiApiService>();
                     var pythonServer = sp.GetRequiredService<Infrastructure.Helpers.PythonServerManager>();
-                    return new GeminiCreatorService(logger, config, geminiApi, pythonServer);
+                    var httpClientFactory = sp.GetRequiredService<IHttpClientFactory>();
+                    return new GeminiCreatorService(logger, config, geminiApi, pythonServer, httpClientFactory);
                 });
 
                 // Pipeline Steps

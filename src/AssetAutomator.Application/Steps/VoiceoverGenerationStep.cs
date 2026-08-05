@@ -11,15 +11,43 @@ namespace AssetAutomator.Application.Steps
     /// <summary>
     /// Step 4: Generates voiceover via AI84 TTS API (async job + polling)
     /// and generates SRT subtitles via Whisper API.
+    ///
+    /// All AI84 HTTP traffic goes through <see cref="IHttpClientFactory"/> named clients
+    /// registered in <c>App.xaml.cs</c>:
+    ///   • <see cref="Ai84HttpClientName"/>      → standard pipeline (lookup/submit/download).
+    ///   • <see cref="Ai84PollingHttpClientName"/>→ long-polling pipeline (job status).
+    /// This ensures every request has a sane timeout, retry, and circuit-breaker — instead
+    /// of the bare <c>new HttpClient()</c> with its 100s default that previously let one
+    /// upstream hiccup freeze the whole pipeline.
     /// </summary>
     public class VoiceoverGenerationStep
     {
-        private readonly IConfigService _configService;
+        /// <summary>DI name for the standard AI84 HttpClient (with default resilience pipeline).</summary>
+        public const string Ai84HttpClientName = "ai84";
 
-        public VoiceoverGenerationStep(IConfigService configService)
+        /// <summary>DI name for the AI84 long-polling HttpClient (no circuit breaker).</summary>
+        public const string Ai84PollingHttpClientName = "ai84-polling";
+
+        private readonly IConfigService _configService;
+        private readonly IHttpClientFactory _httpClientFactory;
+
+        public VoiceoverGenerationStep(IConfigService configService, IHttpClientFactory httpClientFactory)
         {
             _configService = configService;
+            _httpClientFactory = httpClientFactory;
         }
+
+        /// <summary>
+        /// Backwards-compatible shim so legacy callers that still construct this step
+        /// manually (or tests that don't register an <see cref="IHttpClientFactory"/>)
+        /// keep working. Falls back to a raw <see cref="HttpClient"/> with a sensible
+        /// outer timeout, **without** retry / circuit-breaker — so production code should
+        /// always use the DI path.
+        /// </summary>
+        internal VoiceoverGenerationStep(IConfigService configService) : this(configService, new NoResilienceHttpClientFactory())
+        {
+        }
+
         public async Task ExecuteAsync(
             string voiceId,
             string outputDir,
@@ -35,8 +63,11 @@ namespace AssetAutomator.Application.Steps
                 throw new InvalidOperationException("AI84 API Key is empty. Please enter your API Key in the top toolbar.");
             }
 
-            using var httpClient = new HttpClient();
-            httpClient.DefaultRequestHeaders.Add("xi-api-key", apiKey);
+            // Use the dedicated polling client for job submission so a transient blip
+            // doesn't fail the submit and leave an orphan job on the upstream.
+            var submitClient = _httpClientFactory.CreateClient(Ai84HttpClientName);
+            submitClient.DefaultRequestHeaders.Remove("xi-api-key");
+            submitClient.DefaultRequestHeaders.TryAddWithoutValidation("xi-api-key", apiKey);
 
             bool withTranscript = (task.SrtMethod == 1);
 
@@ -52,13 +83,15 @@ namespace AssetAutomator.Application.Steps
             using var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
 
             // Submit TTS job
-            string jobId = await SubmitTtsJobAsync(httpClient, voiceId, content, task, logTask);
+            string jobId = await SubmitTtsJobAsync(submitClient, voiceId, content, task, logTask);
 
-            // Poll for completion
-            var (audioUrl, transcriptUrl) = await PollTtsJobAndTranscriptAsync(httpClient, jobId, apiKey, task, scriptText, withTranscript, logTask);
+            // Poll for completion — use the long-polling client because the server is
+            // expected to be slow but responsive, NOT to be failing.
+            var pollingClient = _httpClientFactory.CreateClient(Ai84PollingHttpClientName);
+            var (audioUrl, transcriptUrl) = await PollTtsJobAndTranscriptAsync(pollingClient, jobId, apiKey, task, scriptText, withTranscript, logTask);
 
-            // Download audio and generate SRT
-            await DownloadAudioAndGenerateSrtAsync(httpClient, audioUrl, transcriptUrl, outputDir, apiKey, task, logTask);
+            // Download audio and SRT (standard client — these are CDN downloads).
+            await DownloadAudioAndGenerateSrtAsync(submitClient, audioUrl, transcriptUrl, outputDir, apiKey, task, logTask);
         }
 
         private async Task<string> SubmitTtsJobAsync(
@@ -411,6 +444,27 @@ namespace AssetAutomator.Application.Steps
                 // If JSON parsing fails, return raw content
             }
             return responseContent;
+        }
+    }
+
+    /// <summary>
+    /// Minimal <see cref="IHttpClientFactory"/> used only when <see cref="VoiceoverGenerationStep"/>
+    /// is constructed without a DI container (e.g. legacy hand-rolled paths or unit tests).
+    /// Returns bare <see cref="HttpClient"/> instances with a 120s outer timeout and **no**
+    /// retry / circuit-breaker — production callers should always go through the DI-registered
+    /// named clients ("ai84", "ai84-polling") registered in <c>App.xaml.cs</c>.
+    /// </summary>
+    internal sealed class NoResilienceHttpClientFactory : IHttpClientFactory
+    {
+        public HttpClient CreateClient(string name)
+        {
+            var client = new HttpClient
+            {
+                // 120s outer ceiling — replaces the 100s default that previously let one
+                // stalled request block the pipeline almost indefinitely.
+                Timeout = TimeSpan.FromSeconds(120)
+            };
+            return client;
         }
     }
 }

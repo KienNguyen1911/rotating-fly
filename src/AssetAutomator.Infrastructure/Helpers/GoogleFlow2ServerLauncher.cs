@@ -36,6 +36,11 @@ namespace AssetAutomator.Infrastructure.Helpers
         private readonly ILogService _log;
         private readonly IConfigService _configService;
         private Process? _serverProcess;
+        // Remember the port we actually launched on (or probed) so Stop() can
+        // sweep orphan listeners even when the caller forgets. Cached from
+        // EnsureRunningAsync/IsRunningAsync and survives between calls.
+        private int _lastKnownPort;
+        private static readonly object _portLock = new();
 
         public GoogleFlow2ServerLauncher(ILogService logService, IConfigService configService)
         {
@@ -62,6 +67,7 @@ namespace AssetAutomator.Infrastructure.Helpers
         {
             var settings = _configService.CurrentSettings;
             int port = settings.GoogleFlow2Port > 0 ? settings.GoogleFlow2Port : 8787;
+            CachePort(port);
             string baseUrl = $"http://127.0.0.1:{port}";
 
             // The launcher exposes /health (200), /v1/models (401/200), / (200).
@@ -122,6 +128,7 @@ namespace AssetAutomator.Infrastructure.Helpers
             }
 
             int port = settings.GoogleFlow2Port > 0 ? settings.GoogleFlow2Port : 8787;
+            CachePort(port);
             string host = "127.0.0.1";
 
             string pythonExe = ResolvePythonExecutable(rootPath);
@@ -246,10 +253,20 @@ namespace AssetAutomator.Infrastructure.Helpers
             }
         }
 
+        private void CachePort(int port)
+        {
+            if (port > 0)
+            {
+                lock (_portLock) { _lastKnownPort = port; }
+            }
+        }
+
         public void Stop()
         {
             try
             {
+                // ── Step 1: kill the tracked process tree (the one we launched
+                // ourselves via EnsureRunningAsync).
                 if (_serverProcess != null && !_serverProcess.HasExited)
                 {
                     _log.Info(LogCategory.PythonServer, $"Stopping google-flow-2.0.0 launcher (PID: {_serverProcess.Id})...");
@@ -260,15 +277,97 @@ namespace AssetAutomator.Infrastructure.Helpers
                     }
                     catch (Exception ex)
                     {
-                        _log.Warning(LogCategory.PythonServer, $"Failed to kill launcher process: {ex.Message}");
+                        _log.Warning(LogCategory.PythonServer, $"Failed to kill tracked launcher process: {ex.Message}");
                     }
                     _serverProcess.Dispose();
                     _serverProcess = null;
                 }
+
+                // ── Step 2: belt & suspenders. The launcher may have been
+                // started by a previous app session (or manually by the user),
+                // in which case _serverProcess is null but the python process
+                // is still alive on the port. Probe netstat and kill it.
+                int port;
+                lock (_portLock) { port = _lastKnownPort; }
+                if (port <= 0)
+                {
+                    var settings = _configService.CurrentSettings;
+                    port = settings.GoogleFlow2Port > 0 ? settings.GoogleFlow2Port : 8787;
+                }
+                KillOrphanedListenersOnPort(port);
             }
             catch (Exception ex)
             {
                 _log.Error(LogCategory.PythonServer, $"Error stopping Flow Local launcher: {ex.Message}");
+            }
+        }
+
+        private void KillOrphanedListenersOnPort(int port)
+        {
+            try
+            {
+                // netstat -ano -p TCP  →  find any LISTEN socket on `port` and
+                // collect the owning PIDs.
+                var psi = new ProcessStartInfo
+                {
+                    FileName = "netstat",
+                    Arguments = "-ano -p TCP",
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    CreateNoWindow = true
+                };
+                using var proc = Process.Start(psi);
+                if (proc == null) return;
+                string output = proc.StandardOutput.ReadToEnd();
+                proc.WaitForExit(2000);
+
+                var pids = new HashSet<int>();
+                string needle = $":{port} ";
+                foreach (var line in output.Split('\n'))
+                {
+                    if (!line.Contains(needle)) continue;
+                    var trimmed = line.Trim();
+                    if (!trimmed.StartsWith("TCP", StringComparison.OrdinalIgnoreCase)) continue;
+                    var parts = trimmed.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                    if (parts.Length < 5) continue;
+                    if (!parts[3].Equals("LISTENING", StringComparison.OrdinalIgnoreCase)) continue;
+                    if (int.TryParse(parts[4], out int pid))
+                        pids.Add(pid);
+                }
+
+                foreach (int pid in pids)
+                {
+                    if (pid <= 4) continue;
+                    // Don't kill our own process (AssetAutomator) or any sibling
+                    // assetautomator process. We only target python.exe / uvicorn.
+                    try
+                    {
+                        using var p = Process.GetProcessById(pid);
+                        string name = p.ProcessName.ToLowerInvariant();
+                        bool isPythonish = name.Contains("python") || name.Contains("uvicorn");
+                        if (!isPythonish)
+                        {
+                            _log.Debug(LogCategory.PythonServer,
+                                $"Skipping PID {pid} ({p.ProcessName}) on port {port} — not a python interpreter");
+                            continue;
+                        }
+
+                        _log.Info(LogCategory.PythonServer,
+                            $"Killing orphan python listener on port {port}: PID {pid} ({p.ProcessName})");
+                        p.Kill(entireProcessTree: true);
+                        p.WaitForExit(2000);
+                    }
+                    catch (Exception ex)
+                    {
+                        _log.Warning(LogCategory.PythonServer,
+                            $"Failed to kill orphan PID {pid} on port {port}: {ex.Message}");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _log.Warning(LogCategory.PythonServer, $"KillOrphanedListenersOnPort failed: {ex.Message}");
             }
         }
 

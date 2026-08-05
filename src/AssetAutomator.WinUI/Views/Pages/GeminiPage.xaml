@@ -17,6 +17,12 @@
         <converters:InvertBoolConverter x:Key="InvertBoolConverter" />
         <converters:StringToImageSourceConverter x:Key="StringToImageSourceConverter" />
         <converters:StepStatusToTextConverter x:Key="StepStatusToTextConverter" />
+        <converters:NullableToBoolConverter x:Key="NullableToBoolConverter" />
+        <converters:DetailTabToBoolConverter x:Key="DetailTabToBoolConverter" />
+        <converters:DetailTabToVisibilityConverter x:Key="DetailTabToVisibilityConverter" />
+        <converters:DoubleToGridLengthConverter x:Key="DoubleToGridLengthConverter" />
+        <converters:BoolToGridLengthConverter x:Key="BoolToGridLengthConverter" />
+        <converters:BoolToDoubleConverter x:Key="BoolToDoubleConverter" />
 
         <!-- Row cell template helper: badge with brush -->
         <Style x:Key="StatusBadgeBorderStyle" TargetType="Border">
@@ -113,6 +119,15 @@
                         </StackPanel>
                     </Button>
 
+                    <Button x:Name="BtnManageProfiles"
+                            Click="BtnManageProfiles_Click"
+                            ToolTipService.ToolTip="Quản lý &amp; tạo Task Profiles">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <FontIcon Glyph="&#xE713;" FontSize="12" />
+                            <TextBlock Text="Profiles" />
+                        </StackPanel>
+                    </Button>
+
                     <Button Command="{x:Bind ViewModel.DeleteSelectedTasksCommand}" ToolTipService.ToolTip="Xóa các task đã chọn">
                         <StackPanel Orientation="Horizontal" Spacing="6">
                             <FontIcon Glyph="&#xE74D;" FontSize="12" />
@@ -168,10 +183,22 @@
             </Grid>
         </Border>
 
-        <!-- C2: Tasks queue (Full Width 100%) + Task Live Logs Drawer Overlay -->
-        <Grid Grid.Row="2">
-            <!-- LEFT / FULL WIDTH: Tasks queue -->
-            <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+        <!-- C2: Master-Detail layout: Tasks list (left) + Detail Panel (right) with Config/Logs tabs.
+             Replaces the old dual-overlay-drawer pattern. The detail panel is a true layout
+             cell (not an overlay), so it never blocks the task list and the list stays usable
+             while the user is configuring or watching logs for a selected task. -->
+        <Grid Grid.Row="2" ColumnSpacing="{x:Bind ViewModel.IsDetailPanelVisible, Mode=OneWay, Converter={StaticResource BoolToDoubleConverter}, ConverterParameter=12}">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" MinWidth="500" />
+                <ColumnDefinition x:Name="DetailPanelColumn"
+                                  Width="0"
+                                  MinWidth="380"
+                                  MaxWidth="900" />
+            </Grid.ColumnDefinitions>
+
+            <!-- LEFT: Tasks queue (always visible) -->
+            <Border Grid.Column="0"
+                    Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
                     BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
                     BorderThickness="1"
                     CornerRadius="8"
@@ -190,12 +217,11 @@
                           BorderThickness="0,0,0,1">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="40" />
-                            <ColumnDefinition Width="2.5*" />
-                            <ColumnDefinition Width="1.6*" />
-                            <ColumnDefinition Width="1.8*" />
-                            <ColumnDefinition Width="1.8*" />
-                            <ColumnDefinition Width="1*" />
-                            <ColumnDefinition Width="1.4*" />
+                            <ColumnDefinition Width="3*" />
+                            <ColumnDefinition Width="2*" />
+                            <ColumnDefinition Width="2.2*" />
+                            <ColumnDefinition Width="2.2*" />
+                            <ColumnDefinition Width="1.2*" />
                         </Grid.ColumnDefinitions>
                         <CheckBox Grid.Column="0"
                                   IsChecked="{x:Bind ViewModel.SelectAllTasks, Mode=TwoWay}"
@@ -205,33 +231,36 @@
                         <TextBlock Grid.Column="3" Text="🎬 Scriptwriter" FontWeight="SemiBold" FontSize="11" VerticalAlignment="Center" />
                         <TextBlock Grid.Column="4" Text="🎭 Scene Creator" FontWeight="SemiBold" FontSize="11" VerticalAlignment="Center" />
                         <TextBlock Grid.Column="5" Text="Trạng Thái" FontWeight="SemiBold" FontSize="11" VerticalAlignment="Center" />
-                        <TextBlock Grid.Column="6" Text="Thao Tác" FontWeight="SemiBold" FontSize="11" VerticalAlignment="Center" />
                     </Grid>
 
-                    <!-- Tasks list -->
-                    <ListView Grid.Row="1"
+                    <!-- Tasks list — click row to auto-open detail panel; no per-row actions column.
+                     All actions (Run, Config, Logs, Delete) live on the detail panel header. -->
+                        <ListView Grid.Row="1"
+                              x:Name="LstGeminiTasks"
                               ItemsSource="{x:Bind ViewModel.GeminiTasks, Mode=OneWay}"
                               SelectionMode="Single"
+                              PointerPressed="LstGeminiTasks_PointerPressed"
                               SelectedItem="{x:Bind ViewModel.SelectedTask, Mode=TwoWay}"
-                              x:Name="LstGeminiTasks">
-                        <ListView.ItemContainerStyle>
-                            <Style TargetType="ListViewItem">
-                                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-                                <Setter Property="Padding" Value="0" />
-                            </Style>
-                        </ListView.ItemContainerStyle>
+                              SelectionChanged="LstGeminiTasks_SelectionChanged">
+                            <ListView.ItemContainerStyle>
+                                <Style TargetType="ListViewItem">
+                                    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                    <Setter Property="Padding" Value="0" />
+                                </Style>
+                            </ListView.ItemContainerStyle>
 
                         <ListView.ItemTemplate>
                             <DataTemplate x:DataType="models:GeminiTaskModel">
-                                <Grid Padding="12,8" ColumnSpacing="8">
+                                <Grid Padding="12,8"
+                                      ColumnSpacing="8"
+                                      Background="Transparent">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="40" />
-                                        <ColumnDefinition Width="2.5*" />
-                                        <ColumnDefinition Width="1.6*" />
-                                        <ColumnDefinition Width="1.8*" />
-                                        <ColumnDefinition Width="1.8*" />
-                                        <ColumnDefinition Width="1*" />
-                                        <ColumnDefinition Width="1.4*" />
+                                        <ColumnDefinition Width="3*" />
+                                        <ColumnDefinition Width="2*" />
+                                        <ColumnDefinition Width="2.2*" />
+                                        <ColumnDefinition Width="2.2*" />
+                                        <ColumnDefinition Width="1.2*" />
                                     </Grid.ColumnDefinitions>
 
                                     <!-- 1. Select -->
@@ -282,35 +311,6 @@
                                                    FontSize="10"
                                                    FontWeight="SemiBold" />
                                     </Border>
-
-                                    <!-- 7. Actions -->
-                                    <StackPanel Grid.Column="6" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
-                                        <Button Click="BtnRunSingleTask_Click"
-                                                Tag="{x:Bind}"
-                                                ToolTipService.ToolTip="Chạy task này"
-                                                Padding="6,4"
-                                                IsEnabled="{x:Bind IsRunning, Mode=OneWay, Converter={StaticResource InvertBoolConverter}}">
-                                            <FontIcon Glyph="&#xE768;" FontSize="11" />
-                                        </Button>
-                                        <Button Click="BtnShowRowDetails_Click"
-                                                Tag="{x:Bind}"
-                                                ToolTipService.ToolTip="Mở cấu hình chi tiết"
-                                                Padding="6,4">
-                                            <FontIcon Glyph="&#xE713;" FontSize="11" />
-                                        </Button>
-                                        <Button Click="BtnShowTaskLogs_Click"
-                                                Tag="{x:Bind}"
-                                                ToolTipService.ToolTip="Xem log tiến trình task (5 bước)"
-                                                Padding="6,4">
-                                            <FontIcon Glyph="&#xE9D9;" FontSize="11" />
-                                        </Button>
-                                        <Button Command="{Binding ViewModel.DeleteSingleTaskCommand, ElementName=PageRoot}"
-                                                CommandParameter="{x:Bind}"
-                                                ToolTipService.ToolTip="Xóa task này"
-                                                Padding="6,4">
-                                            <FontIcon Glyph="&#xE74D;" FontSize="11" />
-                                        </Button>
-                                    </StackPanel>
                                 </Grid>
                             </DataTemplate>
                         </ListView.ItemTemplate>
@@ -318,118 +318,109 @@
                 </Grid>
             </Border>
 
-            <!-- BOTTOM DRAWER: Task Configuration Drawer (Slide Up/Down) -->
-            <Border x:Name="TaskDetailsDrawer"
-                    VerticalAlignment="Bottom"
-                    HorizontalAlignment="Stretch"
-                    MaxHeight="460"
-                    Canvas.ZIndex="120"
-                    Background="{ThemeResource SolidBackgroundFillColorBaseBrush}"
+            <!-- RIGHT: Detail Panel (master-detail). Hidden when no task is selected.
+             Hosts two tabs: Configuration (config form) and Live Logs (5-step accordion). -->
+            <Border Grid.Column="1"
+                    x:Name="DetailPanelRoot"
+                    Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
                     BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                    BorderThickness="1,2,1,1"
-                    CornerRadius="14,14,0,0"
-                    Padding="16,12"
-                    Visibility="{x:Bind ViewModel.IsRowDetailsDrawerOpen, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
-                <Border.RenderTransform>
-                    <TranslateTransform x:Name="TaskDetailsDrawerTransform" Y="0" />
-                </Border.RenderTransform>
-                <Grid RowSpacing="10">
+                    BorderThickness="1"
+                    CornerRadius="8"
+                    Visibility="{x:Bind ViewModel.IsDetailPanelVisible, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
+
+                <Grid>
+                    <!-- Resize grip on the LEFT edge of the detail panel -->
+                    <controls:ResizableDragHandle Width="8"
+                                                  HorizontalAlignment="Left"
+                                                  VerticalAlignment="Stretch"
+                                                  Background="Transparent"
+                                                  PointerPressed="DetailPanelDragHandle_PointerPressed"
+                                                  PointerMoved="DetailPanelDragHandle_PointerMoved"
+                                                  PointerReleased="DetailPanelDragHandle_PointerReleased"
+                                                  Canvas.ZIndex="10" />
+
+                    <Grid Margin="12">
                     <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="*" />
                     </Grid.RowDefinitions>
 
-                    <!-- Drawer Header -->
+                    <!-- Header: tab switcher + global actions for SelectedTask + close -->
                     <Grid Grid.Row="0">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
 
-                        <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                            <FontIcon Glyph="&#xE713;" FontSize="14" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
-                            <TextBlock x:Name="TxtTaskDetailsDrawerTitle"
-                                       Text="⚙️ Cấu Hình Chi Tiết Task"
-                                       FontWeight="Bold"
-                                       FontSize="14"
-                                       VerticalAlignment="Center" />
+                        <!-- Tab toggle: looks like two segmented buttons -->
+                        <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="0" VerticalAlignment="Center">
+                            <ToggleButton x:Name="TabConfig"
+                                          IsChecked="{x:Bind ViewModel.ActiveDetailTab, Mode=OneWay, Converter={StaticResource DetailTabToBoolConverter}, ConverterParameter=Configuration}"
+                                          Click="TabConfig_Click"
+                                          Padding="10,4"
+                                          CornerRadius="6,0,0,6">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <FontIcon Glyph="&#xE713;" FontSize="12" />
+                                    <TextBlock Text="Cấu hình" />
+                                </StackPanel>
+                            </ToggleButton>
+                            <ToggleButton x:Name="TabLogs"
+                                          IsChecked="{x:Bind ViewModel.ActiveDetailTab, Mode=OneWay, Converter={StaticResource DetailTabToBoolConverter}, ConverterParameter=LiveLogs}"
+                                          Click="TabLogs_Click"
+                                          Padding="10,4"
+                                          CornerRadius="0,6,6,0">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <FontIcon Glyph="&#xE9D9;" FontSize="12" />
+                                    <TextBlock Text="Live Logs" />
+                                </StackPanel>
+                            </ToggleButton>
                         </StackPanel>
 
-                        <Button Grid.Column="1"
-                                Click="BtnCloseTaskDetailsDrawer_Click"
-                                ToolTipService.ToolTip="Đóng bảng cấu hình"
-                                Padding="6,2"
-                                Height="28" Width="28">
-                            <FontIcon Glyph="&#xE711;" FontSize="11" />
-                        </Button>
-                    </Grid>
-
-                    <!-- Scrollable Content Host -->
-                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                        <ContentControl x:Name="TaskDetailsContentHost" HorizontalContentAlignment="Stretch" />
-                    </ScrollViewer>
-                </Grid>
-            </Border>
-
-            <!-- RIGHT: Drawer Overlay — Task Live Logs (5-step accordion for SelectedTask) -->
-            <Border x:Name="TaskLogsDrawer"
-                    HorizontalAlignment="Right"
-                    Width="{x:Bind ViewModel.TaskLogsDrawerWidth, Mode=OneWay}"
-                    Canvas.ZIndex="100"
-                    Background="{ThemeResource SolidBackgroundFillColorBaseBrush}"
-                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                    BorderThickness="2,1,1,1"
-                    CornerRadius="8,0,0,8"
-                    Padding="12"
-                    Visibility="{x:Bind ViewModel.IsTaskLogsDrawerOpen, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
-                <Grid>
-                    <!-- Left Resize Drag Handle -->
-                    <controls:ResizableDragHandle Width="8"
-                                                  HorizontalAlignment="Left"
-                                                  VerticalAlignment="Stretch"
-                                                  Margin="-12,-12,0,-12"
-                                                  Background="Transparent"
-                                                  PointerPressed="DrawerDragHandle_PointerPressed"
-                                                  PointerMoved="DrawerDragHandle_PointerMoved"
-                                                  PointerReleased="DrawerDragHandle_PointerReleased"
-                                                  Canvas.ZIndex="10" />
-
-                    <Grid RowSpacing="10" Margin="4,0,0,0">
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="*" />
-                        </Grid.RowDefinitions>
-
-                    <!-- Drawer Header -->
-                    <Grid Grid.Row="0">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-                        <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-                            <FontIcon Glyph="&#xE9D9;" FontSize="14" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
-                            <TextBlock Text="Task Live Logs"
-                                       FontWeight="SemiBold"
-                                       FontSize="13"
-                                       VerticalAlignment="Center" />
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                            <!-- Profile quick-apply buttons -->
+                            <Button x:Name="BtnNewProfile"
+                                    Click="BtnNewProfile_Click"
+                                    ToolTipService.ToolTip="Tạo profile mới"
+                                    Padding="6,2" Height="28">
+                                <StackPanel Orientation="Horizontal" Spacing="4">
+                                    <FontIcon Glyph="&#xE710;" FontSize="10" />
+                                    <TextBlock Text="Profile" FontSize="11" />
+                                </StackPanel>
+                            </Button>
+                            <Button x:Name="BtnApplyProfile"
+                                    Click="BtnApplyProfile_Click"
+                                    ToolTipService.ToolTip="Áp dụng profile đã chọn cho task"
+                                    Padding="6,2" Height="28">
+                                <StackPanel Orientation="Horizontal" Spacing="4">
+                                    <FontIcon Glyph="&#xE73E;" FontSize="10" />
+                                    <TextBlock Text="Áp dụng" FontSize="11" />
+                                </StackPanel>
+                            </Button>
+                            <AppBarSeparator />
+                            <Button Command="{x:Bind ViewModel.RunSelectedTaskCommand}"
+                                    IsEnabled="{x:Bind ViewModel.SelectedTask, Mode=OneWay, Converter={StaticResource NullableToBoolConverter}}"
+                                    ToolTipService.ToolTip="Chạy task đang chọn"
+                                    Padding="6,2" Height="28" Width="28">
+                                <FontIcon Glyph="&#xE768;" FontSize="11" />
+                            </Button>
+                            <AppBarSeparator />
+                            <Button Command="{x:Bind ViewModel.CloseDetailPanelCommand}"
+                                    ToolTipService.ToolTip="Đóng panel"
+                                    Padding="6,2" Height="28" Width="28">
+                                <FontIcon Glyph="&#xE711;" FontSize="11" />
+                            </Button>
                         </StackPanel>
-                        <Button Grid.Column="1"
-                                Command="{x:Bind ViewModel.CloseTaskLogsCommand}"
-                                ToolTipService.ToolTip="Đóng log drawer"
-                                Padding="6,2"
-                                Height="28" Width="28">
-                            <FontIcon Glyph="&#xE711;" FontSize="11" />
-                        </Button>
                     </Grid>
 
-                    <!-- Selected Task Title Banner -->
+                    <!-- Selected Task title banner -->
                     <Border Grid.Row="1"
                             Background="{ThemeResource LayerFillColorDefaultBrush}"
                             BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
                             BorderThickness="1"
                             CornerRadius="6"
-                            Padding="10,6">
+                            Padding="10,6"
+                            Margin="0,8,0,8">
                         <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
                             <TextBlock Text="📌 Task:" FontSize="11" Opacity="0.7" VerticalAlignment="Center" />
                             <TextBlock Text="{x:Bind ViewModel.SelectedTaskTopic, Mode=OneWay}"
@@ -440,188 +431,138 @@
                         </StackPanel>
                     </Border>
 
-                    <!-- 5-Step Accordion -->
-                    <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
-                        <StackPanel Spacing="8">
-                            <!-- Step 1: Gemini Deep Research & Script -->
-                            <Border Background="{ThemeResource LayerFillColorDefaultBrush}"
-                                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                                    BorderThickness="1"
-                                    CornerRadius="6">
-                                <Expander x:Name="ExpanderStep1" IsExpanded="True" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
-                                    <Expander.Header>
-                                        <Grid>
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*" />
-                                                <ColumnDefinition Width="Auto" />
-                                            </Grid.ColumnDefinitions>
-                                            <TextBlock Text="Step 1: Gemini Deep Research &amp; Script"
-                                                       FontSize="11"
-                                                       FontWeight="SemiBold"
-                                                       VerticalAlignment="Center" />
-                                            <Border x:Name="BadgeStep1"
-                                                    Grid.Column="1"
-                                                    CornerRadius="10"
-                                                    Padding="8,2"
-                                                    Background="{x:Bind ViewModel.CurrentStep1Status, Mode=OneWay, Converter={StaticResource NodeStatusToBrushConverter}}">
-                                                <TextBlock Text="{x:Bind ViewModel.CurrentStep1Status, Mode=OneWay, Converter={StaticResource StepStatusToTextConverter}}"
-                                                           Foreground="White"
-                                                           FontSize="10"
-                                                           FontWeight="SemiBold" />
-                                            </Border>
-                                        </Grid>
-                                    </Expander.Header>
-                                    <ScrollViewer MaxHeight="200" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" Margin="0,4,0,0">
-                                        <TextBox Style="{StaticResource StepLogTextBoxStyle}"
-                                                 Text="{x:Bind ViewModel.CurrentStep1Log, Mode=OneWay}" />
-                                    </ScrollViewer>
-                                </Expander>
-                            </Border>
+                    <!-- TAB CONTENT: Configuration form OR 5-step accordion.
+                     We render both and toggle Visibility so the user never loses scroll/state
+                     when switching tabs. -->
+                    <Grid Grid.Row="2">
+                        <!-- Config tab content -->
+                        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                                      Visibility="{x:Bind ViewModel.ActiveDetailTab, Mode=OneWay, Converter={StaticResource DetailTabToVisibilityConverter}, ConverterParameter=Configuration}">
+                            <ContentControl x:Name="TaskDetailsContentHost" HorizontalContentAlignment="Stretch" />
+                        </ScrollViewer>
 
-                            <!-- Step 2: Voiceover & SRT Subtitles -->
-                            <Border Background="{ThemeResource LayerFillColorDefaultBrush}"
-                                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                                    BorderThickness="1"
-                                    CornerRadius="6">
-                                <Expander x:Name="ExpanderStep2" IsExpanded="False" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
-                                    <Expander.Header>
-                                        <Grid>
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*" />
-                                                <ColumnDefinition Width="Auto" />
-                                            </Grid.ColumnDefinitions>
-                                            <TextBlock Text="Step 2: Voiceover &amp; SRT Subtitles"
-                                                       FontSize="11"
-                                                       FontWeight="SemiBold"
-                                                       VerticalAlignment="Center" />
-                                            <Border x:Name="BadgeStep2"
-                                                    Grid.Column="1"
-                                                    CornerRadius="10"
-                                                    Padding="8,2"
-                                                    Background="{x:Bind ViewModel.CurrentStep2Status, Mode=OneWay, Converter={StaticResource NodeStatusToBrushConverter}}">
-                                                <TextBlock Text="{x:Bind ViewModel.CurrentStep2Status, Mode=OneWay, Converter={StaticResource StepStatusToTextConverter}}"
-                                                           Foreground="White"
-                                                           FontSize="10"
-                                                           FontWeight="SemiBold" />
-                                            </Border>
-                                        </Grid>
-                                    </Expander.Header>
-                                    <ScrollViewer MaxHeight="200" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" Margin="0,4,0,0">
-                                        <TextBox Style="{StaticResource StepLogTextBoxStyle}"
-                                                 Text="{x:Bind ViewModel.CurrentStep2Log, Mode=OneWay}" />
-                                    </ScrollViewer>
-                                </Expander>
-                            </Border>
+                        <!-- Live Logs tab content -->
+                        <ScrollViewer VerticalScrollBarVisibility="Auto"
+                                      Visibility="{x:Bind ViewModel.ActiveDetailTab, Mode=OneWay, Converter={StaticResource DetailTabToVisibilityConverter}, ConverterParameter=LiveLogs}">
+                            <StackPanel Spacing="8">
+                                <Border Background="{ThemeResource LayerFillColorDefaultBrush}"
+                                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                        BorderThickness="1"
+                                        CornerRadius="6">
+                                    <Expander x:Name="ExpanderStep1" IsExpanded="True" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                                        <Expander.Header>
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Text="Step 1: Gemini Deep Research &amp; Script"
+                                                           FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                                <Border x:Name="BadgeStep1" Grid.Column="1" CornerRadius="10" Padding="8,2"
+                                                        Background="{x:Bind ViewModel.CurrentStep1Status, Mode=OneWay, Converter={StaticResource NodeStatusToBrushConverter}}">
+                                                    <TextBlock Text="{x:Bind ViewModel.CurrentStep1Status, Mode=OneWay, Converter={StaticResource StepStatusToTextConverter}}"
+                                                               Foreground="White" FontSize="10" FontWeight="SemiBold" />
+                                                </Border>
+                                            </Grid>
+                                        </Expander.Header>
+                                        <ScrollViewer MaxHeight="200" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" Margin="0,4,0,0">
+                                            <TextBox Style="{StaticResource StepLogTextBoxStyle}"
+                                                     Text="{x:Bind ViewModel.CurrentStep1Log, Mode=OneWay}" />
+                                        </ScrollViewer>
+                                    </Expander>
+                                </Border>
 
-                            <!-- Step 3: Scene Breakdown & Prompts -->
-                            <Border Background="{ThemeResource LayerFillColorDefaultBrush}"
-                                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                                    BorderThickness="1"
-                                    CornerRadius="6">
-                                <Expander x:Name="ExpanderStep3" IsExpanded="False" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
-                                    <Expander.Header>
-                                        <Grid>
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*" />
-                                                <ColumnDefinition Width="Auto" />
-                                            </Grid.ColumnDefinitions>
-                                            <TextBlock Text="Step 3: Scene Breakdown &amp; Prompts"
-                                                       FontSize="11"
-                                                       FontWeight="SemiBold"
-                                                       VerticalAlignment="Center" />
-                                            <Border x:Name="BadgeStep3"
-                                                    Grid.Column="1"
-                                                    CornerRadius="10"
-                                                    Padding="8,2"
-                                                    Background="{x:Bind ViewModel.CurrentStep3Status, Mode=OneWay, Converter={StaticResource NodeStatusToBrushConverter}}">
-                                                <TextBlock Text="{x:Bind ViewModel.CurrentStep3Status, Mode=OneWay, Converter={StaticResource StepStatusToTextConverter}}"
-                                                           Foreground="White"
-                                                           FontSize="10"
-                                                           FontWeight="SemiBold" />
-                                            </Border>
-                                        </Grid>
-                                    </Expander.Header>
-                                    <ScrollViewer MaxHeight="200" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" Margin="0,4,0,0">
-                                        <TextBox Style="{StaticResource StepLogTextBoxStyle}"
-                                                 Text="{x:Bind ViewModel.CurrentStep3Log, Mode=OneWay}" />
-                                    </ScrollViewer>
-                                </Expander>
-                            </Border>
+                                <Border Background="{ThemeResource LayerFillColorDefaultBrush}"
+                                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                        BorderThickness="1" CornerRadius="6">
+                                    <Expander x:Name="ExpanderStep2" IsExpanded="False" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                                        <Expander.Header>
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Text="Step 2: Voiceover &amp; SRT Subtitles" FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                                <Border x:Name="BadgeStep2" Grid.Column="1" CornerRadius="10" Padding="8,2"
+                                                        Background="{x:Bind ViewModel.CurrentStep2Status, Mode=OneWay, Converter={StaticResource NodeStatusToBrushConverter}}">
+                                                    <TextBlock Text="{x:Bind ViewModel.CurrentStep2Status, Mode=OneWay, Converter={StaticResource StepStatusToTextConverter}}" Foreground="White" FontSize="10" FontWeight="SemiBold" />
+                                                </Border>
+                                            </Grid>
+                                        </Expander.Header>
+                                        <ScrollViewer MaxHeight="200" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" Margin="0,4,0,0">
+                                            <TextBox Style="{StaticResource StepLogTextBoxStyle}" Text="{x:Bind ViewModel.CurrentStep2Log, Mode=OneWay}" />
+                                        </ScrollViewer>
+                                    </Expander>
+                                </Border>
 
-                            <!-- Step 4: Batch Image Generation -->
-                            <Border Background="{ThemeResource LayerFillColorDefaultBrush}"
-                                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                                    BorderThickness="1"
-                                    CornerRadius="6">
-                                <Expander x:Name="ExpanderStep4" IsExpanded="False" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
-                                    <Expander.Header>
-                                        <Grid>
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*" />
-                                                <ColumnDefinition Width="Auto" />
-                                            </Grid.ColumnDefinitions>
-                                            <TextBlock Text="Step 4: Batch Image Generation"
-                                                       FontSize="11"
-                                                       FontWeight="SemiBold"
-                                                       VerticalAlignment="Center" />
-                                            <Border x:Name="BadgeStep4"
-                                                    Grid.Column="1"
-                                                    CornerRadius="10"
-                                                    Padding="8,2"
-                                                    Background="{x:Bind ViewModel.CurrentStep4Status, Mode=OneWay, Converter={StaticResource NodeStatusToBrushConverter}}">
-                                                <TextBlock Text="{x:Bind ViewModel.CurrentStep4Status, Mode=OneWay, Converter={StaticResource StepStatusToTextConverter}}"
-                                                           Foreground="White"
-                                                           FontSize="10"
-                                                           FontWeight="SemiBold" />
-                                            </Border>
-                                        </Grid>
-                                    </Expander.Header>
-                                    <ScrollViewer MaxHeight="200" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" Margin="0,4,0,0">
-                                        <TextBox Style="{StaticResource StepLogTextBoxStyle}"
-                                                 Text="{x:Bind ViewModel.CurrentStep4Log, Mode=OneWay}" />
-                                    </ScrollViewer>
-                                </Expander>
-                            </Border>
+                                <Border Background="{ThemeResource LayerFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="6">
+                                    <Expander x:Name="ExpanderStep3" IsExpanded="False" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                                        <Expander.Header>
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Text="Step 3: Scene Breakdown &amp; Prompts" FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                                <Border x:Name="BadgeStep3" Grid.Column="1" CornerRadius="10" Padding="8,2"
+                                                        Background="{x:Bind ViewModel.CurrentStep3Status, Mode=OneWay, Converter={StaticResource NodeStatusToBrushConverter}}">
+                                                    <TextBlock Text="{x:Bind ViewModel.CurrentStep3Status, Mode=OneWay, Converter={StaticResource StepStatusToTextConverter}}" Foreground="White" FontSize="10" FontWeight="SemiBold" />
+                                                </Border>
+                                            </Grid>
+                                        </Expander.Header>
+                                        <ScrollViewer MaxHeight="200" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" Margin="0,4,0,0">
+                                            <TextBox Style="{StaticResource StepLogTextBoxStyle}" Text="{x:Bind ViewModel.CurrentStep3Log, Mode=OneWay}" />
+                                        </ScrollViewer>
+                                    </Expander>
+                                </Border>
 
-                            <!-- Step 5: Export & Packaging -->
-                            <Border Background="{ThemeResource LayerFillColorDefaultBrush}"
-                                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                                    BorderThickness="1"
-                                    CornerRadius="6">
-                                <Expander x:Name="ExpanderStep5" IsExpanded="False" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
-                                    <Expander.Header>
-                                        <Grid>
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*" />
-                                                <ColumnDefinition Width="Auto" />
-                                            </Grid.ColumnDefinitions>
-                                            <TextBlock Text="Step 5: Export &amp; Packaging"
-                                                       FontSize="11"
-                                                       FontWeight="SemiBold"
-                                                       VerticalAlignment="Center" />
-                                            <Border x:Name="BadgeStep5"
-                                                    Grid.Column="1"
-                                                    CornerRadius="10"
-                                                    Padding="8,2"
-                                                    Background="{x:Bind ViewModel.CurrentStep5Status, Mode=OneWay, Converter={StaticResource NodeStatusToBrushConverter}}">
-                                                <TextBlock Text="{x:Bind ViewModel.CurrentStep5Status, Mode=OneWay, Converter={StaticResource StepStatusToTextConverter}}"
-                                                           Foreground="White"
-                                                           FontSize="10"
-                                                           FontWeight="SemiBold" />
-                                            </Border>
-                                        </Grid>
-                                    </Expander.Header>
-                                    <ScrollViewer MaxHeight="200" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" Margin="0,4,0,0">
-                                        <TextBox Style="{StaticResource StepLogTextBoxStyle}"
-                                                 Text="{x:Bind ViewModel.CurrentStep5Log, Mode=OneWay}" />
-                                    </ScrollViewer>
-                                </Expander>
-                            </Border>
-                        </StackPanel>
-                    </ScrollViewer>
+                                <Border Background="{ThemeResource LayerFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="6">
+                                    <Expander x:Name="ExpanderStep4" IsExpanded="False" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                                        <Expander.Header>
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Text="Step 4: Batch Image Generation" FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                                <Border x:Name="BadgeStep4" Grid.Column="1" CornerRadius="10" Padding="8,2"
+                                                        Background="{x:Bind ViewModel.CurrentStep4Status, Mode=OneWay, Converter={StaticResource NodeStatusToBrushConverter}}">
+                                                    <TextBlock Text="{x:Bind ViewModel.CurrentStep4Status, Mode=OneWay, Converter={StaticResource StepStatusToTextConverter}}" Foreground="White" FontSize="10" FontWeight="SemiBold" />
+                                                </Border>
+                                            </Grid>
+                                        </Expander.Header>
+                                        <ScrollViewer MaxHeight="200" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" Margin="0,4,0,0">
+                                            <TextBox Style="{StaticResource StepLogTextBoxStyle}" Text="{x:Bind ViewModel.CurrentStep4Log, Mode=OneWay}" />
+                                        </ScrollViewer>
+                                    </Expander>
+                                </Border>
+
+                                <Border Background="{ThemeResource LayerFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="6">
+                                    <Expander x:Name="ExpanderStep5" IsExpanded="False" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                                        <Expander.Header>
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Text="Step 5: Export &amp; Packaging" FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                                <Border x:Name="BadgeStep5" Grid.Column="1" CornerRadius="10" Padding="8,2"
+                                                        Background="{x:Bind ViewModel.CurrentStep5Status, Mode=OneWay, Converter={StaticResource NodeStatusToBrushConverter}}">
+                                                    <TextBlock Text="{x:Bind ViewModel.CurrentStep5Status, Mode=OneWay, Converter={StaticResource StepStatusToTextConverter}}" Foreground="White" FontSize="10" FontWeight="SemiBold" />
+                                                </Border>
+                                            </Grid>
+                                        </Expander.Header>
+                                        <ScrollViewer MaxHeight="200" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" Margin="0,4,0,0">
+                                            <TextBox Style="{StaticResource StepLogTextBoxStyle}" Text="{x:Bind ViewModel.CurrentStep5Log, Mode=OneWay}" />
+                                        </ScrollViewer>
+                                    </Expander>
+                                </Border>
+                            </StackPanel>
+                        </ScrollViewer>
+                    </Grid>
                 </Grid>
-            </Grid>
-        </Border>
+                </Grid>
+            </Border>
         </Grid>
 
         <!-- C4 + C5: Console log + actions (collapsible, default hidden) -->

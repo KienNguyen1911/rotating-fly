@@ -29,6 +29,116 @@ public sealed partial class GeminiPage : Page
 
         // Auto-scroll console logs to bottom whenever content changes
         ConsoleLogsTextBox.TextChanged += ConsoleLogsTextBox_TextChanged;
+
+        // Start with detail panel collapsed (Width=0) so the tasks table gets full width.
+        ViewModel.IsDetailPanelVisible = false;
+        DetailPanelColumn.Width = new GridLength(0);
+
+        // Keep the detail column width in sync with the ViewModel flag. Switching to a Star
+        // column when visible lets the user resize freely while keeping auto-collapse when hidden.
+        ViewModel.PropertyChanged += GeminiViewModel_PropertyChanged;
+
+        Loaded += GeminiPage_Loaded;
+        Unloaded += GeminiPage_Unloaded;
+    }
+
+    private void GeminiPage_Loaded(object sender, RoutedEventArgs e)
+    {
+        SyncDetailColumnWidth();
+    }
+
+    private void GeminiPage_Unloaded(object sender, RoutedEventArgs e)
+    {
+        ViewModel.PropertyChanged -= GeminiViewModel_PropertyChanged;
+    }
+
+    private void GeminiViewModel_PropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(GeminiViewModel.IsDetailPanelVisible)
+            || e.PropertyName == nameof(GeminiViewModel.DetailPanelWidth))
+        {
+            SyncDetailColumnWidth();
+        }
+    }
+
+    private void SyncDetailColumnWidth()
+    {
+        if (ViewModel.IsDetailPanelVisible)
+        {
+            DetailPanelColumn.Width = new GridLength(ViewModel.DetailPanelWidth);
+            DetailPanelColumn.MinWidth = 380;
+        }
+        else
+        {
+            DetailPanelColumn.Width = new GridLength(0);
+            DetailPanelColumn.MinWidth = 0;
+        }
+    }
+
+    private void LstGeminiTasks_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        // Whenever the selection changes (programmatic or click), keep the detail panel
+        // open for the newly selected task. The previous UX closed the panel when the
+        // user clicked a different row, which made the master-detail navigation feel broken.
+        if (ViewModel.SelectedTask != null)
+        {
+            OpenDetailPanelFor(ViewModel.SelectedTask);
+        }
+    }
+
+    private void LstGeminiTasks_PointerPressed(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
+    {
+        // GetCurrentPoint returns the raw pointer state. Properties.HelpKind will be
+        // e.Pointer.PointerDeviceType, but we only care about the *click* pattern,
+        // not hover/move events. The PointerPressed event only fires on a press, so
+        // this is fine.
+        var point = e.GetCurrentPoint(LstGeminiTasks);
+        // Only act on true left-button clicks. Right-click should bubble for context menu.
+        if (!point.Properties.IsLeftButtonPressed) return;
+
+        // Walk the visual tree to find which row was clicked. Because ListView recycles
+        // containers, the FindVisualChild path here must look UP the tree from the
+        // original source until we hit a ListViewItem, then pull the GeminiTaskModel from
+        // its DataContext.
+        if (e.OriginalSource is not DependencyObject src) return;
+        var lvi = FindAncestor<ListViewItem>(src);
+        if (lvi?.DataContext is not GeminiTaskModel task) return;
+
+        // If the click landed on an interactive control inside the row (the IsSelected
+        // CheckBox, the Topic TextBox), don't hijack it — the user is editing.
+        if (e.OriginalSource is DependencyObject orig)
+        {
+            DependencyObject? current = orig;
+            while (current != null && current != lvi)
+            {
+                if (current is TextBox or CheckBox or ComboBox or Button)
+                {
+                    return;
+                }
+                current = Microsoft.UI.Xaml.Media.VisualTreeHelper.GetParent(current);
+            }
+        }
+
+        OpenDetailPanelFor(task);
+    }
+
+    private void OpenDetailPanelFor(GeminiTaskModel task)
+    {
+        ViewModel.SelectedTask = task;
+        ViewModel.ActiveDetailTab = GeminiViewModel.DetailTab.Configuration;
+        TaskDetailsContentHost.Content = BuildRowDetailsContent(task);
+        ViewModel.IsDetailPanelVisible = true;
+    }
+
+    private static T? FindAncestor<T>(DependencyObject start) where T : DependencyObject
+    {
+        DependencyObject? current = start;
+        while (current != null)
+        {
+            if (current is T match) return match;
+            current = Microsoft.UI.Xaml.Media.VisualTreeHelper.GetParent(current);
+        }
+        return null;
     }
 
     private void ConsoleLogsTextBox_TextChanged(object sender, TextChangedEventArgs e)
@@ -72,71 +182,246 @@ public sealed partial class GeminiPage : Page
     {
         if (sender is not Button btn || btn.Tag is not GeminiTaskModel task) return;
 
-        // If clicking the same task while drawer is open, toggle close it
-        if (ViewModel.IsRowDetailsDrawerOpen && ViewModel.SelectedTask?.Id == task.Id)
+        // If clicking the same task while panel is open on Config tab, toggle close it
+        if (ViewModel.IsDetailPanelVisible
+            && ViewModel.SelectedTask?.Id == task.Id
+            && ViewModel.ActiveDetailTab == GeminiViewModel.DetailTab.Configuration)
         {
-            BtnCloseTaskDetailsDrawer_Click(sender, e);
+            ViewModel.CloseDetailPanelCommand.Execute(null);
             return;
         }
 
         ViewModel.SelectedTask = task;
-        TxtTaskDetailsDrawerTitle.Text = $"⚙️ Cấu Hình Chi Tiết Task: {task.Topic}";
         TaskDetailsContentHost.Content = BuildRowDetailsContent(task);
-
-        if (!ViewModel.IsRowDetailsDrawerOpen)
-        {
-            ViewModel.IsRowDetailsDrawerOpen = true;
-            AnimateDrawerSlideUp();
-        }
-    }
-
-    private void BtnCloseTaskDetailsDrawer_Click(object sender, RoutedEventArgs e)
-    {
-        AnimateDrawerSlideDown(() =>
-        {
-            ViewModel.IsRowDetailsDrawerOpen = false;
-        });
-    }
-
-    private void AnimateDrawerSlideUp()
-    {
-        TaskDetailsDrawerTransform.Y = 300;
-        var animation = new DoubleAnimation
-        {
-            From = 300,
-            To = 0,
-            Duration = TimeSpan.FromMilliseconds(250),
-            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
-        };
-        var sb = new Storyboard();
-        Storyboard.SetTarget(animation, TaskDetailsDrawerTransform);
-        Storyboard.SetTargetProperty(animation, "Y");
-        sb.Children.Add(animation);
-        sb.Begin();
-    }
-
-    private void AnimateDrawerSlideDown(Action completed)
-    {
-        var animation = new DoubleAnimation
-        {
-            From = 0,
-            To = 300,
-            Duration = TimeSpan.FromMilliseconds(200),
-            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseIn }
-        };
-        var sb = new Storyboard();
-        Storyboard.SetTarget(animation, TaskDetailsDrawerTransform);
-        Storyboard.SetTargetProperty(animation, "Y");
-        sb.Children.Add(animation);
-        sb.Completed += (s, e) => completed();
-        sb.Begin();
+        ViewModel.ActiveDetailTab = GeminiViewModel.DetailTab.Configuration;
+        ViewModel.IsDetailPanelVisible = true;
     }
 
     private void BtnShowTaskLogs_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is Button btn && btn.Tag is GeminiTaskModel task)
+        if (sender is not Button btn || btn.Tag is not GeminiTaskModel task) return;
+
+        // If clicking the same task while panel is open on Logs tab, toggle close it
+        if (ViewModel.IsDetailPanelVisible
+            && ViewModel.SelectedTask?.Id == task.Id
+            && ViewModel.ActiveDetailTab == GeminiViewModel.DetailTab.LiveLogs)
         {
-            ViewModel.OpenTaskLogsCommand.Execute(task);
+            ViewModel.CloseDetailPanelCommand.Execute(null);
+            return;
+        }
+
+        ViewModel.SelectedTask = task;
+        ViewModel.ActiveDetailTab = GeminiViewModel.DetailTab.LiveLogs;
+        ViewModel.IsDetailPanelVisible = true;
+    }
+
+    private void TabConfig_Click(object sender, RoutedEventArgs e)
+    {
+        // Ensure config form is populated for the currently selected task.
+        if (ViewModel.SelectedTask != null && TaskDetailsContentHost.Content == null)
+        {
+            TaskDetailsContentHost.Content = BuildRowDetailsContent(ViewModel.SelectedTask);
+        }
+        ViewModel.ActiveDetailTab = GeminiViewModel.DetailTab.Configuration;
+    }
+
+    private void TabLogs_Click(object sender, RoutedEventArgs e)
+    {
+        ViewModel.ActiveDetailTab = GeminiViewModel.DetailTab.LiveLogs;
+    }
+
+    private async void BtnNewProfile_Click(object sender, RoutedEventArgs e)
+    {
+        var xamlRoot = App.MainWindowInstance?.Content?.XamlRoot ?? PageRoot.XamlRoot;
+        if (xamlRoot == null) return;
+
+        var dialog = new AssetAutomator.WinUI.Views.Dialogs.TaskProfileDialog(
+            profileToEdit: null,
+            ViewModel.AvailableScriptwriterGems,
+            ViewModel.AvailableSceneCreatorGems,
+            ViewModel.AvailableAiModels,
+            ViewModel.AvailableImageProviders)
+        {
+            XamlRoot = xamlRoot
+        };
+
+        var result = await dialog.ShowAsync();
+        if (result == ContentDialogResult.Primary && dialog.ResultProfile != null)
+        {
+            var manager = new AssetAutomator.Infrastructure.Services.TaskProfileManager();
+            manager.AddProfile(dialog.ResultProfile);
+
+            // Refresh the profile list in the VM
+            ViewModel.TaskProfiles.Clear();
+            foreach (var p in manager.Profiles)
+            {
+                ViewModel.TaskProfiles.Add(p);
+            }
+
+            ViewModel.StatusLog = $"✅ Đã tạo profile mới: '{dialog.ResultProfile.Name}'";
+        }
+    }
+
+    private void BtnApplyProfile_Click(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel.TaskProfiles.Count == 0)
+        {
+            // No profiles yet — offer to create one
+            BtnNewProfile_Click(sender, e);
+            return;
+        }
+
+        var xamlRoot = App.MainWindowInstance?.Content?.XamlRoot ?? PageRoot.XamlRoot;
+        if (xamlRoot == null) return;
+
+        var flyout = new MenuFlyout();
+
+        var createItem = new MenuFlyoutItem
+        {
+            Text = "+ Tạo profile mới...",
+            Icon = new FontIcon { Glyph = "\uE710" }
+        };
+        createItem.Click += (s, args) => BtnNewProfile_Click(sender, e);
+        flyout.Items.Add(createItem);
+
+        if (ViewModel.TaskProfiles.Count > 0)
+        {
+            flyout.Items.Add(new MenuFlyoutSeparator());
+
+            foreach (var profile in ViewModel.TaskProfiles)
+            {
+                var item = new MenuFlyoutItem
+                {
+                    Text = profile.Name,
+                    Icon = new FontIcon { Glyph = "\uE73E" }
+                };
+                var captured = profile;
+                item.Click += (s, args) =>
+                {
+                    ViewModel.ApplyProfileToSelectedTasksCommand.Execute(captured);
+                    // Refresh detail panel content
+                    if (ViewModel.SelectedTask != null)
+                    {
+                        TaskDetailsContentHost.Content = BuildRowDetailsContent(ViewModel.SelectedTask);
+                    }
+                };
+                flyout.Items.Add(item);
+            }
+        }
+
+        var btn = sender as Button;
+        flyout.ShowAt(btn ?? BtnApplyProfile);
+    }
+
+    private void BtnCloseTaskDetailsDrawer_Click(object sender, RoutedEventArgs e)
+    {
+        ViewModel.CloseDetailPanelCommand.Execute(null);
+    }
+
+    private async void BtnManageProfiles_Click(object sender, RoutedEventArgs e)
+    {
+        var xamlRoot = App.MainWindowInstance?.Content?.XamlRoot ?? PageRoot.XamlRoot;
+        if (xamlRoot == null) return;
+
+        var manager = new AssetAutomator.Infrastructure.Services.TaskProfileManager();
+
+        var flyout = new MenuFlyout();
+
+        var createItem = new MenuFlyoutItem { Text = "+ Tạo profile mới...", Icon = new FontIcon { Glyph = "\uE710" } };
+        createItem.Click += async (s, args) =>
+        {
+            var dialog = new AssetAutomator.WinUI.Views.Dialogs.TaskProfileDialog(
+                null,
+                ViewModel.AvailableScriptwriterGems,
+                ViewModel.AvailableSceneCreatorGems,
+                ViewModel.AvailableAiModels,
+                ViewModel.AvailableImageProviders) { XamlRoot = xamlRoot };
+
+            var result = await dialog.ShowAsync();
+            if (result == ContentDialogResult.Primary && dialog.ResultProfile != null)
+            {
+                manager.AddProfile(dialog.ResultProfile);
+                RefreshProfilesInViewModel();
+                ViewModel.StatusLog = $"✅ Đã tạo profile: '{dialog.ResultProfile.Name}'";
+            }
+        };
+        flyout.Items.Add(createItem);
+
+        if (ViewModel.TaskProfiles.Count > 0)
+        {
+            flyout.Items.Add(new MenuFlyoutSeparator());
+
+            foreach (var profile in ViewModel.TaskProfiles)
+            {
+                var applyAll = new MenuFlyoutItem
+                {
+                    Text = $"🔗 Áp dụng '{profile.Name}' cho tất cả",
+                    Icon = new FontIcon { Glyph = "\uE73E" }
+                };
+                var captured = profile;
+                applyAll.Click += (s, args) =>
+                {
+                    ViewModel.ApplyProfileToAllTasksCommand.Execute(captured);
+                    ViewModel.StatusLog = $"✅ Đã áp dụng '{captured.Name}' cho {ViewModel.GeminiTasks.Count} task(s).";
+                };
+
+                var editItem = new MenuFlyoutItem
+                {
+                    Text = $"✏️ Chỉnh sửa '{profile.Name}'",
+                    Icon = new FontIcon { Glyph = "\uE70F" }
+                };
+                editItem.Click += async (s, args) =>
+                {
+                    var dialog = new AssetAutomator.WinUI.Views.Dialogs.TaskProfileDialog(
+                        captured,
+                        ViewModel.AvailableScriptwriterGems,
+                        ViewModel.AvailableSceneCreatorGems,
+                        ViewModel.AvailableAiModels,
+                        ViewModel.AvailableImageProviders) { XamlRoot = xamlRoot };
+
+                    var result = await dialog.ShowAsync();
+                    if (result == ContentDialogResult.Primary && dialog.ResultProfile != null)
+                    {
+                        manager.UpdateProfile(dialog.ResultProfile);
+                        RefreshProfilesInViewModel();
+                        ViewModel.StatusLog = $"✅ Đã cập nhật profile: '{dialog.ResultProfile.Name}'";
+                    }
+                };
+
+                var deleteItem = new MenuFlyoutItem
+                {
+                    Text = $"🗑️ Xóa '{profile.Name}'",
+                    Icon = new FontIcon { Glyph = "\uE74D" }
+                };
+                deleteItem.Click += (s, args) =>
+                {
+                    manager.RemoveProfile(captured.Id);
+                    RefreshProfilesInViewModel();
+                    ViewModel.StatusLog = $"🗑️ Đã xóa profile: '{captured.Name}'";
+                };
+
+                var sub = new MenuFlyoutSubItem { Text = profile.Name };
+                sub.Items.Add(applyAll);
+                sub.Items.Add(editItem);
+                sub.Items.Add(new MenuFlyoutSeparator());
+                sub.Items.Add(deleteItem);
+                flyout.Items.Add(sub);
+            }
+        }
+
+        if (sender is Button clickedBtn)
+            flyout.ShowAt(clickedBtn);
+        else
+            flyout.ShowAt(BtnManageProfiles);
+    }
+
+    private void RefreshProfilesInViewModel()
+    {
+        var manager = new AssetAutomator.Infrastructure.Services.TaskProfileManager();
+        ViewModel.TaskProfiles.Clear();
+        foreach (var p in manager.Profiles)
+        {
+            ViewModel.TaskProfiles.Add(p);
         }
     }
 
@@ -150,10 +435,11 @@ public sealed partial class GeminiPage : Page
             return;
         }
 
-        // Mirror WPF: open the live logs drawer for the chosen task so the user
+        // Mirror WPF: open the live-logs tab in the detail panel for the chosen task so the user
         // sees per-step progress immediately while the pipeline is running.
         ViewModel.SelectedTask = task;
-        ViewModel.IsTaskLogsDrawerOpen = true;
+        ViewModel.ActiveDetailTab = GeminiViewModel.DetailTab.LiveLogs;
+        ViewModel.IsDetailPanelVisible = true;
         ViewModel.IsConsoleLogVisible = true;
 
         await ViewModel.RunSingleTaskCommand.ExecuteAsync(task);
@@ -175,39 +461,44 @@ public sealed partial class GeminiPage : Page
         await dialog.ShowAsync();
     }
 
-    private bool _isDraggingDrawer;
-    private double _dragStartX;
-    private double _dragStartWidth;
+    private bool _isDraggingDetailPanel;
+    private double _detailDragStartX;
+    private double _detailDragStartWidth;
 
-    private void DrawerDragHandle_PointerPressed(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
+    private void DetailPanelDragHandle_PointerPressed(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
     {
-        var pp = e.GetCurrentPoint(TaskLogsDrawer);
+        var pp = e.GetCurrentPoint(DetailPanelRoot);
         if (!pp.Properties.IsLeftButtonPressed) return;
-        _isDraggingDrawer = true;
-        _dragStartX = e.GetCurrentPoint(PageRoot).Position.X;
-        _dragStartWidth = ViewModel.TaskLogsDrawerWidth;
+        _isDraggingDetailPanel = true;
+        _detailDragStartX = e.GetCurrentPoint(PageRoot).Position.X;
+        _detailDragStartWidth = ViewModel.DetailPanelWidth;
         ((UIElement)sender).CapturePointer(e.Pointer);
         e.Handled = true;
     }
 
-    private void DrawerDragHandle_PointerMoved(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
+    private void DetailPanelDragHandle_PointerMoved(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
     {
-        if (!_isDraggingDrawer) return;
+        if (!_isDraggingDetailPanel) return;
 
         double currentX = e.GetCurrentPoint(PageRoot).Position.X;
-        double delta = _dragStartX - currentX; // Dragging left increases width
-        double newWidth = _dragStartWidth + delta;
+        // Drag handle is on the LEFT edge of the detail panel.
+        // Dragging RIGHT (cursor moves away from panel) → expand (delta positive).
+        // Dragging LEFT  (cursor moves toward panel)  → shrink  (delta negative).
+        // Using "minus" so positive delta = bigger panel, negative delta = smaller panel.
+        double delta = currentX - _detailDragStartX;
+        double newWidth = _detailDragStartWidth - delta;
 
-        double maxWidth = Math.Max(400, PageRoot.ActualWidth * 0.75);
-        newWidth = Math.Max(350, Math.Min(newWidth, maxWidth));
+        double minW = 380;
+        double maxW = Math.Max(900, PageRoot.ActualWidth * 0.75);
+        newWidth = Math.Max(minW, Math.Min(newWidth, maxW));
 
-        ViewModel.TaskLogsDrawerWidth = newWidth;
+        ViewModel.DetailPanelWidth = newWidth;
     }
 
-    private void DrawerDragHandle_PointerReleased(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
+    private void DetailPanelDragHandle_PointerReleased(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
     {
-        if (!_isDraggingDrawer) return;
-        _isDraggingDrawer = false;
+        if (!_isDraggingDetailPanel) return;
+        _isDraggingDetailPanel = false;
         ((UIElement)sender).ReleasePointerCapture(e.Pointer);
         e.Handled = true;
     }
@@ -325,10 +616,17 @@ public sealed partial class GeminiPage : Page
         var deepResearchCheck = new CheckBox
         {
             Content = "Bật Deep Research",
-            IsChecked = task.EnableDeepResearch
+            IsChecked = task.EnableDeepResearch,
+            IsHitTestVisible = false,
+            IsEnabled = false,
+            Opacity = 0.8
         };
+        // Deep Research is hardcoded to true — the toggle is disabled so the user
+        // can see the value but cannot change it.
         deepResearchCheck.Checked += (s, e) => task.EnableDeepResearch = true;
-        deepResearchCheck.Unchecked += (s, e) => task.EnableDeepResearch = false;
+        deepResearchCheck.Unchecked += (s, e) => task.EnableDeepResearch = true;
+        // Force the value back to true even if the binding tries to set it false.
+        task.EnableDeepResearch = true;
         stack.Children.Add(deepResearchCheck);
 
         card.Child = stack;
@@ -391,31 +689,21 @@ public sealed partial class GeminiPage : Page
         };
         stack.Children.Add(sceneModelCombo);
 
-        // ── Mode toggle: API Stream (default, fast) vs Playwright (real Web UI) ──
+        // ── Mode: always API Stream (hardcoded) ──
         // API Stream mode calls the Python REST /api/chat/stream-extended endpoint,
         // mirroring test_gem_and_thinking.py — uploads SRT + transcript, streams
         // extended thinking + scenes JSON back in realtime, no Chrome required.
-        // Playwright mode drives the real Gemini Web UI through a persistent
-        // Chrome profile (requires user to have a Gemini session in Chrome).
-        var modeApiRadio = new RadioButton
+        // Playwright mode was removed; the task always uses API Stream for speed and
+        // reliability. The value is forced to true so any legacy data still works.
+        task.UseApiStreamForSceneCreator = true;
+        var modeInfoBadge = new TextBlock
         {
-            Content = "📡 API Stream (mặc định — nhanh, không cần Chrome)",
-            IsChecked = task.UseApiStreamForSceneCreator,
+            Text = "📡 API Stream (luôn bật — không cần Chrome)",
             FontSize = 11,
-            GroupName = $"SceneCreatorMode_{task.Id}",
+            Opacity = 0.8,
             Margin = new Thickness(0, 4, 0, 0)
         };
-        var modePwRadio = new RadioButton
-        {
-            Content = "🎭 Playwright (Web UI thật, cần Chrome profile)",
-            IsChecked = !task.UseApiStreamForSceneCreator,
-            FontSize = 11,
-            GroupName = $"SceneCreatorMode_{task.Id}"
-        };
-        modeApiRadio.Checked += (s, e) => task.UseApiStreamForSceneCreator = true;
-        modePwRadio.Checked += (s, e) => task.UseApiStreamForSceneCreator = false;
-        stack.Children.Add(modeApiRadio);
-        stack.Children.Add(modePwRadio);
+        stack.Children.Add(modeInfoBadge);
 
         card.Child = stack;
         Grid.SetRow(card, row);

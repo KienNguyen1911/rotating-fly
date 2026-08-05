@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
+using System.Net.Http;
 using System.Text.Json;
 using System.Threading.Tasks;
 using AssetAutomator.Core;
@@ -26,17 +27,20 @@ namespace AssetAutomator.Application.Services
         private readonly IConfigService _configService;
         private readonly GeminiApiService _geminiApiService;
         private readonly PythonServerManager _pythonServerManager;
+        private readonly IHttpClientFactory _httpClientFactory;
 
         public GeminiCreatorService(
             ILogService logService,
             IConfigService configService,
             GeminiApiService geminiApiService,
-            PythonServerManager pythonServerManager)
+            PythonServerManager pythonServerManager,
+            IHttpClientFactory httpClientFactory)
         {
             _log = logService ?? throw new ArgumentNullException(nameof(logService));
             _configService = configService ?? throw new ArgumentNullException(nameof(configService));
             _geminiApiService = geminiApiService ?? throw new ArgumentNullException(nameof(geminiApiService));
             _pythonServerManager = pythonServerManager ?? throw new ArgumentNullException(nameof(pythonServerManager));
+            _httpClientFactory = httpClientFactory ?? throw new ArgumentNullException(nameof(httpClientFactory));
         }
 
         // ─────────────────────────────────────────────────────
@@ -442,19 +446,34 @@ namespace AssetAutomator.Application.Services
 
         /// <summary>
         /// Resolves language for a Gemini task using the VoiceId to query AI84 API.
+        /// Uses the DI-named "ai84" HttpClient so the call gets a 60s per-attempt
+        /// timeout and automatic retry/circuit-breaker instead of freezing for the
+        /// raw <c>new HttpClient()</c> default 100s.
+        ///
+        /// Results are cached per <see cref="GeminiTaskModel.VoiceId"/> for the
+        /// lifetime of the process so re-running a batch (or running parallel tasks
+        /// that share a voice) never hits AI84 twice for the same voice.
         /// </summary>
         public async Task ResolveTaskLanguageAsync(GeminiTaskModel taskItem, string apiKey)
         {
             if (string.IsNullOrEmpty(taskItem.VoiceId) || !string.IsNullOrEmpty(taskItem.TargetLanguage))
                 return;
 
+            // Cache hit: short-circuit.
+            string cacheKey = taskItem.VoiceId.Trim();
+            if (_resolvedLanguageCache.TryGetValue(cacheKey, out var cachedLang))
+            {
+                taskItem.TargetLanguage = cachedLang;
+                return;
+            }
+
             try
             {
-                using var client = new System.Net.Http.HttpClient();
-                var request = new System.Net.Http.HttpRequestMessage(
-                    System.Net.Http.HttpMethod.Get,
+                var client = _httpClientFactory.CreateClient(Steps.VoiceoverGenerationStep.Ai84HttpClientName);
+                using var request = new HttpRequestMessage(
+                    HttpMethod.Get,
                     $"https://api.ai84.pro/v1/shared-voices?page_size=10&search={Uri.EscapeDataString(taskItem.VoiceId)}");
-                request.Headers.Add("xi-api-key", apiKey);
+                request.Headers.TryAddWithoutValidation("xi-api-key", apiKey);
 
                 var response = await client.SendAsync(request);
                 if (response.IsSuccessStatusCode)
@@ -466,9 +485,11 @@ namespace AssetAutomator.Application.Services
                     var voice = result?.voices?.FirstOrDefault(v => v.voice_id == taskItem.VoiceId);
                     if (voice != null)
                     {
-                        taskItem.TargetLanguage = LanguageHelper.FormatLanguage(voice.language);
+                        var lang = LanguageHelper.FormatLanguage(voice.language);
+                        taskItem.TargetLanguage = lang;
+                        _resolvedLanguageCache[cacheKey] = lang;
                         _log.Debug(LogCategory.GeminiCreator,
-                            $"Resolved language for voice '{taskItem.VoiceId}': {taskItem.TargetLanguage}");
+                            $"Resolved language for voice '{taskItem.VoiceId}': {lang}");
                     }
                 }
             }
@@ -478,6 +499,11 @@ namespace AssetAutomator.Application.Services
                     $"Could not resolve language for voice '{taskItem.VoiceId}': {ex.Message}");
             }
         }
+
+        // Process-wide cache: Voice ID (trimmed) → resolved language. Bounded so a misbehaving
+        // caller that keeps changing VoiceId can't grow it without limit.
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> _resolvedLanguageCache = new();
+        private const int ResolvedLanguageCacheMaxEntries = 256;
 
         // ─────────────────────────────────────────────────────
         //  Helpers

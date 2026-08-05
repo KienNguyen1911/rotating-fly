@@ -22,11 +22,11 @@
     <Color x:Key="Color.PrimaryDisabled">#94A3B8</Color>
     <Color x:Key="Color.PrimaryDisabledDark">#3A4A6A</Color>
     <Color x:Key="Color.SurfaceSoft">#CBD5E1</Color>
-    <Color x:Key="Color.SurfaceSoftDark">#14192E</Color>
+    <Color x:Key="Color.SurfaceSoftDark">#2A3050</Color>
     <Color x:Key="Color.SurfaceCard">#FFFFFF</Color>
     <Color x:Key="Color.SurfaceCardDark">#1E2644</Color>
     <Color x:Key="Color.SurfaceStrong">#94A3B8</Color>
-    <Color x:Key="Color.SurfaceStrongDark">#2B355A</Color>
+    <Color x:Key="Color.SurfaceStrongDark">#3A4570</Color>
     <Color x:Key="Color.Hairline">#CBD5E1</Color>
     <Color x:Key="Color.HairlineDark">#34406A</Color>
     <Color x:Key="Color.Subtle">#64748B</Color>
