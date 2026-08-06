@@ -61,6 +61,68 @@ if (Test-Path $modulesSrc) {
     Write-Host "Đang copy Modules/ vào package..." -ForegroundColor Green
     Copy-Item -Path $modulesSrc -Destination (Join-Path $packageOutDir "Modules") -Recurse -Force
     Write-Host "  Da copy Modules/ thanh cong." -ForegroundColor DarkGreen
+
+    $modulePkgDir = Join-Path $packageOutDir "Modules"
+
+    # 5c. Dọn dev artifacts khỏi Modules/ — cookies, test data KHONG release
+    # cookies.json — chứa tokens, KHONG release
+    foreach ($f in @(
+        (Join-Path $modulePkgDir "Gemini-API-2.0.0\cookies.json"),
+        (Join-Path $modulePkgDir "google-flow-2.0.0\cookies.json")
+    )) {
+        if (Test-Path $f) {
+            Remove-Item -Force $f
+            Write-Host "  Da xoa: $((Split-Path $f -Leaf))" -ForegroundColor DarkYellow
+        }
+    }
+
+    # transcript.txt, scratch/, tests/, examples/ — test data KHONG release
+    foreach ($pattern in @(
+        (Join-Path $modulePkgDir "Gemini-API-2.0.0\transcript.txt"),
+        (Join-Path $modulePkgDir "Gemini-API-2.0.0\scratch"),
+        (Join-Path $modulePkgDir "Gemini-API-2.0.0\tests"),
+        (Join-Path $modulePkgDir "Gemini-API-2.0.0\test_cli.py"),
+        (Join-Path $modulePkgDir "Gemini-API-2.0.0\test_client_features.py"),
+        (Join-Path $modulePkgDir "Gemini-API-2.0.0\test_deep_research.py"),
+        (Join-Path $modulePkgDir "Gemini-API-2.0.0\test_gem_mixin.py"),
+        (Join-Path $modulePkgDir "Gemini-API-2.0.0\test_metadata_isolation.py"),
+        (Join-Path $modulePkgDir "Gemini-API-2.0.0\test_save_image.py"),
+        (Join-Path $modulePkgDir "Gemini-API-2.0.0\convert-cookies.py"),
+        (Join-Path $modulePkgDir "google-flow-2.0.0\scratch"),
+        (Join-Path $modulePkgDir "google-flow-2.0.0\tests"),
+        (Join-Path $modulePkgDir "google-flow-2.0.0\examples"),
+        (Join-Path $modulePkgDir "google-flow-2.0.0\test_api_fixed.py"),
+        (Join-Path $modulePkgDir "google-flow-2.0.0\test_flow_ext.py"),
+        (Join-Path $modulePkgDir "google-flow-2.0.0\update.md"),
+        (Join-Path $modulePkgDir "google-flow-2.0.0\ARCHITECTURE*.md"),
+        (Join-Path $modulePkgDir "google-flow-2.0.0\README-ar.md"),
+        (Join-Path $modulePkgDir "google-flow-2.0.0\CHANGELOG_LOCAL.txt"),
+        (Join-Path $modulePkgDir "google-flow-2.0.0\install.bat"),
+        (Join-Path $modulePkgDir "google-flow-2.0.0\start-flow*.bat"),
+        (Join-Path $modulePkgDir "google-flow-2.0.0\config.toml")
+    )) {
+        Get-Item -Path $pattern -Force -ErrorAction SilentlyContinue | ForEach-Object {
+            if ($_.PSIsContainer) {
+                $size = (Get-Item $_.FullName -Recurse | Measure-Object -Property Length -Sum).Sum / 1MB
+                Remove-Item -Recurse -Force $_.FullName
+                Write-Host "  Da xoa folder: $($_.Name) ({0:N0} MB)" -f [math]::Round($size) -ForegroundColor DarkYellow
+            } else {
+                Remove-Item -Force $_.FullName
+                Write-Host "  Da xoa file: $($_.Name)" -ForegroundColor DarkYellow
+            }
+        }
+    }
+
+    # 5d. Dọn cross-platform Playwright binaries — chi can Windows, tiet kiem ~477MB
+    $playwrightDir = Join-Path $packageOutDir ".playwright\node"
+    foreach ($plat in @("darwin-arm64", "darwin-x64", "linux-arm64", "linux-x64")) {
+        $platPath = Join-Path $playwrightDir $plat
+        if (Test-Path $platPath) {
+            $size = (Get-Item $platPath -Recurse | Measure-Object -Property Length -Sum).Sum / 1MB
+            Remove-Item -Recurse -Force $platPath
+            Write-Host "  Da xoa Playwright platform: $plat ({0:N0} MB)" -f [math]::Round($size) -ForegroundColor DarkYellow
+        }
+    }
 } else {
     Write-Host "  WARNING: Khong tim thay thu muc Modules/ tai repo root!" -ForegroundColor Red
 }
