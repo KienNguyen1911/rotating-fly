@@ -133,16 +133,57 @@ namespace AssetAutomator.Application.Services.Providers
 
                             if (string.IsNullOrEmpty(effectiveRefMediaId))
                             {
-                                // Upload once via /v1/images/edits to obtain initial media_id
-                                effectiveRefMediaId = await UploadReferenceImageAndGetMediaIdAsync(
+                                // Upload reference via /v1/images/edits. The response contains BOTH
+                                // the initial generated image AND the media_id. By saving that image
+                                // for the first item we eliminate the duplicate that would otherwise
+                                // appear when call 2 (/v1/images/generations) runs afterwards.
+                                var (uploadedMediaId, uploadResponseJson) = await UploadReferenceImageAndGetMediaIdAsync(
                                     baseUrl, effApiKey, model, size, quality, item.Prompt, item.FlowProjectId, referenceImages, refWithFilePath);
 
-                                if (!string.IsNullOrEmpty(effectiveRefMediaId) && !string.IsNullOrEmpty(cacheKey))
+                                if (!string.IsNullOrEmpty(uploadedMediaId))
                                 {
-                                    lock (_uploadedReferenceMediaIds)
+                                    effectiveRefMediaId = uploadedMediaId;
+                                    if (!string.IsNullOrEmpty(cacheKey))
                                     {
-                                        _uploadedReferenceMediaIds[cacheKey] = effectiveRefMediaId;
+                                        lock (_uploadedReferenceMediaIds)
+                                        {
+                                            _uploadedReferenceMediaIds[cacheKey] = effectiveRefMediaId;
+                                        }
                                     }
+                                }
+
+                                // If the upload response already carries an image payload, treat it
+                                // as the final result for this item and skip the second call.
+                                if (!string.IsNullOrEmpty(uploadResponseJson))
+                                {
+                                    try
+                                    {
+                                        using var probe = JsonDocument.Parse(uploadResponseJson);
+                                        if (probe.RootElement.TryGetProperty("data", out var probeData)
+                                            && probeData.ValueKind == JsonValueKind.Array
+                                            && probeData.GetArrayLength() > 0)
+                                        {
+                                            var probeFirst = probeData[0];
+                                            bool hasUrl = probeFirst.TryGetProperty("url", out var u) && !string.IsNullOrEmpty(u.GetString());
+                                            bool hasB64 = probeFirst.TryGetProperty("b64_json", out var b) && !string.IsNullOrEmpty(b.GetString());
+                                            if (hasUrl || hasB64)
+                                            {
+                                                await HandleOpenAiResponseAsync(item, uploadResponseJson, outputDirectory, uiContext);
+                                                return;
+                                            }
+                                        }
+                                    }
+                                    catch (Exception)
+                                    {
+                                        // Best-effort probe; fall through to call 2 below.
+                                    }
+                                }
+
+                                // No usable image in upload response → continue to call 2.
+                                if (string.IsNullOrEmpty(effectiveRefMediaId))
+                                {
+                                    SetItemStatusFailed(item, uiContext, "Flow API did not return media_id from reference upload.");
+                                    return;
                                 }
                             }
                         }
@@ -344,7 +385,7 @@ namespace AssetAutomator.Application.Services.Providers
             }
         }
 
-        private async Task<string?> UploadReferenceImageAndGetMediaIdAsync(
+        private async Task<(string? mediaId, string? responseJson)> UploadReferenceImageAndGetMediaIdAsync(
             string baseUrl,
             string apiKey,
             string model,
@@ -385,7 +426,7 @@ namespace AssetAutomator.Application.Services.Providers
                 imageBytes = Convert.FromBase64String(b64);
             }
 
-            if (imageBytes.Length == 0) return null;
+            if (imageBytes.Length == 0) return (null, null);
 
             var byteArrayContent = new ByteArrayContent(imageBytes);
             byteArrayContent.Headers.ContentType = MediaTypeHeaderValue.Parse("image/png");
@@ -400,7 +441,7 @@ namespace AssetAutomator.Application.Services.Providers
             var response = await _httpClient.SendAsync(request);
             string responseContent = await response.Content.ReadAsStringAsync();
 
-            if (!response.IsSuccessStatusCode) return null;
+            if (!response.IsSuccessStatusCode) return (null, responseContent);
 
             using var doc = JsonDocument.Parse(responseContent);
             var root = doc.RootElement;
@@ -409,11 +450,13 @@ namespace AssetAutomator.Application.Services.Providers
                 var firstItem = dataArr[0];
                 if (firstItem.TryGetProperty("media_id", out var mediaIdProp))
                 {
-                    return mediaIdProp.GetString();
+                    return (mediaIdProp.GetString(), responseContent);
                 }
             }
 
-            return null;
+            // Response is OK but missing media_id; surface the JSON so the caller can still
+            // attempt to use the image payload as a fallback.
+            return (null, responseContent);
         }
 
         private async Task HandleOpenAiResponseAsync(BatchImageItem item, string jsonResponse, string outputDirectory, SynchronizationContext? uiContext)
