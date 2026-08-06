@@ -29,8 +29,8 @@ echo -e "${CYAN}Đang đóng gói phiên bản: v${VERSION}${NC}"
 
 # 1. Định nghĩa các đường dẫn
 PROJECT_ROOT=$(pwd)
-UI_PROJECT_PATH="$PROJECT_ROOT/src/AssetAutomator.UI/AssetAutomator.UI.csproj"
-PUBLISH_DIR="$PROJECT_ROOT/src/AssetAutomator.UI/bin/Release/net10.0-windows/win-x64/publish"
+UI_PROJECT_PATH="$PROJECT_ROOT/src/AssetAutomator.WinUI/AssetAutomator.WinUI.csproj"
+PUBLISH_DIR="$PROJECT_ROOT/src/AssetAutomator.WinUI/bin/Release/net10.0-windows10.0.26100.0/win-x64/publish"
 PACKAGE_OUT_DIR="$PROJECT_ROOT/dist_package"
 ZIP_FILE="$PROJECT_ROOT/AssetAutomator_v${VERSION}.zip"
 
@@ -58,6 +58,66 @@ dotnet publish "$UI_PROJECT_PATH" -c Release -r win-x64 --self-contained true -p
 echo -e "${GREEN}Đang chuẩn bị thư mục package...${NC}"
 mkdir -p "$PACKAGE_OUT_DIR"
 cp -r "$PUBLISH_DIR"/. "$PACKAGE_OUT_DIR/"
+
+# 5b. Copy Modules/ folder từ repo root vào package
+#     CRITICAL: Modules chứa Gemini-API-2.0.0/server.py và google-flow-2.0.0/ — không có thì app crash khi khởi động Python server
+MODULES_SRC="$PROJECT_ROOT/Modules"
+if [ -d "$MODULES_SRC" ]; then
+    echo -e "${GREEN}Đang copy Modules/ vào package...${NC}"
+    cp -r "$MODULES_SRC" "$PACKAGE_OUT_DIR/Modules"
+    echo -e "  ${DARK_YELLOW}Da copy Modules/ thanh cong.${NC}"
+
+    MODULE_PKG_DIR="$PACKAGE_OUT_DIR/Modules"
+
+    # 5c. Dọn dev artifacts khỏi Modules/ — cookies, test data KHONG release
+    for f in \
+        "$MODULE_PKG_DIR/Gemini-API-2.0.0/cookies.json" \
+        "$MODULE_PKG_DIR/google-flow-2.0.0/cookies.json" \
+        "$MODULE_PKG_DIR/Gemini-API-2.0.0/transcript.txt" \
+        "$MODULE_PKG_DIR/Gemini-API-2.0.0/scratch" \
+        "$MODULE_PKG_DIR/Gemini-API-2.0.0/tests" \
+        "$MODULE_PKG_DIR/Gemini-API-2.0.0/test_cli.py" \
+        "$MODULE_PKG_DIR/Gemini-API-2.0.0/test_client_features.py" \
+        "$MODULE_PKG_DIR/Gemini-API-2.0.0/test_deep_research.py" \
+        "$MODULE_PKG_DIR/Gemini-API-2.0.0/test_gem_mixin.py" \
+        "$MODULE_PKG_DIR/Gemini-API-2.0.0/test_metadata_isolation.py" \
+        "$MODULE_PKG_DIR/Gemini-API-2.0.0/test_save_image.py" \
+        "$MODULE_PKG_DIR/Gemini-API-2.0.0/convert-cookies.py" \
+        "$MODULE_PKG_DIR/google-flow-2.0.0/scratch" \
+        "$MODULE_PKG_DIR/google-flow-2.0.0/tests" \
+        "$MODULE_PKG_DIR/google-flow-2.0.0/examples" \
+        "$MODULE_PKG_DIR/google-flow-2.0.0/test_api_fixed.py" \
+        "$MODULE_PKG_DIR/google-flow-2.0.0/test_flow_ext.py" \
+        "$MODULE_PKG_DIR/google-flow-2.0.0/update.md" \
+        "$MODULE_PKG_DIR/google-flow-2.0.0/ARCHITECTURE*.md" \
+        "$MODULE_PKG_DIR/google-flow-2.0.0/README-ar.md" \
+        "$MODULE_PKG_DIR/google-flow-2.0.0/CHANGELOG_LOCAL.txt" \
+        "$MODULE_PKG_DIR/google-flow-2.0.0/install.bat" \
+        "$MODULE_PKG_DIR/google-flow-2.0.0/start-flow*.bat" \
+        "$MODULE_PKG_DIR/google-flow-2.0.0/config.toml"
+    do
+        # shellcheck disable=SC2086
+        for item in $f; do
+            if [ -e "$item" ]; then
+                rm -rf "$item"
+                echo -e "  ${DARK_YELLOW}Da xoa: $item${NC}"
+            fi
+        done
+    done
+
+    # 5d. Dọn cross-platform Playwright binaries — chi can Windows, tiet kiem ~477MB
+    PLAYWRIGHT_DIR="$PACKAGE_OUT_DIR/.playwright/node"
+    for plat in darwin-arm64 darwin-x64 linux-arm64 linux-x64; do
+        PLAT_PATH="$PLAYWRIGHT_DIR/$plat"
+        if [ -d "$PLAT_PATH" ]; then
+            size=$(du -sm "$PLAT_PATH" 2>/dev/null | cut -f1)
+            rm -rf "$PLAT_PATH"
+            echo -e "  ${DARK_YELLOW}Da xoa Playwright platform: $plat (${size} MB)${NC}"
+        fi
+    done
+else
+    echo -e "${RED}WARNING: Khong tim thay thu muc Modules/ tai repo root!${NC}"
+fi
 
 # 6. Dọn dẹp cache và thông tin cá nhân
 echo -e "${YELLOW}Đang dọn dẹp các tệp cấu hình cá nhân và cache...${NC}"
@@ -96,6 +156,13 @@ fi
 echo ""
 echo -e "${CYAN}=== ĐÓNG GÓI HOÀN TẤT ===${NC}"
 echo -e "${CYAN}File đóng gói tại: $ZIP_FILE${NC}"
+
+# 7b. Copy update.xml vào package directory (nếu đã có sẵn) — AutoUpdater cần file này trong zip
+UPDATE_XML_SRC="$PROJECT_ROOT/update.xml"
+if [ -f "$UPDATE_XML_SRC" ]; then
+    cp -f "$UPDATE_XML_SRC" "$PACKAGE_OUT_DIR/update.xml"
+    echo -e "${CYAN}Da copy update.xml vao package.${NC}"
+fi
 
 # 8. Cập nhật file update.xml cho AutoUpdater
 echo -e "${GREEN}Đang cập nhật file update.xml cho AutoUpdater...${NC}"
