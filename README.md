@@ -40,7 +40,6 @@ src/
 Modules/                           Gemini API và Google Flow Python modules
 tools/                             Setup, diagnostics và smoke-test scripts
 docs/                              Tài liệu hiện hành
-improve-docs/                      Lịch sử các đợt cải tiến cũ
 ```
 
 ## Tài liệu

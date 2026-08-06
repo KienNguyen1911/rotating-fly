@@ -22,8 +22,6 @@ Tài liệu trong thư mục này phản ánh trạng thái mã nguồn được
 
 - `FLOW-API.md`: tài liệu tích hợp Google Flow API chuyên sâu.
 - `docs/FLOW-FlowLocal-AutoStart.md`: ghi chú luồng tự khởi động Flow Local.
-- `improve-docs/`: lịch sử các đợt refactor P1–P4. Một số trạng thái trong đó đã lỗi thời sau migration WinUI.
-- `winui3-port/`, `WINUI3_PLAN.md`, `WINUI3_CHECKLIST.md`: hồ sơ migration, không phải hướng dẫn vận hành hiện tại.
 
 ## Quy tắc cập nhật docs
 

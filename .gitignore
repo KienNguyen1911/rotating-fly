@@ -64,3 +64,26 @@ logs/
 *_debug.png
 appsettings.json
 free-proxies.json
+
+# MSBuild / dotnet build diagnostics
+*.binlog
+msbuild.log
+xc_diag.log
+xc_out.log
+xaml_error.txt
+
+# Ad-hoc test/debug scripts and logs (kept out of repo)
+test_*.py
+test_*.ps1
+test_*.js
+*_test.js
+console-*.js
+*.html
+flow-ext.log
+uv-job.log
+uv2.log
+_*repro*.ps1
+_*list*.ps1
+_*kill*.ps1
+_*restart*.ps1
+_*fix-*.ps1
