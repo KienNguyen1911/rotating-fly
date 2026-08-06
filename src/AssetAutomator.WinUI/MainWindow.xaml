@@ -49,24 +49,14 @@
                         OpenPaneLength="240"
                         SelectionChanged="NavView_SelectionChanged">
             <NavigationView.MenuItems>
-                <NavigationViewItem Content="Automation Tasks" Tag="tasks">
+                <NavigationViewItem Content="Gemini AI Creator" Tag="gemini">
                     <NavigationViewItem.Icon>
-                        <FontIcon Glyph="&#xE9F9;" />
-                    </NavigationViewItem.Icon>
-                </NavigationViewItem>
-                <NavigationViewItem Content="Image Pool" Tag="pool">
-                    <NavigationViewItem.Icon>
-                        <FontIcon Glyph="&#xE8B7;" />
+                        <FontIcon Glyph="&#xE945;" />
                     </NavigationViewItem.Icon>
                 </NavigationViewItem>
                 <NavigationViewItem Content="Chrome Profiles" Tag="profiles">
                     <NavigationViewItem.Icon>
                         <FontIcon Glyph="&#xE7F4;" />
-                    </NavigationViewItem.Icon>
-                </NavigationViewItem>
-                <NavigationViewItem Content="Gemini AI Creator" Tag="gemini">
-                    <NavigationViewItem.Icon>
-                        <FontIcon Glyph="&#xE945;" />
                     </NavigationViewItem.Icon>
                 </NavigationViewItem>
                 <NavigationViewItem Content="Batch Image Gen" Tag="batch">

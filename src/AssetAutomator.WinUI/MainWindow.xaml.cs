@@ -29,7 +29,7 @@ public sealed partial class MainWindow : Window
         ExtendIntoTitleBar();
 
         NavView.SelectedItem = NavView.MenuItems[0];
-        ContentFrame.Navigate(typeof(TasksPage));
+        ContentFrame.Navigate(typeof(GeminiPage));
 
         this.Closed += MainWindow_Closed;
         this.Activated += MainWindow_Activated;
@@ -123,6 +123,14 @@ public sealed partial class MainWindow : Window
     public void SetTheme(ElementTheme theme)
     {
         RootGrid.RequestedTheme = theme;
+    }
+
+    /// <summary>
+    /// Returns the currently active theme from RootGrid.
+    /// </summary>
+    public ElementTheme GetCurrentTheme()
+    {
+        return RootGrid.RequestedTheme;
     }
 
     /// <summary>Opens the License dialog. Invoked from SettingsPage.</summary>
@@ -249,12 +257,6 @@ public sealed partial class MainWindow : Window
         {
             switch (item.Tag as string)
             {
-                case "tasks":
-                    ContentFrame.Navigate(typeof(TasksPage));
-                    break;
-                case "pool":
-                    ContentFrame.Navigate(typeof(PoolPage));
-                    break;
                 case "profiles":
                     ContentFrame.Navigate(typeof(ProfilesPage));
                     break;

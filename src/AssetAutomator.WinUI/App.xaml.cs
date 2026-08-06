@@ -157,16 +157,6 @@ public partial class App : Microsoft.UI.Xaml.Application
                 // Microsoft.Extensions.DependencyInjection ActivatorUtilities
                 // behavior + Stack Overflow #60379123). Explicit factories below
                 // force each dependency to be resolved via GetRequiredService.
-                services.AddTransient<ViewModels.TasksViewModel>(sp => new ViewModels.TasksViewModel(
-                    sp.GetRequiredService<PipelineOrchestrator>(),
-                    sp.GetRequiredService<HistoryService>(),
-                    sp.GetRequiredService<ILogService>(),
-                    sp.GetRequiredService<IConfigService>()
-                ));
-                services.AddTransient<ViewModels.PoolViewModel>(sp => new ViewModels.PoolViewModel(
-                    sp.GetRequiredService<ImagePoolService>(),
-                    sp.GetRequiredService<IConfigService>()
-                ));
                 services.AddTransient<ViewModels.ProfilesViewModel>(sp => new ViewModels.ProfilesViewModel(
                     sp.GetRequiredService<BrowserService>(),
                     sp.GetRequiredService<IConfigService>(),

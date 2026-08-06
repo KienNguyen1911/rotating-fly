@@ -28,8 +28,62 @@
         <Setter Property="UseSystemFocusVisuals" Value="True" />
     </Style>
 
+    <!-- Hover state: ensure text stays visible in both light and dark themes -->
+    <Style x:Key="Button.Base.Hover" TargetType="Button" BasedOn="{StaticResource Button.Base}">
+        <Setter Property="Background" Value="{ThemeResource Surface.HoverBrush}" />
+        <Setter Property="Foreground" Value="{ThemeResource Content.PrimaryBrush}" />
+    </Style>
+
     <!-- Implicit default for every Button. -->
-    <Style TargetType="Button" BasedOn="{StaticResource Button.Base}" />
+    <Style x:Key="Button.Default" TargetType="Button" BasedOn="{StaticResource Button.Base}">
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Grid>
+                        <VisualStateManager.VisualStateGroups>
+                            <VisualStateGroup x:Name="CommonStates">
+                                <VisualState x:Name="Normal">
+                                    <VisualState.Setters>
+                                        <Setter Target="RootGrid.(UIElement.Opacity)" Value="1" />
+                                    </VisualState.Setters>
+                                </VisualState>
+                                <VisualState x:Name="PointerOver">
+                                    <VisualState.Setters>
+                                        <Setter Target="RootGrid.Background" Value="{ThemeResource Surface.HoverBrush}" />
+                                        <Setter Target="ContentPresenter.Foreground" Value="{ThemeResource Content.PrimaryBrush}" />
+                                    </VisualState.Setters>
+                                </VisualState>
+                                <VisualState x:Name="Pressed">
+                                    <VisualState.Setters>
+                                        <Setter Target="RootGrid.Background" Value="{ThemeResource Surface.StrongBrush}" />
+                                        <Setter Target="ContentPresenter.Foreground" Value="{ThemeResource Content.PrimaryBrush}" />
+                                    </VisualState.Setters>
+                                </VisualState>
+                                <VisualState x:Name="Disabled">
+                                    <VisualState.Setters>
+                                        <Setter Target="RootGrid.Opacity" Value="0.5" />
+                                    </VisualState.Setters>
+                                </VisualState>
+                            </VisualStateGroup>
+                        </VisualStateManager.VisualStateGroups>
+                        <Grid x:Name="RootGrid" Background="{TemplateBinding Background}"
+                              BorderBrush="{TemplateBinding BorderBrush}"
+                              BorderThickness="{TemplateBinding BorderThickness}"
+                              CornerRadius="{TemplateBinding CornerRadius}"
+                              Padding="{TemplateBinding Padding}">
+                            <ContentPresenter x:Name="ContentPresenter"
+                                              HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                              VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                                              Foreground="{TemplateBinding Foreground}" />
+                        </Grid>
+                    </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Apply default button style -->
+    <Style TargetType="Button" BasedOn="{StaticResource Button.Default}" />
 
     <!-- Accent / primary call-to-action (maps to WPF PrimaryButton). -->
     <Style x:Key="PrimaryButton" TargetType="Button" BasedOn="{StaticResource Button.Base}">

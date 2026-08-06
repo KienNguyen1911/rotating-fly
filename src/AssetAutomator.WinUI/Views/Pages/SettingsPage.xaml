@@ -41,13 +41,6 @@
                     <StackPanel Spacing="14">
                         <TextBlock Text="API Keys &amp; Credentials" Style="{ThemeResource SubtitleTextBlockStyle}" />
 
-                        <!-- OpenAI / Gemini API Key -->
-                        <StackPanel Spacing="6">
-                            <TextBlock Text="OpenAI / Gemini API Key" Style="{ThemeResource CaptionTextBlockStyle}" Opacity="0.7" />
-                            <PasswordBox x:Name="PbApiKey"
-                                         PlaceholderText="sk-..." />
-                        </StackPanel>
-
                         <!-- AI84 API Key (with Check Key button) -->
                         <StackPanel Spacing="6">
                             <TextBlock Text="AI84 API Key" Style="{ThemeResource CaptionTextBlockStyle}" Opacity="0.7" />
@@ -62,13 +55,6 @@
                                         Content="Kiểm tra Key"
                                         Command="{Binding CheckAi84KeyCommand}" />
                             </Grid>
-                        </StackPanel>
-
-                        <!-- Supabase DB URL -->
-                        <StackPanel Spacing="6">
-                            <TextBlock Text="Supabase DB URL" Style="{ThemeResource CaptionTextBlockStyle}" Opacity="0.7" />
-                            <PasswordBox x:Name="PbSupabaseDbUrl"
-                                         PlaceholderText="https://xyz.supabase.co..." />
                         </StackPanel>
 
                         <!-- Image API URL -->
@@ -155,8 +141,6 @@
                             <TextBlock Text="Số luồng chạy song song tối đa (Max Concurrent Threads):" Style="{ThemeResource CaptionTextBlockStyle}" Opacity="0.7" />
                             <NumberBox Value="{Binding MaxConcurrentThreads, Mode=TwoWay}" Minimum="1" Maximum="16" SmallChange="1" LargeChange="2" Width="140" HorizontalAlignment="Left" />
                         </StackPanel>
-
-                        <CheckBox IsChecked="{Binding EnableHeadless, Mode=TwoWay}" Content="Chạy Trình duyệt ở chế độ An danh / Headless Mode" Margin="0,8,0,0" />
                     </StackPanel>
                 </Border>
             </Grid>
@@ -197,7 +181,6 @@
                         <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
                             <TextBlock Text="Giao diện (Theme):" VerticalAlignment="Center" FontSize="13" />
                             <ToggleSwitch x:Name="ThemeToggle"
-                                          IsOn="True"
                                           OffContent="Light"
                                           OnContent="Dark"
                                           Toggled="ThemeToggle_Toggled" />

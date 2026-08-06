@@ -89,6 +89,19 @@ namespace AssetAutomator.Application.Services
             return string.Empty;
         }
 
+        private static string? FindRepoRoot()
+        {
+            string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+            DirectoryInfo? dir = new DirectoryInfo(baseDir);
+            for (int i = 0; i < 8 && dir != null; i++)
+            {
+                string gitDir = Path.Combine(dir.FullName, ".git");
+                if (Directory.Exists(gitDir)) return dir.FullName;
+                dir = dir.Parent;
+            }
+            return null;
+        }
+
         private const string DefaultUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36";
 
         private static readonly HashSet<string> PreferredCookieNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
@@ -330,13 +343,29 @@ namespace AssetAutomator.Application.Services
 
         private async Task SaveCookiesJsonContentAsync(string savePath, string jsonContent)
         {
-            // SECURITY: Only write inside the app's BaseDirectory tree.
-            // Never follow parent traversals (..) that escape the app directory.
-            // This prevents cookies from being written to arbitrary locations
-            // if the app is run from an unexpected path.
+            // SECURITY: Only write inside the app's BaseDirectory tree or repo root tree.
+            // The app may be resolving cookies.json to the repo root (via FindServerScriptDirectory
+            // walking up from the bin output folder). We allow that since the walk is constrained
+            // to parent directories only — no external paths, symlinks, or reflection.
+            // Never follow parent traversals (..) that escape the repo root.
             string baseDir = AppDomain.CurrentDomain.BaseDirectory;
             string canonicalSave = Path.GetFullPath(savePath);
-            if (!canonicalSave.StartsWith(baseDir, StringComparison.OrdinalIgnoreCase))
+
+            bool isAllowed = canonicalSave.StartsWith(baseDir, StringComparison.OrdinalIgnoreCase);
+
+            if (!isAllowed)
+            {
+                // Also allow writes inside the repo root (where .git lives) — this covers
+                // the dev scenario where bin output is nested but cookies.json needs to
+                // land next to server.py at the repo root.
+                string? repoRoot = FindRepoRoot();
+                if (!string.IsNullOrEmpty(repoRoot))
+                {
+                    isAllowed = canonicalSave.StartsWith(repoRoot, StringComparison.OrdinalIgnoreCase);
+                }
+            }
+
+            if (!isAllowed)
             {
                 _log($"[COOKIE-SYNC] SECURITY: Refused to write cookies outside app directory. Target: {savePath}");
                 throw new InvalidOperationException(
@@ -387,8 +416,15 @@ namespace AssetAutomator.Application.Services
                 if (string.Equals(canonicalFull, altFull, StringComparison.OrdinalIgnoreCase))
                     return;
 
-                // SECURITY: Only write if the alternate path is inside the app tree.
-                if (!altFull.StartsWith(baseDir, StringComparison.OrdinalIgnoreCase))
+                // SECURITY: Only write if the alternate path is inside the app tree or repo root.
+                string? repoRoot = FindRepoRoot();
+                bool isAllowedAlt = altFull.StartsWith(baseDir, StringComparison.OrdinalIgnoreCase);
+                if (!isAllowedAlt && !string.IsNullOrEmpty(repoRoot))
+                {
+                    isAllowedAlt = altFull.StartsWith(repoRoot, StringComparison.OrdinalIgnoreCase);
+                }
+
+                if (!isAllowedAlt)
                 {
                     _log($"[COOKIE-SYNC] SECURITY: Skipping mirror to external path: {altPath}");
                     return;
@@ -421,11 +457,17 @@ namespace AssetAutomator.Application.Services
                 string primaryFull = Path.GetFullPath(primarySavePath);
                 string baseDir = AppDomain.CurrentDomain.BaseDirectory;
 
-                // SECURITY: Only mirror to locations inside the app tree.
+                // SECURITY: Only mirror to locations inside the app tree or repo root.
                 string altBinPath = Path.Combine(baseDir, "Modules", "Gemini-API-2.0.0", "cookies.json");
                 string altBinFull = Path.GetFullPath(altBinPath);
+                string? repoRoot = FindRepoRoot();
+                bool isAllowedBin = altBinFull.StartsWith(baseDir, StringComparison.OrdinalIgnoreCase);
+                if (!isAllowedBin && !string.IsNullOrEmpty(repoRoot))
+                {
+                    isAllowedBin = altBinFull.StartsWith(repoRoot, StringComparison.OrdinalIgnoreCase);
+                }
 
-                if (altBinFull.StartsWith(baseDir, StringComparison.OrdinalIgnoreCase) &&
+                if (isAllowedBin &&
                     !string.Equals(primaryFull, altBinFull, StringComparison.OrdinalIgnoreCase) &&
                     Directory.Exists(Path.GetDirectoryName(altBinPath)))
                 {

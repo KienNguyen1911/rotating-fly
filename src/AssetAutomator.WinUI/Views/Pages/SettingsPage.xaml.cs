@@ -11,6 +11,7 @@ namespace AssetAutomator.WinUI.Views.Pages;
 public sealed partial class SettingsPage : Page
 {
     public SettingsViewModel ViewModel { get; }
+    private bool _isThemeToggleInitialized = false;
 
     public SettingsPage()
     {
@@ -19,30 +20,26 @@ public sealed partial class SettingsPage : Page
         DataContext = ViewModel;
 
         // Populate PasswordBox controls on page load
-        PbApiKey.Password = ViewModel.ApiKey ?? string.Empty;
         PbAi84ApiKey.Password = ViewModel.Ai84ApiKey ?? string.Empty;
-        PbSupabaseDbUrl.Password = ViewModel.SupabaseDbUrl ?? string.Empty;
         PbImageApiKey.Password = ViewModel.ImageApiKey ?? string.Empty;
 
         // Wire PasswordChanged events to sync back to ViewModel
-        PbApiKey.PasswordChanged += (s, e) => ViewModel.ApiKey = PbApiKey.Password;
         PbAi84ApiKey.PasswordChanged += (s, e) => ViewModel.Ai84ApiKey = PbAi84ApiKey.Password;
-        PbSupabaseDbUrl.PasswordChanged += (s, e) => ViewModel.SupabaseDbUrl = PbSupabaseDbUrl.Password;
         PbImageApiKey.PasswordChanged += (s, e) => ViewModel.ImageApiKey = PbImageApiKey.Password;
 
         // Refresh PasswordBox controls when settings are imported
         ViewModel.SettingsImported += (s, e) =>
         {
-            PbApiKey.Password = ViewModel.ApiKey ?? string.Empty;
             PbAi84ApiKey.Password = ViewModel.Ai84ApiKey ?? string.Empty;
-            PbSupabaseDbUrl.Password = ViewModel.SupabaseDbUrl ?? string.Empty;
             PbImageApiKey.Password = ViewModel.ImageApiKey ?? string.Empty;
         };
 
         // Sync toggle with current theme at load time.
         if (App.MainWindowInstance is MainWindow mw)
         {
+            _isThemeToggleInitialized = true;
             ThemeToggle.IsOn = mw.Content is FrameworkElement fe && fe.RequestedTheme == ElementTheme.Dark;
+            _isThemeToggleInitialized = false;
         }
     }
 
@@ -59,9 +56,15 @@ public sealed partial class SettingsPage : Page
 
     private void ThemeToggle_Toggled(object sender, RoutedEventArgs e)
     {
+        if (_isThemeToggleInitialized) return;
+
         if (App.MainWindowInstance is MainWindow mw)
         {
-            mw.SetTheme(ThemeToggle.IsOn ? ElementTheme.Dark : ElementTheme.Light);
+            var newTheme = ThemeToggle.IsOn ? ElementTheme.Dark : ElementTheme.Light;
+            if (mw.GetCurrentTheme() != newTheme)
+            {
+                mw.SetTheme(newTheme);
+            }
         }
     }
 }
