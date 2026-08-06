@@ -189,10 +189,12 @@
              while the user is configuring or watching logs for a selected task. -->
         <Grid Grid.Row="2" ColumnSpacing="{x:Bind ViewModel.IsDetailPanelVisible, Mode=OneWay, Converter={StaticResource BoolToDoubleConverter}, ConverterParameter=12}">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*" MinWidth="500" />
+                <ColumnDefinition x:Name="TasksColumn"
+                                  Width="*"
+                                  MinWidth="500" />
                 <ColumnDefinition x:Name="DetailPanelColumn"
-                                  Width="0"
-                                  MinWidth="380"
+                                  Width="{x:Bind ViewModel.EffectiveDetailColumnWidth, Mode=OneWay, Converter={StaticResource DoubleToGridLengthConverter}}"
+                                  MinWidth="0"
                                   MaxWidth="900" />
             </Grid.ColumnDefinitions>
 
@@ -239,7 +241,8 @@
                               x:Name="LstGeminiTasks"
                               ItemsSource="{x:Bind ViewModel.GeminiTasks, Mode=OneWay}"
                               SelectionMode="Single"
-                              PointerPressed="LstGeminiTasks_PointerPressed"
+                              IsItemClickEnabled="True"
+                              ItemClick="LstGeminiTasks_ItemClick"
                               SelectedItem="{x:Bind ViewModel.SelectedTask, Mode=TwoWay}"
                               SelectionChanged="LstGeminiTasks_SelectionChanged">
                             <ListView.ItemContainerStyle>
@@ -329,14 +332,20 @@
                     Visibility="{x:Bind ViewModel.IsDetailPanelVisible, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
 
                 <Grid>
-                    <!-- Resize grip on the LEFT edge of the detail panel -->
-                    <controls:ResizableDragHandle Width="8"
+                    <!-- Resize grip on the LEFT edge of the detail panel.
+                         Uses Manipulation events instead of Pointer* events because pointer
+                         events on a transparent Grid in WinUI 3 are occasionally swallowed
+                         by ancestor templates; manipulation events are more reliable for
+                         the drag gesture. -->
+                    <controls:ResizableDragHandle x:Name="DetailPanelResizeHandle"
+                                                  Width="10"
                                                   HorizontalAlignment="Left"
                                                   VerticalAlignment="Stretch"
                                                   Background="Transparent"
-                                                  PointerPressed="DetailPanelDragHandle_PointerPressed"
-                                                  PointerMoved="DetailPanelDragHandle_PointerMoved"
-                                                  PointerReleased="DetailPanelDragHandle_PointerReleased"
+                                                  ManipulationMode="TranslateX"
+                                                  ManipulationStarted="DetailPanelResizeHandle_ManipulationStarted"
+                                                  ManipulationDelta="DetailPanelResizeHandle_ManipulationDelta"
+                                                  ManipulationCompleted="DetailPanelResizeHandle_ManipulationCompleted"
                                                   Canvas.ZIndex="10" />
 
                     <Grid Margin="12">

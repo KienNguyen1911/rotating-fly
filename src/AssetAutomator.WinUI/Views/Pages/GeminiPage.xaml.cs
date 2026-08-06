@@ -30,49 +30,18 @@ public sealed partial class GeminiPage : Page
         // Auto-scroll console logs to bottom whenever content changes
         ConsoleLogsTextBox.TextChanged += ConsoleLogsTextBox_TextChanged;
 
-        // Start with detail panel collapsed (Width=0) so the tasks table gets full width.
-        ViewModel.IsDetailPanelVisible = false;
-        DetailPanelColumn.Width = new GridLength(0);
-
-        // Keep the detail column width in sync with the ViewModel flag. Switching to a Star
-        // column when visible lets the user resize freely while keeping auto-collapse when hidden.
-        ViewModel.PropertyChanged += GeminiViewModel_PropertyChanged;
-
         Loaded += GeminiPage_Loaded;
         Unloaded += GeminiPage_Unloaded;
     }
 
     private void GeminiPage_Loaded(object sender, RoutedEventArgs e)
     {
-        SyncDetailColumnWidth();
+        // Column widths are now bound declaratively in XAML to
+        // ViewModel.EffectiveDetailColumnWidth, so no imperative sync is needed.
     }
 
     private void GeminiPage_Unloaded(object sender, RoutedEventArgs e)
     {
-        ViewModel.PropertyChanged -= GeminiViewModel_PropertyChanged;
-    }
-
-    private void GeminiViewModel_PropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
-    {
-        if (e.PropertyName == nameof(GeminiViewModel.IsDetailPanelVisible)
-            || e.PropertyName == nameof(GeminiViewModel.DetailPanelWidth))
-        {
-            SyncDetailColumnWidth();
-        }
-    }
-
-    private void SyncDetailColumnWidth()
-    {
-        if (ViewModel.IsDetailPanelVisible)
-        {
-            DetailPanelColumn.Width = new GridLength(ViewModel.DetailPanelWidth);
-            DetailPanelColumn.MinWidth = 380;
-        }
-        else
-        {
-            DetailPanelColumn.Width = new GridLength(0);
-            DetailPanelColumn.MinWidth = 0;
-        }
     }
 
     private void LstGeminiTasks_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -86,39 +55,18 @@ public sealed partial class GeminiPage : Page
         }
     }
 
-    private void LstGeminiTasks_PointerPressed(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
+    /// <summary>
+    /// Fired by the ListView when the user clicks *any* row — including the row that is
+    /// already selected. This is the only event that reliably fires on a same-row click,
+    /// because WinUI suppresses <see cref="LstGeminiTasks_SelectionChanged"/> when
+    /// SelectedItem has not actually changed. We keep this handler minimal: it only
+    /// (re-)opens the detail panel and rebuilds its content. The underlying SelectedTask
+    /// is left alone so we don't fight the binding when the click came from the already-
+    /// selected row.
+    /// </summary>
+    private void LstGeminiTasks_ItemClick(object sender, ItemClickEventArgs e)
     {
-        // GetCurrentPoint returns the raw pointer state. Properties.HelpKind will be
-        // e.Pointer.PointerDeviceType, but we only care about the *click* pattern,
-        // not hover/move events. The PointerPressed event only fires on a press, so
-        // this is fine.
-        var point = e.GetCurrentPoint(LstGeminiTasks);
-        // Only act on true left-button clicks. Right-click should bubble for context menu.
-        if (!point.Properties.IsLeftButtonPressed) return;
-
-        // Walk the visual tree to find which row was clicked. Because ListView recycles
-        // containers, the FindVisualChild path here must look UP the tree from the
-        // original source until we hit a ListViewItem, then pull the GeminiTaskModel from
-        // its DataContext.
-        if (e.OriginalSource is not DependencyObject src) return;
-        var lvi = FindAncestor<ListViewItem>(src);
-        if (lvi?.DataContext is not GeminiTaskModel task) return;
-
-        // If the click landed on an interactive control inside the row (the IsSelected
-        // CheckBox, the Topic TextBox), don't hijack it — the user is editing.
-        if (e.OriginalSource is DependencyObject orig)
-        {
-            DependencyObject? current = orig;
-            while (current != null && current != lvi)
-            {
-                if (current is TextBox or CheckBox or ComboBox or Button)
-                {
-                    return;
-                }
-                current = Microsoft.UI.Xaml.Media.VisualTreeHelper.GetParent(current);
-            }
-        }
-
+        if (e.ClickedItem is not GeminiTaskModel task) return;
         OpenDetailPanelFor(task);
     }
 
@@ -128,17 +76,6 @@ public sealed partial class GeminiPage : Page
         ViewModel.ActiveDetailTab = GeminiViewModel.DetailTab.Configuration;
         TaskDetailsContentHost.Content = BuildRowDetailsContent(task);
         ViewModel.IsDetailPanelVisible = true;
-    }
-
-    private static T? FindAncestor<T>(DependencyObject start) where T : DependencyObject
-    {
-        DependencyObject? current = start;
-        while (current != null)
-        {
-            if (current is T match) return match;
-            current = Microsoft.UI.Xaml.Media.VisualTreeHelper.GetParent(current);
-        }
-        return null;
     }
 
     private void ConsoleLogsTextBox_TextChanged(object sender, TextChangedEventArgs e)
@@ -465,27 +402,22 @@ public sealed partial class GeminiPage : Page
     private double _detailDragStartX;
     private double _detailDragStartWidth;
 
-    private void DetailPanelDragHandle_PointerPressed(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
+    private void DetailPanelResizeHandle_ManipulationStarted(object sender, Microsoft.UI.Xaml.Input.ManipulationStartedRoutedEventArgs e)
     {
-        var pp = e.GetCurrentPoint(DetailPanelRoot);
-        if (!pp.Properties.IsLeftButtonPressed) return;
         _isDraggingDetailPanel = true;
-        _detailDragStartX = e.GetCurrentPoint(PageRoot).Position.X;
+        _detailDragStartX = e.Position.X;
         _detailDragStartWidth = ViewModel.DetailPanelWidth;
-        ((UIElement)sender).CapturePointer(e.Pointer);
-        e.Handled = true;
     }
 
-    private void DetailPanelDragHandle_PointerMoved(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
+    private void DetailPanelResizeHandle_ManipulationDelta(object sender, Microsoft.UI.Xaml.Input.ManipulationDeltaRoutedEventArgs e)
     {
         if (!_isDraggingDetailPanel) return;
 
-        double currentX = e.GetCurrentPoint(PageRoot).Position.X;
         // Drag handle is on the LEFT edge of the detail panel.
-        // Dragging RIGHT (cursor moves away from panel) → expand (delta positive).
-        // Dragging LEFT  (cursor moves toward panel)  → shrink  (delta negative).
-        // Using "minus" so positive delta = bigger panel, negative delta = smaller panel.
-        double delta = currentX - _detailDragStartX;
+        // The panel's right edge is anchored to the page; only the left edge moves.
+        // So pulling the handle RIGHT moves the left edge right → panel gets NARROWER.
+        //    pulling the handle LEFT  moves the left edge left  → panel gets WIDER.
+        double delta = e.Cumulative.Translation.X;
         double newWidth = _detailDragStartWidth - delta;
 
         double minW = 380;
@@ -495,12 +427,9 @@ public sealed partial class GeminiPage : Page
         ViewModel.DetailPanelWidth = newWidth;
     }
 
-    private void DetailPanelDragHandle_PointerReleased(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
+    private void DetailPanelResizeHandle_ManipulationCompleted(object sender, Microsoft.UI.Xaml.Input.ManipulationCompletedRoutedEventArgs e)
     {
-        if (!_isDraggingDetailPanel) return;
         _isDraggingDetailPanel = false;
-        ((UIElement)sender).ReleasePointerCapture(e.Pointer);
-        e.Handled = true;
     }
 
     private Flyout BuildRowDetailsFlyout(GeminiTaskModel task)

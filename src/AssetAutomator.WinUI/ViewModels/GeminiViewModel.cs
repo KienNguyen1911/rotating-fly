@@ -106,6 +106,27 @@ public partial class GeminiViewModel : ObservableObject
     [ObservableProperty]
     private double _detailPanelWidth = 520;
 
+    /// <summary>
+    /// Pixel width the detail-panel column should occupy. Resolves to 0 when the
+    /// panel is hidden (so the column collapses and the task table fills the
+    /// available width) and to <see cref="DetailPanelWidth"/> otherwise.
+    /// Binding the <c>ColumnDefinition.Width</c> directly to this property — via
+    /// <c>DoubleToGridLengthConverter</c> — removes the need for code-behind
+    /// bookkeeping on the column's MinWidth.
+    /// </summary>
+    public double EffectiveDetailColumnWidth =>
+        IsDetailPanelVisible ? DetailPanelWidth : 0d;
+
+    partial void OnIsDetailPanelVisibleChanged(bool value)
+    {
+        OnPropertyChanged(nameof(EffectiveDetailColumnWidth));
+    }
+
+    partial void OnDetailPanelWidthChanged(double value)
+    {
+        OnPropertyChanged(nameof(EffectiveDetailColumnWidth));
+    }
+
     [RelayCommand]
     private void CloseDetailPanel()
     {
