@@ -101,14 +101,15 @@ if (Test-Path $modulesSrc) {
         (Join-Path $modulePkgDir "google-flow-2.0.0\start-flow*.bat"),
         (Join-Path $modulePkgDir "google-flow-2.0.0\config.toml")
     )) {
-        Get-Item -Path $pattern -Force -ErrorAction SilentlyContinue | ForEach-Object {
-            if ($_.PSIsContainer) {
-                $size = (Get-Item $_.FullName -Recurse | Measure-Object -Property Length -Sum).Sum / 1MB
-                Remove-Item -Recurse -Force $_.FullName
-                Write-Host "  Da xoa folder: $($_.Name) ({0:N0} MB)" -f [math]::Round($size) -ForegroundColor DarkYellow
+        $items = Get-ChildItem -Path $pattern -Force -ErrorAction SilentlyContinue
+        foreach ($item in $items) {
+            if ($item.PSIsContainer) {
+                $size = (Get-ChildItem $item.FullName -Recurse -Force -ErrorAction SilentlyContinue | Measure-Object -Property Length -Sum).Sum / 1MB
+                Remove-Item -Recurse -Force $item.FullName
+                Write-Host ("  Da xoa folder: {0} ({1:N0} MB)" -f $item.Name, [math]::Round($size)) -ForegroundColor DarkYellow
             } else {
-                Remove-Item -Force $_.FullName
-                Write-Host "  Da xoa file: $($_.Name)" -ForegroundColor DarkYellow
+                Remove-Item -Force $item.FullName
+                Write-Host ("  Da xoa file: {0}" -f $item.Name) -ForegroundColor DarkYellow
             }
         }
     }
@@ -118,9 +119,9 @@ if (Test-Path $modulesSrc) {
     foreach ($plat in @("darwin-arm64", "darwin-x64", "linux-arm64", "linux-x64")) {
         $platPath = Join-Path $playwrightDir $plat
         if (Test-Path $platPath) {
-            $size = (Get-Item $platPath -Recurse | Measure-Object -Property Length -Sum).Sum / 1MB
+            $size = (Get-ChildItem $platPath -Recurse -Force -ErrorAction SilentlyContinue | Measure-Object -Property Length -Sum).Sum / 1MB
             Remove-Item -Recurse -Force $platPath
-            Write-Host "  Da xoa Playwright platform: $plat ({0:N0} MB)" -f [math]::Round($size) -ForegroundColor DarkYellow
+            Write-Host ("  Da xoa Playwright platform: {0} ({1:N0} MB)" -f $plat, [math]::Round($size)) -ForegroundColor DarkYellow
         }
     }
 } else {
