@@ -57,6 +57,9 @@ namespace AssetAutomator.Application.Services
 
         private static string FindServerScriptDirectory()
         {
+            // SECURITY: ONLY walk up from the running app's BaseDirectory.
+            // NEVER follow external paths, symlinks, or use reflection to resolve
+            // arbitrary locations — that can write cookies outside the app tree.
             string baseDir = AppDomain.CurrentDomain.BaseDirectory;
 
             // 1) Same directory tree as the running exe (bin output copy).
@@ -79,24 +82,10 @@ namespace AssetAutomator.Application.Services
                 dir = dir.Parent;
             }
 
-            // 3) Last-ditch: use the exact path PythonServerManager resolves.
-            try
-            {
-                var mgrType = Type.GetType("AssetAutomator.Infrastructure.Helpers.PythonServerManager, AssetAutomator.Infrastructure");
-                if (mgrType != null)
-                {
-                    var mgrInstance = mgrType.GetProperty("Default")?.GetValue(null);
-                    var resolveMethod = mgrType.GetMethod("ResolveServerScriptPath");
-                    if (resolveMethod != null)
-                    {
-                        string? scriptPath = resolveMethod.Invoke(mgrInstance, null) as string;
-                        if (!string.IsNullOrEmpty(scriptPath))
-                            return Path.GetDirectoryName(scriptPath)!;
-                    }
-                }
-            }
-            catch { }
-
+            // SECURITY: Removed reflection fallback — it could resolve paths
+            // outside the app tree and cause cookies to be written to arbitrary
+            // locations on disk. If server.py is not found, return empty so
+            // callers fail fast rather than silently writing to wrong paths.
             return string.Empty;
         }
 
@@ -341,24 +330,41 @@ namespace AssetAutomator.Application.Services
 
         private async Task SaveCookiesJsonContentAsync(string savePath, string jsonContent)
         {
+            // SECURITY: Only write inside the app's BaseDirectory tree.
+            // Never follow parent traversals (..) that escape the app directory.
+            // This prevents cookies from being written to arbitrary locations
+            // if the app is run from an unexpected path.
+            string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+            string canonicalSave = Path.GetFullPath(savePath);
+            if (!canonicalSave.StartsWith(baseDir, StringComparison.OrdinalIgnoreCase))
+            {
+                _log($"[COOKIE-SYNC] SECURITY: Refused to write cookies outside app directory. Target: {savePath}");
+                throw new InvalidOperationException(
+                    $" SECURITY: cookies.json path escapes app directory: {savePath}. " +
+                    $"App base: {baseDir}. Not writing.");
+            }
+
             Directory.CreateDirectory(Path.GetDirectoryName(savePath)!);
             await File.WriteAllTextAsync(savePath, jsonContent);
 
+            // Only mirror to the bin output location if it is INSIDE the app
+            // BaseDirectory tree — never write to external directories.
             try
             {
-                string baseDir = AppDomain.CurrentDomain.BaseDirectory;
-                string rootModulesDir = Path.GetFullPath(Path.Combine(baseDir, "..", "..", "..", "..", "..", "Modules", "Gemini-API-2.0.0"));
-                if (Directory.Exists(rootModulesDir))
+                string altPath = Path.Combine(baseDir, "Modules", "Gemini-API-2.0.0", "cookies.json");
+                string canonicalAlt = Path.GetFullPath(altPath);
+                if (canonicalAlt.StartsWith(baseDir, StringComparison.OrdinalIgnoreCase) &&
+                    !string.Equals(canonicalSave, canonicalAlt, StringComparison.OrdinalIgnoreCase) &&
+                    Directory.Exists(Path.GetDirectoryName(altPath)))
                 {
-                    string rootSavePath = Path.Combine(rootModulesDir, "cookies.json");
-                    if (!string.Equals(Path.GetFullPath(savePath), Path.GetFullPath(rootSavePath), StringComparison.OrdinalIgnoreCase))
-                    {
-                        await File.WriteAllTextAsync(rootSavePath, jsonContent);
-                        _log($"[COOKIE-SYNC] 📁 Đã đồng bộ thêm vào file nguồn gốc: {rootSavePath}");
-                    }
+                    await File.WriteAllTextAsync(altPath, jsonContent);
+                    _log($"[COOKIE-SYNC] Da dong bo cookies.json sang vi tri alternate: {altPath}");
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                _log($"[COOKIE-SYNC] WARNING: Alternate mirror failed (non-fatal): {ex.Message}");
+            }
         }
 
         /// <summary>
@@ -367,27 +373,37 @@ namespace AssetAutomator.Application.Services
         /// that still tries to read cookies.json from AppDomain.BaseDirectory
         /// also gets the latest cookies. No-op when both paths collapse to
         /// the same file.
+        /// SECURITY: Only writes to paths INSIDE the app BaseDirectory tree.
         /// </summary>
         private async Task MirrorToAlternateLocations(string canonicalPath)
         {
             try
             {
                 string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+                string canonicalFull = Path.GetFullPath(canonicalPath);
                 string altPath = Path.Combine(baseDir, "Modules", "Gemini-API-2.0.0", "cookies.json");
-                if (string.Equals(Path.GetFullPath(canonicalPath), Path.GetFullPath(altPath), StringComparison.OrdinalIgnoreCase))
+                string altFull = Path.GetFullPath(altPath);
+
+                if (string.Equals(canonicalFull, altFull, StringComparison.OrdinalIgnoreCase))
                     return;
 
-                if (File.Exists(altPath) || Directory.Exists(Path.GetDirectoryName(altPath)))
+                // SECURITY: Only write if the alternate path is inside the app tree.
+                if (!altFull.StartsWith(baseDir, StringComparison.OrdinalIgnoreCase))
                 {
-                    Directory.CreateDirectory(Path.GetDirectoryName(altPath)!);
+                    _log($"[COOKIE-SYNC] SECURITY: Skipping mirror to external path: {altPath}");
+                    return;
+                }
+
+                if (Directory.Exists(Path.GetDirectoryName(altPath)))
+                {
                     string content = await File.ReadAllTextAsync(canonicalPath);
                     await File.WriteAllTextAsync(altPath, content);
-                    _log($"[COOKIE-SYNC] 🪞 Đã mirror cookies sang bin folder: {altPath}");
+                    _log($"[COOKIE-SYNC] Da dong bo cookies sang bin folder: {altPath}");
                 }
             }
             catch (Exception ex)
             {
-                _log($"[COOKIE-SYNC] ⚠️ Mirror sang bin folder thất bại: {ex.Message}");
+                _log($"[COOKIE-SYNC] WARNING: Mirror to alternate failed (non-fatal): {ex.Message}");
             }
         }
 
@@ -395,6 +411,7 @@ namespace AssetAutomator.Application.Services
         /// Mirror the freshly-written cookies.json to every other well-known
         /// location on disk so the Python server cannot accidentally read
         /// a stale copy. Idempotent — skips paths identical to the source.
+        /// SECURITY: Only writes to paths INSIDE the app BaseDirectory tree.
         /// </summary>
         private void MirrorCookiesToAlternateLocations(string primarySavePath)
         {
@@ -402,41 +419,27 @@ namespace AssetAutomator.Application.Services
             {
                 string content = File.ReadAllText(primarySavePath);
                 string primaryFull = Path.GetFullPath(primarySavePath);
-
-                // Candidate directories that historically held cookies.json
                 string baseDir = AppDomain.CurrentDomain.BaseDirectory;
-                var candidates = new List<string>
+
+                // SECURITY: Only mirror to locations inside the app tree.
+                string altBinPath = Path.Combine(baseDir, "Modules", "Gemini-API-2.0.0", "cookies.json");
+                string altBinFull = Path.GetFullPath(altBinPath);
+
+                if (altBinFull.StartsWith(baseDir, StringComparison.OrdinalIgnoreCase) &&
+                    !string.Equals(primaryFull, altBinFull, StringComparison.OrdinalIgnoreCase) &&
+                    Directory.Exists(Path.GetDirectoryName(altBinPath)))
                 {
-                    // Bin output copy (where most legacy code used to write)
-                    Path.Combine(baseDir, "Modules", "Gemini-API-2.0.0", "cookies.json"),
-                    // Project source root (next to server.py when running
-                    // Python directly from the repo)
-                    Path.GetFullPath(Path.Combine(baseDir, "..", "..", "..", "..", "..", "Modules", "Gemini-API-2.0.0", "cookies.json")),
-                };
-
-                foreach (string alt in candidates)
+                    File.WriteAllText(altBinPath, content);
+                    _log($"[COOKIE-SYNC] Da mirror cookies.json sang: {altBinPath}");
+                }
+                else
                 {
-                    try
-                    {
-                        string altFull = Path.GetFullPath(alt);
-                        if (string.Equals(altFull, primaryFull, StringComparison.OrdinalIgnoreCase)) continue;
-
-                        // Only overwrite if the directory exists or we can create it
-                        string dir = Path.GetDirectoryName(alt)!;
-                        if (!Directory.Exists(dir)) continue;
-
-                        File.WriteAllText(alt, content);
-                        _log($"[COOKIE-SYNC] 🔁 Đã mirror cookies.json sang: {alt}");
-                    }
-                    catch (Exception ex)
-                    {
-                        _log($"[COOKIE-SYNC] ⚠️ Không thể mirror tới {alt}: {ex.Message}");
-                    }
+                    _log($"[COOKIE-SYNC] SECURITY: Skipping mirror to external path: {altBinPath}");
                 }
             }
             catch (Exception ex)
             {
-                _log($"[COOKIE-SYNC] ⚠️ MirrorCookiesToAlternateLocations thất bại: {ex.Message}");
+                _log($"[COOKIE-SYNC] WARNING: MirrorCookiesToAlternateLocations failed (non-fatal): {ex.Message}");
             }
         }
 

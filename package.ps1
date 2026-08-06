@@ -54,6 +54,17 @@ Write-Host "Đang chuẩn bị thư mục package..." -ForegroundColor Green
 New-Item -ItemType Directory -Path $packageOutDir | Out-Null
 Get-ChildItem -Path $publishDir -Force | Copy-Item -Destination $packageOutDir -Recurse -Force
 
+# 5b. Copy Modules/ folder từ repo root vào package
+#     CRITICAL: Modules chứa Gemini-API-2.0.0/server.py và google-flow-2.0.0/ — không có thì app crash khi khởi động Python server
+$modulesSrc = Join-Path $projectRoot "Modules"
+if (Test-Path $modulesSrc) {
+    Write-Host "Đang copy Modules/ vào package..." -ForegroundColor Green
+    Copy-Item -Path $modulesSrc -Destination (Join-Path $packageOutDir "Modules") -Recurse -Force
+    Write-Host "  Da copy Modules/ thanh cong." -ForegroundColor DarkGreen
+} else {
+    Write-Host "  WARNING: Khong tim thay thu muc Modules/ tai repo root!" -ForegroundColor Red
+}
+
 # 6. Dọn dẹp cache và thông tin cá nhân
 Write-Host "Đang dọn dẹp các tệp cấu hình cá nhân và cache..." -ForegroundColor Yellow
 $filesToRemove = @(
@@ -81,6 +92,13 @@ Get-ChildItem -Path $packageOutDir -Directory -Filter "TempProfile_*" | ForEach-
 Write-Host "Đang tạo file nén zip..." -ForegroundColor Green
 Compress-Archive -Path "$packageOutDir\*" -DestinationPath $zipFile -Force
 
+# 7b. Copy update.xml vào package directory và đưa vào zip luôn
+#     AutoUpdater cần update.xml bên trong zip để check version mới nhất
+$updateXmlSrc = Join-Path $projectRoot "update.xml"
+if (Test-Path $updateXmlSrc) {
+    Copy-Item -Force $updateXmlSrc $packageOutDir
+    Write-Host "  Da copy update.xml vao package." -ForegroundColor DarkGreen
+}
 Write-Host ""
 Write-Host "=== ĐÓNG GÓI HOÀN TẤT ===" -ForegroundColor Cyan
 Write-Host "File đóng gói tại: $zipFile" -ForegroundColor Cyan

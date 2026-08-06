@@ -162,17 +162,46 @@ namespace AssetAutomator.Infrastructure.Helpers
             if (File.Exists(embeddedPath))
                 return embeddedPath;
 
-            string relativePath = Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), "tools", "PythonEmbed", "python.exe"));
-            return File.Exists(relativePath) ? relativePath : "python";
+            // Walk up from BaseDirectory (dev scenario).
+            DirectoryInfo? dir = new DirectoryInfo(baseDir);
+            for (int i = 0; i < 8 && dir != null; i++)
+            {
+                string candidate = Path.Combine(dir.FullName, "tools", "PythonEmbed", "python.exe");
+                if (File.Exists(candidate))
+                    return candidate;
+                dir = dir.Parent;
+            }
+
+            // Fall back to system python only — never use GetCurrentDirectory().
+            return "python";
         }
 
         public string ResolveServerScriptPath()
         {
+            // SECURITY: Only resolve to paths inside the app BaseDirectory tree.
+            // Never fall back to Directory.GetCurrentDirectory() as that can be
+            // any arbitrary location and could cause path injection issues.
             string baseDir = AppDomain.CurrentDomain.BaseDirectory;
             string scriptPath = Path.Combine(baseDir, "Modules", "Gemini-API-2.0.0", "server.py");
-            return File.Exists(scriptPath)
-                ? scriptPath
-                : Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), "Modules", "Gemini-API-2.0.0", "server.py"));
+            if (File.Exists(scriptPath))
+                return scriptPath;
+
+            // Walk up from BaseDirectory (dev scenario: exe in bin/Debug sub-folder).
+            DirectoryInfo? dir = new DirectoryInfo(baseDir);
+            for (int i = 0; i < 8 && dir != null; i++)
+            {
+                string candidate = Path.Combine(dir.FullName, "Modules", "Gemini-API-2.0.0", "server.py");
+                if (File.Exists(candidate))
+                    return candidate;
+                candidate = Path.Combine(dir.FullName, "src", "Modules", "Gemini-API-2.0.0", "server.py");
+                if (File.Exists(candidate))
+                    return candidate;
+                dir = dir.Parent;
+            }
+
+            // Last resort — return the canonical BaseDirectory path even if not found.
+            // Callers should check File.Exists() before using.
+            return scriptPath;
         }
 
         public async Task<(bool Success, string Diagnostics)> RestartServerAsync(string baseUrl = "http://localhost:8000")
