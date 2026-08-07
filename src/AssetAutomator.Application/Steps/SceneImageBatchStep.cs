@@ -7,6 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using AssetAutomator.Application.Services;
 using AssetAutomator.Application.Services.Providers;
+using AssetAutomator.Core.Constants;
 using AssetAutomator.Core.Interfaces;
 using AssetAutomator.Core.Models;
 
@@ -19,7 +20,18 @@ namespace AssetAutomator.Application.Steps
     ///   2. Upload reference image nếu có (lưu media_id).
     ///   3. Generate scene images bằng project + reference.
     /// Uses SemaphoreSlim to cap concurrent image generation at MaxConcurrentImages.
-    /// After completion, creates a BatchProject in BatchImageGen tab for quality control.
+    ///
+    /// IMPORTANT: Before any image generation, this step ALWAYS creates (or
+    /// reuses) a BatchProject in the Batch Image Gen tab so the user can:
+    ///   • Review which scenes failed (HTTP 402 / 429 / etc.).
+    ///   • Re-trigger single-item generation via the Batch UI using the
+    ///     preserved FlowProjectId + ReferenceMediaId cache.
+    ///
+    /// Project creation is idempotent: re-running the same pipeline task
+    /// does NOT spawn duplicate projects and does NOT reset the previously
+    /// captured <c>FlowProjectId</c> / <c>FlowProjectUrl</c>. Items whose
+    /// image file already exists on disk are skipped so only the missing
+    /// scenes are sent to Flow Local.
     /// </summary>
     public class SceneImageBatchStep
     {
@@ -111,23 +123,117 @@ namespace AssetAutomator.Application.Steps
                 }
             }
 
-            // ── Step 1: Create Flow project FIRST so reference upload + generation share the same project_id ──
-            // This guarantees the (project_id, sha256) cache on Flow server returns the same media_id,
-            // and that the project's media library actually contains the reference image used.
-            string projectTitle = $"Gemini_{task.Id.ToString()[..8]}_{Path.GetFileName(outputDir.TrimEnd('/', '\\'))}";
-            string? flowProjectId = null;
-            string? flowProjectUrl = null;
-            string? flowError = null;
+            // ── Resolve BatchProject name from the original topic. ──
+            // We use the raw topic for the user-facing "ProjectName" so the Batch
+            // Image Gen dashboard shows the topic as-is (e.g. "Sunday Scaries"),
+            // while the folder name is the sanitized slug ("sunday-scaries").
+            // The slug is used as the directory key inside BatchProjectService so
+            // re-running the same pipeline task lands on the same project folder.
+            string rawTopic = !string.IsNullOrWhiteSpace(task.VideoUrl)
+                ? task.VideoUrl
+                : Path.GetFileName(outputDir.TrimEnd('/', '\\'));
+            string batchProjectName = BatchProjectService.SanitizeTopicAsProjectName(rawTopic);
+            // Display name keeps spaces + capitalization; falls back to the slug if
+            // the topic is empty / non-Windows-safe.
+            string batchProjectDisplayName = !string.IsNullOrWhiteSpace(rawTopic)
+                ? rawTopic.Trim()
+                : batchProjectName;
 
-            (flowProjectId, flowProjectUrl, flowError) = await FlowLocalImageGenProvider.CreateProjectAsync(serverUrl, apiKey, projectTitle);
-
-            if (!string.IsNullOrEmpty(flowError) || string.IsNullOrEmpty(flowProjectId))
+            // ── Idempotent BatchProject lookup ──
+            // If a previous run already created this project, reuse its ProjectId +
+            // FlowProjectId + Items so we don't orphan the Flow project on Google's side
+            // and so the user can retry only the missing scenes from the Batch tab.
+            BatchProjectModel? batchProject = null;
+            try
             {
-                logTask(task, $"[STEP 5] [WARNING] Could not create Flow project upfront ('{flowError ?? "no project_id"}'). Will fall back to provider-side default project at generation time.");
+                batchProject = await _batchProjectService.GetOrCreateProjectAsync(batchProjectName);
+                // Preserve the human-friendly display name on every run so the user
+                // can locate the project in the dashboard by topic.
+                if (!string.IsNullOrWhiteSpace(batchProjectDisplayName))
+                {
+                    batchProject.ProjectName = batchProjectDisplayName;
+                }
+                // ScriptJson stores the path to scenes.json (not its full content) so
+                // project.json stays small (was bloating from ~5 KB to ~60 KB). The
+                // Batch Image Gen dashboard reads scenes.json directly from disk when
+                // it needs the full scene breakdown.
+                batchProject.ScriptJson = scenesPath;
+                batchProject.OutputDir = imgDir;
+                batchProject.Provider = provider;
+                batchProject.Engine = "flow";
+                batchProject.Model = defaultModel;
+                batchProject.AspectRatio = "16:9";
+                batchProject.Concurrency = MaxConcurrentImages;
+                if (!string.IsNullOrWhiteSpace(characterRefPath) && File.Exists(characterRefPath))
+                {
+                    batchProject.RefImagePaths = new List<string> { characterRefPath };
+                }
+                // Persist the freshly populated BatchProject (ref image path, scenes.json
+                // pointer, output dir, etc.) BEFORE we do any HTTP work. This guarantees
+                // a future re-run — even if every subsequent Flow call fails — still sees
+                // RefImagePaths on disk instead of an empty list, which would force the
+                // Batch Image Gen dashboard to drop the character reference on regeneration.
+                try { await _batchProjectService.SaveProjectAsync(batchProject); }
+                catch (Exception saveEx)
+                {
+                    logTask(task, $"[STEP 5] ⚠️ Could not persist BatchProject metadata: {saveEx.Message}");
+                }
+                logTask(task, $"[STEP 5] 📂 Using BatchProject '{batchProject.ProjectName}' (id={batchProject.ProjectId}).");
+            }
+            catch (Exception projInitEx)
+            {
+                // Don't kill the pipeline just because the dashboard couldn't be created.
+                logTask(task, $"[STEP 5] ⚠️ Could not initialise BatchProject: {projInitEx.Message}");
+            }
+
+            // Reuse the Flow project id/url captured by the previous run so we keep
+            // appending to the same Flow project (which is also what the user sees in
+            // the Batch tab and on https://labs.google/fx/tools/flow/).
+            string? flowProjectId = batchProject?.FlowProjectId;
+            string? flowProjectUrl = batchProject?.FlowProjectUrl;
+            // Flow uses the slug as its project title — it must be filename-safe.
+            string flowProjectTitle = batchProjectName;
+            // Kept for the projectTitle argument below; this is the value forwarded
+            // to BatchImageItem.FlowProjectTitle (and used as the fallback Flow
+            // project title if CreateProjectAsync fails).
+            string projectTitle = batchProjectName;
+
+            // ── Step 1: Create Flow project FIRST (only if we don't already have one) ──
+            // This guarantees the (project_id, sha256) cache on Flow server returns the
+            // same media_id, and that the project's media library actually contains the
+            // reference image used.
+            if (string.IsNullOrEmpty(flowProjectId))
+            {
+                string? flowError = null;
+                (flowProjectId, flowProjectUrl, flowError) = await FlowLocalImageGenProvider.CreateProjectAsync(serverUrl, apiKey, flowProjectTitle);
+
+                if (!string.IsNullOrEmpty(flowError) || string.IsNullOrEmpty(flowProjectId))
+                {
+                    logTask(task, $"[STEP 5] [WARNING] Could not create Flow project upfront ('{flowError ?? "no project_id"}'). Will fall back to provider-side default project at generation time.");
+                }
+                else
+                {
+                    logTask(task, $"[STEP 5] ✅ Created Flow Project '{flowProjectTitle}' (id={flowProjectId}, url={flowProjectUrl ?? "n/a"}).");
+                }
+
+                // Persist the freshly created FlowProjectId back into the BatchProject
+                // BEFORE we send any generation requests. If the Flow HTTP call works
+                // but disk save fails, we still want a future re-run to reuse the same
+                // Flow project rather than spamming Google with new ones.
+                if (batchProject != null && !string.IsNullOrEmpty(flowProjectId))
+                {
+                    batchProject.FlowProjectId = flowProjectId;
+                    batchProject.FlowProjectUrl = flowProjectUrl;
+                    try { await _batchProjectService.SaveProjectAsync(batchProject); }
+                    catch (Exception saveEx)
+                    {
+                        logTask(task, $"[STEP 5] ⚠️ Could not persist FlowProjectId into BatchProject: {saveEx.Message}");
+                    }
+                }
             }
             else
             {
-                logTask(task, $"[STEP 5] ✅ Created Flow Project '{projectTitle}' (id={flowProjectId}, url={flowProjectUrl ?? "n/a"}).");
+                logTask(task, $"[STEP 5] ♻️ Reusing existing Flow Project id={flowProjectId} from BatchProject.");
             }
 
             // Reset the in-memory reference media cache so the first item uploads + caches cleanly
@@ -136,14 +242,47 @@ namespace AssetAutomator.Application.Steps
 
             // Build items list from scenes. FlowProjectId is assigned now so the provider
             // will send project_id on every upload + generation request.
-            var items = new List<(BatchImageItem item, string sceneId, int index, int sceneNumber)>();
+            //
+            // Skip logic: if a previous run already wrote a canonical file for a scene
+            // AND its status is Done, treat it as a no-op so re-running the pipeline only
+            // touches the scenes that actually failed (HTTP 402, 429, etc.).
+            var items = new List<(BatchImageItem item, string sceneId, int index, int sceneNumber, bool skip)>();
+            int preExistingDoneCount = 0;
+
+            // Lookup table: existing BatchImageItemState keyed by scene.scene so we can
+            // pull across media_id / reference_media_id if those were captured previously.
+            Dictionary<int, BatchImageItemState> existingBySceneNumber =
+                (batchProject?.Items ?? new List<BatchImageItemState>())
+                .Where(i => i.Index > 0)
+                .GroupBy(i => i.Index)
+                .ToDictionary(g => g.Key, g => g.First());
+
             for (int i = 0; i < rootData.scenes.Count; i++)
             {
                 var scene = rootData.scenes[i];
                 string sceneId = string.IsNullOrWhiteSpace(scene.id) ? $"scene_{scene.scene:D3}" : scene.id;
                 int sceneNumber = scene.scene > 0 ? scene.scene : (i + 1);
 
-                items.Add((new BatchImageItem
+                string canonicalPath = Path.Combine(imgDir, $"{sceneId}.png");
+                bool fileExists = File.Exists(canonicalPath);
+
+                BatchImageItemState? existing = null;
+                existingBySceneNumber.TryGetValue(sceneNumber, out existing);
+
+                bool wasDonePreviously = existing != null
+                    && string.Equals(existing.Status, "Done", StringComparison.OrdinalIgnoreCase)
+                    && !string.IsNullOrEmpty(existing.ImagePath)
+                    && File.Exists(existing.ImagePath);
+
+                // Prefer canonical file on disk; fall back to whatever path was saved.
+                bool skip = (fileExists || wasDonePreviously);
+
+                if (skip)
+                {
+                    preExistingDoneCount++;
+                }
+
+                var batchItem = new BatchImageItem
                 {
                     Index = sceneNumber,
                     TaskId = task.Id.ToString(),
@@ -157,8 +296,31 @@ namespace AssetAutomator.Application.Steps
                     FlowProjectId = flowProjectId,
                     FlowProjectTitle = string.IsNullOrEmpty(flowProjectId) ? projectTitle : null,
                     FlowProjectUrl = flowProjectUrl,
-                    Status = "Processing"
-                }, sceneId, i, sceneNumber));
+                    Status = skip ? "Done" : "Processing",
+                    // Carry the cached media_id forward so re-runs do NOT need to re-upload
+                    // the reference image, and the Batch tab can drive the same Flow project.
+                    MediaId = existing?.MediaId,
+                    ReferenceMediaId = existing?.ReferenceMediaId,
+                };
+
+                if (skip)
+                {
+                    if (fileExists)
+                    {
+                        batchItem.ImagePath = canonicalPath;
+                    }
+                    else if (existing != null && !string.IsNullOrEmpty(existing.ImagePath))
+                    {
+                        batchItem.ImagePath = existing.ImagePath;
+                    }
+                }
+
+                items.Add((batchItem, sceneId, i, sceneNumber, skip));
+            }
+
+            if (preExistingDoneCount > 0)
+            {
+                logTask(task, $"[STEP 5] ⏭️ {preExistingDoneCount}/{items.Count} scenes already have valid images on disk — skipping regeneration. Use Batch Image Gen tab to retry the rest.");
             }
 
             // Concurrent generation with semaphore-based throttling
@@ -174,6 +336,13 @@ namespace AssetAutomator.Application.Steps
                 try
                 {
                     int current = Interlocked.Increment(ref processed);
+
+                    if (entry.skip)
+                    {
+                        logTask(task, $"[STEP 5] ⏭️ Skipping Image {current}/{total} ({entry.sceneId}) — already on disk.");
+                        return;
+                    }
+
                     logTask(task, $"[STEP 5] Generating Image {current}/{total} ({entry.sceneId})...");
 
                     await _batchImageGenService.ProcessSingleImageItemAsync(
@@ -208,120 +377,184 @@ namespace AssetAutomator.Application.Steps
                 }
             });
 
-            task.Step5Status = "Done";
-            logTask(task, $"[STEP 5] Success! Finished Batch Image Generation. ({successCount}/{total} images created, {failCount} failed).");
+            // ── Always sync BatchProject items + flow project id back to disk ──
+            // Even when 100% of items failed (HTTP 402 across the board), the user
+            // still needs the BatchProject to exist so they can retry from the
+            // Batch Image Gen tab once the Flow session has been refreshed.
+            await SyncBatchProjectItemsAsync(
+                task, batchProject, items, imgDir,
+                provider, defaultModel,
+                flowProjectId, flowProjectUrl, projectTitle,
+                batchProjectDisplayName,
+                rootData, characterRefPath,
+                logTask);
 
-            // ── Create BatchProject in BatchImageGen tab for quality control ──
-            await CreateBatchProjectForTaskAsync(task, rootData, imgDir, provider, defaultModel, characterRefPath, flowProjectId, flowProjectUrl, logTask);
+            int generatedCount = successCount;
+            int alreadyDone = items.Count(i => i.skip);
+            if (alreadyDone > 0)
+            {
+                task.Step5Status = generatedCount > 0 || alreadyDone == items.Count ? "Done" : "Failed";
+            }
+            else
+            {
+                task.Step5Status = generatedCount == items.Count ? "Done" : "Failed";
+            }
+            logTask(task, $"[STEP 5] Finished. Generated {generatedCount}, skipped {alreadyDone}, failed {failCount} of {items.Count} scenes.");
         }
 
         /// <summary>
-        /// Creates a BatchProject in BatchImageGen tab after image generation completes.
-        /// This allows users to review quality, regenerate failed images, and collect assets.
-        /// Reference images and the Flow project id are wired in so re-runs from Batch tab
-        /// continue to share the same Flow context as the original task pipeline run.
+        /// Merges the freshly generated <paramref name="items"/> state back into
+        /// the persistent <paramref name="batchProject"/> (creating a fresh
+        /// project if the early-init lookup failed) and saves it. This is the
+        /// single source of truth that powers the Batch Image Gen tab.
         /// </summary>
-        private async Task CreateBatchProjectForTaskAsync(
+        private async Task SyncBatchProjectItemsAsync(
             AutomationTask task,
-            ScenesJsonRootModel? rootData,
+            BatchProjectModel? batchProject,
+            List<(BatchImageItem item, string sceneId, int index, int sceneNumber, bool skip)> items,
             string imgDir,
             string provider,
             string defaultModel,
-            string? characterRefPath,
             string? flowProjectId,
             string? flowProjectUrl,
+            string projectTitle,
+            string? batchProjectDisplayName,
+            ScenesJsonRootModel? rootData,
+            string? characterRefPath,
             Action<AutomationTask, string> logTask)
         {
             try
             {
-                // Generate project name from task ID or topic
-                string projectName = $"Gemini_{task.Id.ToString()[..8]}_{DateTime.Now:yyyyMMdd_HHmmss}";
-                if (!string.IsNullOrWhiteSpace(task.VideoId) && task.VideoId.Length > 5)
+                if (batchProject == null)
                 {
-                    projectName = $"Gemini_{task.VideoId[..Math.Min(20, task.VideoId.Length)]}";
-                }
-
-                logTask(task, $"[STEP 5] Creating BatchProject '{projectName}' in BatchImageGen tab...");
-
-                // Create the project
-                var project = await _batchProjectService.CreateProjectAsync(projectName);
-
-                // Update project metadata
-                project.OutputDir = imgDir;
-                project.Provider = provider;
-                project.Engine = "flow";
-                project.Model = defaultModel;
-                project.AspectRatio = "16:9";
-                project.Concurrency = MaxConcurrentImages;
-                project.FlowProjectId = flowProjectId;
-                project.FlowProjectUrl = flowProjectUrl;
-
-                // Carry the CharacterRef image forward so the Batch tab regenerates with the same reference.
-                if (!string.IsNullOrWhiteSpace(characterRefPath) && File.Exists(characterRefPath))
-                {
-                    project.RefImagePaths = new List<string> { characterRefPath };
-                }
-
-                // Add items from scenes
-                if (rootData?.scenes != null)
-                {
-                    foreach (var scene in rootData.scenes)
+                    // GetOrCreate failed earlier (e.g.ProjectsStorageDir not writable).
+                    // Re-try once here so we still get a usable dashboard entry.
+                    string fallbackName = !string.IsNullOrWhiteSpace(projectTitle) ? projectTitle : "Pipeline_" + DateTime.Now.ToString("yyyyMMdd_HHmmss");
+                    batchProject = await _batchProjectService.GetOrCreateProjectAsync(fallbackName);
+                    if (!string.IsNullOrWhiteSpace(batchProjectDisplayName))
                     {
-                        string sceneId = string.IsNullOrWhiteSpace(scene.id)
-                            ? $"scene_{scene.scene:D3}"
-                            : scene.id;
-
-                        string canonicalPath = Path.Combine(imgDir, $"{sceneId}.png");
-                        bool exists = File.Exists(canonicalPath);
-
-                        // Fall back to the flow_image_* filename the provider wrote, so we don't
-                        // mark a real success as Failed just because the rename failed.
-                        string imagePath = canonicalPath;
-                        if (!exists)
-                        {
-                            string indexed = $"_{scene.scene}_";
-                            var candidates = Directory.Exists(imgDir)
-                                ? Directory.GetFiles(imgDir, "flow_image_*.png")
-                                : Array.Empty<string>();
-                            var fallback = candidates
-                                .Where(f => Path.GetFileName(f).Contains(indexed, StringComparison.OrdinalIgnoreCase))
-                                .OrderByDescending(f => File.GetLastWriteTimeUtc(f))
-                                .FirstOrDefault();
-                            if (!string.IsNullOrEmpty(fallback))
-                            {
-                                imagePath = fallback;
-                                exists = true;
-                            }
-                        }
-
-                        project.Items.Add(new BatchImageItemState
-                        {
-                            Index = scene.scene,
-                            SceneTitle = $"Scene #{scene.scene}: {sceneId}",
-                            Transcript = scene.transcript ?? string.Empty,
-                            Prompt = scene.image_prompt ?? string.Empty,
-                            Status = exists ? "Done" : "Failed",
-                            ImagePath = exists ? imagePath : string.Empty,
-                            ErrorMessage = exists ? string.Empty : "Image file not found after generation",
-                            Engine = "flow",
-                            Model = defaultModel,
-                            AspectRatio = "16:9",
-                            FlowProjectId = flowProjectId,
-                            FlowProjectTitle = string.IsNullOrEmpty(flowProjectId) ? projectName : null,
-                            FlowProjectUrl = flowProjectUrl
-                        });
+                        batchProject.ProjectName = batchProjectDisplayName;
+                    }
+                    // Store scenes.json path (not its full content) — see comment in
+                    // the main init block above.
+                    string fallbackScenesPath = rootData != null
+                        ? Path.Combine(imgDir, "scenes.json")
+                        : string.Empty;
+                    batchProject.ScriptJson = fallbackScenesPath;
+                    batchProject.OutputDir = imgDir;
+                    batchProject.Provider = provider;
+                    batchProject.Engine = "flow";
+                    batchProject.Model = defaultModel;
+                    batchProject.AspectRatio = "16:9";
+                    batchProject.Concurrency = MaxConcurrentImages;
+                    if (!string.IsNullOrWhiteSpace(characterRefPath) && File.Exists(characterRefPath))
+                    {
+                        batchProject.RefImagePaths = new List<string> { characterRefPath };
                     }
                 }
+                else if (!string.IsNullOrWhiteSpace(batchProjectDisplayName))
+                {
+                    // Keep the topic as the user-facing name across re-runs.
+                    batchProject.ProjectName = batchProjectDisplayName;
+                    // Persist scenes.json path every re-run so the dashboard always
+                    // points at the latest breakdown (in case the user rerun the
+                    // pipeline with a different topic).
+                    batchProject.ScriptJson = rootData != null
+                        ? Path.Combine(imgDir, "scenes.json")
+                        : batchProject.ScriptJson;
+                }
 
-                // Save project with all items
-                await _batchProjectService.SaveProjectAsync(project);
+                if (!string.IsNullOrEmpty(flowProjectId))
+                {
+                    batchProject.FlowProjectId = flowProjectId;
+                    batchProject.FlowProjectUrl = flowProjectUrl;
+                }
 
-                logTask(task, $"[STEP 5] ✅ BatchProject created with {project.Items.Count} image items for quality review.");
+                // Build a lookup from the on-disk state so we can carry forward
+                // media_id / reference_media_id for items that didn't run this pass.
+                Dictionary<int, BatchImageItemState> existingBySceneNumber =
+                    (batchProject.Items ?? new List<BatchImageItemState>())
+                    .Where(i => i.Index > 0)
+                    .GroupBy(i => i.Index)
+                    .ToDictionary(g => g.Key, g => g.First());
+
+                var mergedItems = new List<BatchImageItemState>();
+                foreach (var entry in items)
+                {
+                    string sceneId = entry.sceneId;
+
+                    string canonicalPath = Path.Combine(imgDir, $"{sceneId}.png");
+                    string? imagePath = null;
+
+                    if (!string.IsNullOrEmpty(entry.item.ImagePath) && File.Exists(entry.item.ImagePath))
+                    {
+                        imagePath = entry.item.ImagePath;
+                    }
+                    else if (File.Exists(canonicalPath))
+                    {
+                        imagePath = canonicalPath;
+                    }
+                    else
+                    {
+                        // Provider may have written a flow_image_<Index>_<ts>.png fallback.
+                        string indexed = $"_{entry.sceneNumber}_";
+                        var candidates = Directory.Exists(imgDir)
+                            ? Directory.GetFiles(imgDir, "flow_image_*.png")
+                            : Array.Empty<string>();
+                        var fallback = candidates
+                            .Where(f => Path.GetFileName(f).Contains(indexed, StringComparison.OrdinalIgnoreCase))
+                            .OrderByDescending(f => File.GetLastWriteTimeUtc(f))
+                            .FirstOrDefault();
+                        if (!string.IsNullOrEmpty(fallback))
+                        {
+                            imagePath = fallback;
+                        }
+                    }
+
+                    bool isDone = string.Equals(entry.item.Status, "Done", StringComparison.OrdinalIgnoreCase)
+                                  && !string.IsNullOrEmpty(imagePath);
+
+                    existingBySceneNumber.TryGetValue(entry.sceneNumber, out var existing);
+
+                    mergedItems.Add(new BatchImageItemState
+                    {
+                        Index = entry.sceneNumber,
+                        SceneTitle = entry.item.SceneTitle,
+                        Transcript = entry.item.Transcript,
+                        Prompt = entry.item.Prompt,
+                        Status = isDone ? "Done"
+                               : (existing?.Status ?? (entry.skip ? "Done" : "Failed")),
+                        ImagePath = isDone ? imagePath! : (existing?.ImagePath ?? string.Empty),
+                        ErrorMessage = isDone
+                            ? string.Empty
+                            : (entry.item.ErrorMessage ?? existing?.ErrorMessage ?? "Image file not found after generation"),
+                        MediaId = !string.IsNullOrEmpty(entry.item.MediaId) ? entry.item.MediaId : existing?.MediaId,
+                        ReferenceMediaId = !string.IsNullOrEmpty(entry.item.ReferenceMediaId) ? entry.item.ReferenceMediaId : existing?.ReferenceMediaId,
+                        FlowProjectId = !string.IsNullOrEmpty(flowProjectId) ? flowProjectId : existing?.FlowProjectId,
+                        FlowProjectTitle = string.IsNullOrEmpty(flowProjectId) ? projectTitle : null,
+                        FlowProjectUrl = !string.IsNullOrEmpty(flowProjectUrl) ? flowProjectUrl : existing?.FlowProjectUrl,
+                        Engine = "flow",
+                        Model = defaultModel,
+                        AspectRatio = "16:9",
+                        Upscale = "none"
+                    });
+                }
+
+                batchProject.Items = mergedItems;
+                await _batchProjectService.SaveProjectAsync(batchProject);
+
+                int done = mergedItems.Count(i => string.Equals(i.Status, "Done", StringComparison.OrdinalIgnoreCase));
+                int failed = mergedItems.Count - done;
+                logTask(task, $"[STEP 5] 💾 BatchProject '{batchProject.ProjectName}' synced: {done} done, {failed} pending. Open Batch Image Gen tab to retry the failed scenes.");
+
+                // Fire the in-process event so the Batch Image Gen dashboard can
+                // reload its project list immediately, even if the user is looking
+                // at the Gemini tab when this run finishes. Subscribers must be cheap.
+                PipelineEvents.RaiseBatchProjectUpdated(batchProject.ProjectName);
             }
             catch (Exception ex)
             {
-                logTask(task, $"[STEP 5] ⚠️ Failed to create BatchProject: {ex.Message}");
-                // Don't throw - image gen was successful, this is just a convenience feature
+                logTask(task, $"[STEP 5] ⚠️ Failed to sync BatchProject: {ex.Message}");
             }
         }
 

@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
+using AssetAutomator.Core.Constants;
 using AssetAutomator.Core.Interfaces;
 using AssetAutomator.Core.Models;
 
@@ -84,17 +85,23 @@ namespace AssetAutomator.Application.Services
 
         /// <summary>
         /// Creates a new project folder and initial project.json
+        ///
+        /// Note: We intentionally do NOT auto-create an "Images" subdirectory here.
+        /// The Gemini pipeline later sets <c>proj.OutputDir</c> to <c>{outputDir}/img</c>
+        /// (where <c>outputDir</c> already contains voiceover.mp3, scenes.json, etc.),
+        /// and we don't want a second, empty "Images" folder sibling to that — the
+        /// user previously ended up with two confusing duplicate folders.
+        /// <c>SaveProjectAsync</c> still ensures <c>OutputDir</c> exists on disk if
+        /// it is set to a non-empty value.
         /// </summary>
         public async Task<BatchProjectModel> CreateProjectAsync(string projectName, string initialScriptJson = "")
         {
             string baseDir = GetProjectsBaseDirectory();
-            string cleanName = string.Join("_", projectName.Split(Path.GetInvalidFileNameChars())).Trim();
+            string cleanName = SanitizeProjectName(projectName);
             if (string.IsNullOrWhiteSpace(cleanName)) cleanName = "Project_" + DateTime.Now.ToString("yyyyMMdd_HHmmss");
 
             string projectDir = Path.Combine(baseDir, cleanName);
-            string imagesDir = Path.Combine(projectDir, "Images");
             Directory.CreateDirectory(projectDir);
-            Directory.CreateDirectory(imagesDir);
 
             var proj = new BatchProjectModel
             {
@@ -103,11 +110,95 @@ namespace AssetAutomator.Application.Services
                 CreatedAt = DateTime.Now,
                 LastModified = DateTime.Now,
                 ScriptJson = initialScriptJson,
-                OutputDir = imagesDir
+                OutputDir = string.Empty
             };
 
             await SaveProjectAsync(proj);
             return proj;
+        }
+
+        /// <summary>
+        /// Returns the project with the given <paramref name="projectName"/> if it
+        /// already exists on disk; otherwise creates a fresh one and returns it.
+        ///
+        /// This is the idempotent entry-point used by the Gemini pipeline so a
+        /// re-run of the same task does NOT spawn duplicate projects or reset
+        /// previously-captured <c>FlowProjectId</c> / <c>FlowProjectUrl</c>
+        /// values (which would orphan the existing Flow project on Google Flow).
+        /// </summary>
+        public async Task<BatchProjectModel> GetOrCreateProjectAsync(string projectName, string initialScriptJson = "")
+        {
+            if (string.IsNullOrWhiteSpace(projectName))
+            {
+                projectName = "Project_" + DateTime.Now.ToString("yyyyMMdd_HHmmss");
+            }
+
+            string baseDir = GetProjectsBaseDirectory();
+            string cleanName = SanitizeProjectName(projectName);
+            if (string.IsNullOrWhiteSpace(cleanName)) cleanName = "Project_" + DateTime.Now.ToString("yyyyMMdd_HHmmss");
+
+            string projectDir = Path.Combine(baseDir, cleanName);
+            string jsonPath = Path.Combine(projectDir, "project.json");
+            if (File.Exists(jsonPath))
+            {
+                try
+                {
+                    string json = await File.ReadAllTextAsync(jsonPath);
+                    var existing = JsonSerializer.Deserialize<BatchProjectModel>(json, _jsonOptions);
+                    if (existing != null)
+                    {
+                        // Make sure OutputDir is populated if it was missing on disk.
+                        // We do NOT auto-create an Images/ subdirectory here — the pipeline
+                        // will set OutputDir to {outputDir}/img on the next call.
+                        if (string.IsNullOrWhiteSpace(existing.OutputDir))
+                        {
+                            existing.OutputDir = Path.Combine(projectDir, "Images");
+                        }
+                        // Touch LastModified so the dashboard sorts it to the top.
+                        existing.LastModified = DateTime.Now;
+                        return existing;
+                    }
+                }
+                catch
+                {
+                    // Corrupted project.json → fall through to CreateProjectAsync so the
+                    // user gets a fresh project rather than a stuck pipeline.
+                }
+            }
+
+            return await CreateProjectAsync(projectName, initialScriptJson);
+        }
+
+        /// <summary>
+        /// Sanitizes a human-readable project name into a directory-safe slug.
+        ///
+        /// IMPORTANT: this MUST stay in sync with <see cref="SanitizeTopicAsProjectName"/>
+        /// because the Batch Image Gen dashboard stores its project folder under
+        /// <c>ProjectsStorageDir/{slug}</c> and the Gemini pipeline writes its
+        /// primary output folder at <c>OutputsDir/{slug}</c>. If the two rules
+        /// diverge, the dashboard project and the pipeline output end up in
+        /// sibling folders with different names (e.g. "mirror neurons made you
+        /// and they can break you" vs "mirror_neurons_made_you_and_they_can_break_you")
+        /// and the user ends up with two confusing near-duplicate projects in
+        /// the dashboard. Both rules collapse whitespace to single hyphens so
+        /// "Bedtime Psychology" and "Bedtime-Psychology" both map to
+        /// "bedtime-psychology".
+        /// </summary>
+        public static string SanitizeProjectName(string projectName)
+        {
+            if (string.IsNullOrWhiteSpace(projectName)) return string.Empty;
+            return SanitizeTopicAsProjectName(projectName);
+        }
+
+        /// <summary>
+        /// Sanitizes a free-form pipeline topic (Gemini pipeline input) into a
+        /// stable BatchProject directory name. Mirrors the slug rules used by
+        /// <see cref="YoutubeHelper.ToSafeTopicSlug"/> so the Batch Image Gen
+        /// dashboard groups well with the rest of the app's file naming.
+        /// </summary>
+        public static string SanitizeTopicAsProjectName(string? topic)
+        {
+            return YoutubeHelper.ToSafeTopicSlug(topic);
         }
 
         /// <summary>
@@ -118,14 +209,19 @@ namespace AssetAutomator.Application.Services
             if (proj == null || string.IsNullOrWhiteSpace(proj.ProjectName)) return;
 
             string baseDir = GetProjectsBaseDirectory();
-            string cleanName = string.Join("_", proj.ProjectName.Split(Path.GetInvalidFileNameChars())).Trim();
+            string cleanName = SanitizeProjectName(proj.ProjectName);
             string projectDir = Path.Combine(baseDir, cleanName);
             Directory.CreateDirectory(projectDir);
 
             if (string.IsNullOrWhiteSpace(proj.OutputDir))
             {
+                // Only fall back to a project-local "Images" subdirectory when the
+                // caller has not yet set an explicit output dir. We do not eagerly
+                // create that folder here — the caller (or the next save) decides
+                // whether to materialize it. The pipeline later overrides OutputDir
+                // with {outputDir}/img so an empty Images/ folder would just be
+                // confusing dead weight.
                 proj.OutputDir = Path.Combine(projectDir, "Images");
-                Directory.CreateDirectory(proj.OutputDir);
             }
 
             proj.LastModified = DateTime.Now;
@@ -142,7 +238,7 @@ namespace AssetAutomator.Application.Services
         {
             if (string.IsNullOrWhiteSpace(projectName)) return;
             string baseDir = GetProjectsBaseDirectory();
-            string cleanName = string.Join("_", projectName.Split(Path.GetInvalidFileNameChars())).Trim();
+            string cleanName = SanitizeProjectName(projectName);
             string projectDir = Path.Combine(baseDir, cleanName);
 
             if (Directory.Exists(projectDir))

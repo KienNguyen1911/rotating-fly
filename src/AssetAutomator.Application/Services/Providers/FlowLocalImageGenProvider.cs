@@ -137,7 +137,7 @@ namespace AssetAutomator.Application.Services.Providers
                                 // the initial generated image AND the media_id. By saving that image
                                 // for the first item we eliminate the duplicate that would otherwise
                                 // appear when call 2 (/v1/images/generations) runs afterwards.
-                                var (uploadedMediaId, uploadResponseJson) = await UploadReferenceImageAndGetMediaIdAsync(
+                                var (uploadedMediaId, uploadResponseJson, lastUploadStatusCode) = await UploadReferenceImageAndGetMediaIdAsync(
                                     baseUrl, effApiKey, model, size, quality, item.Prompt, item.FlowProjectId, referenceImages, refWithFilePath);
 
                                 if (!string.IsNullOrEmpty(uploadedMediaId))
@@ -182,7 +182,18 @@ namespace AssetAutomator.Application.Services.Providers
                                 // No usable image in upload response → continue to call 2.
                                 if (string.IsNullOrEmpty(effectiveRefMediaId))
                                 {
-                                    SetItemStatusFailed(item, uiContext, "Flow API did not return media_id from reference upload.");
+                                    // Surface the actual HTTP failure (status + body) instead of
+                                    // the generic "did not return media_id". Auth/credential
+                                    // errors come back as HTTP 401/500 with the real reason in
+                                    // the body, and operators need that to fix Flow Local
+                                    // sign-in (see D:\Logs\AssetAutomator 2026-08-07 batch run).
+                                    string detail = (lastUploadStatusCode > 0)
+                                        ? FormatErrorMessage(lastUploadStatusCode, uploadResponseJson ?? string.Empty)
+                                        : "Upload request did not complete.";
+                                    SetItemStatusFailed(
+                                        item,
+                                        uiContext,
+                                        $"Flow API did not return media_id from reference upload. {detail}");
                                     return;
                                 }
                             }
@@ -385,7 +396,7 @@ namespace AssetAutomator.Application.Services.Providers
             }
         }
 
-        private async Task<(string? mediaId, string? responseJson)> UploadReferenceImageAndGetMediaIdAsync(
+        private async Task<(string? mediaId, string? responseJson, int statusCode)> UploadReferenceImageAndGetMediaIdAsync(
             string baseUrl,
             string apiKey,
             string model,
@@ -426,22 +437,54 @@ namespace AssetAutomator.Application.Services.Providers
                 imageBytes = Convert.FromBase64String(b64);
             }
 
-            if (imageBytes.Length == 0) return (null, null);
+            if (imageBytes.Length == 0) return (null, null, 0);
 
-            var byteArrayContent = new ByteArrayContent(imageBytes);
-            byteArrayContent.Headers.ContentType = MediaTypeHeaderValue.Parse("image/png");
-            content.Add(byteArrayContent, "image", fileName);
+            // Retry transient failures (5xx, 408, 429) — Google's edge can briefly
+            // return 500 on cold credentials, especially the first call after a
+            // session restart. Caller errors (4xx other than 408/429) are not retryable.
+            const int maxAttempts = 3;
+            int statusCode = 0;
+            string responseContent = string.Empty;
 
-            using var request = new HttpRequestMessage(HttpMethod.Post, endpoint)
+            for (int attempt = 1; attempt <= maxAttempts; attempt++)
             {
-                Content = content
-            };
-            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+                var attemptContent = new MultipartFormDataContent();
+                attemptContent.Add(new StringContent(model), "model");
+                attemptContent.Add(new StringContent(prompt), "prompt");
+                attemptContent.Add(new StringContent(size), "size");
+                attemptContent.Add(new StringContent(quality), "quality");
+                attemptContent.Add(new StringContent("url"), "response_format");
+                if (!string.IsNullOrWhiteSpace(flowProjectId))
+                {
+                    attemptContent.Add(new StringContent(flowProjectId), "project_id");
+                }
+                var attemptBytes = new ByteArrayContent(imageBytes);
+                attemptBytes.Headers.ContentType = MediaTypeHeaderValue.Parse("image/png");
+                attemptContent.Add(attemptBytes, "image", fileName);
 
-            var response = await _httpClient.SendAsync(request);
-            string responseContent = await response.Content.ReadAsStringAsync();
+                using var request = new HttpRequestMessage(HttpMethod.Post, endpoint)
+                {
+                    Content = attemptContent
+                };
+                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
 
-            if (!response.IsSuccessStatusCode) return (null, responseContent);
+                using var response = await _httpClient.SendAsync(request);
+                statusCode = (int)response.StatusCode;
+                responseContent = await response.Content.ReadAsStringAsync();
+
+                if (response.IsSuccessStatusCode) break;
+
+                bool retryable = statusCode >= 500 || statusCode == 408 || statusCode == 429;
+                if (!retryable || attempt == maxAttempts) break;
+
+                // Linear back-off: 1 s, 3 s. Total worst case ~4 s — short enough not to
+                // dominate the per-scene budget under healthy Flow Local.
+                int delayMs = attempt == 1 ? 1000 : 3000;
+                await Task.Delay(delayMs);
+            }
+
+            if (statusCode == 0) return (null, null, 0);
+            if (statusCode < 200 || statusCode >= 300) return (null, responseContent, statusCode);
 
             using var doc = JsonDocument.Parse(responseContent);
             var root = doc.RootElement;
@@ -450,13 +493,13 @@ namespace AssetAutomator.Application.Services.Providers
                 var firstItem = dataArr[0];
                 if (firstItem.TryGetProperty("media_id", out var mediaIdProp))
                 {
-                    return (mediaIdProp.GetString(), responseContent);
+                    return (mediaIdProp.GetString(), responseContent, statusCode);
                 }
             }
 
             // Response is OK but missing media_id; surface the JSON so the caller can still
             // attempt to use the image payload as a fallback.
-            return (null, responseContent);
+            return (null, responseContent, statusCode);
         }
 
         private async Task HandleOpenAiResponseAsync(BatchImageItem item, string jsonResponse, string outputDirectory, SynchronizationContext? uiContext)

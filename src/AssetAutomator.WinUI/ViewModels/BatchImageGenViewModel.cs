@@ -160,6 +160,45 @@ public partial class BatchImageGenViewModel : ObservableObject
         OutputDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Output", "BatchImages");
 
         _ = LoadProjectsListAsync();
+
+        // Subscribe to pipeline completion events so the dashboard auto-refreshes
+        // when a BatchProject is created/updated by the Gemini pipeline, even if
+        // the user is currently looking at the Gemini tab. The handler is cheap
+        // (just schedules a fire-and-forget reload), and we never unsubscribe
+        // because BatchImageGenViewModel is registered as a singleton for the
+        // lifetime of the WinUI process.
+        PipelineEvents.BatchProjectUpdated += OnPipelineProjectUpdated;
+    }
+
+    private void OnPipelineProjectUpdated(object? sender, BatchProjectUpdatedEventArgs e)
+    {
+        // Marshal to the UI thread before touching ObservableCollection. The
+        // pipeline publishes from a worker thread; if the user happens to be
+        // on the Batch Image Gen tab when the event fires, the dashboard must
+        // update safely.
+        var dispatcher = Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread()
+            ?? App.MainWindowInstance?.DispatcherQueue;
+
+        void Reload()
+        {
+            try
+            {
+                _ = LoadProjectsListAsync();
+            }
+            catch
+            {
+                // Never crash the dashboard from a background event.
+            }
+        }
+
+        if (dispatcher != null && dispatcher.HasThreadAccess)
+        {
+            Reload();
+        }
+        else
+        {
+            dispatcher?.TryEnqueue(() => Reload());
+        }
     }
 
     [RelayCommand]

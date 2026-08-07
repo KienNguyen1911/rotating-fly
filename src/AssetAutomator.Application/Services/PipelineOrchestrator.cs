@@ -374,11 +374,11 @@ namespace AssetAutomator.Application.Services
                 return;
             }
 
-            if (AreAllSceneImagesGenerated(scenesPath, outputDir))
+            bool allImagesAlreadyOnDisk = AreAllSceneImagesGenerated(scenesPath, outputDir);
+            if (allImagesAlreadyOnDisk)
             {
-                log(task, $"[STAGE-D] ⏭️ Tất cả scene images đã tồn tại, bỏ qua Image Gen.");
-                task.Step5Status = "Done";
-                return;
+                log(task, $"[STAGE-D] ⏭️ Tất cả scene images đã tồn tại, bỏ qua Image Gen. " +
+                          "Vẫn đồng bộ BatchProject trong Batch Image Gen tab để có thể retry nếu cần.");
             }
 
             // Pre-flight health check so we fail fast if the local Python Flow server
@@ -389,32 +389,43 @@ namespace AssetAutomator.Application.Services
             // NOT a URL. The actual base URL lives in AppSettings.ImageApiUrl — that's
             // what TestHealthAsync expects. TestHealthAsync strips any trailing /v1
             // before probing /health on the root.
-            string flowBaseUrl = string.IsNullOrWhiteSpace(_configService.CurrentSettings.ImageApiUrl)
-                ? "http://127.0.0.1:8787/v1"
-                : _configService.CurrentSettings.ImageApiUrl;
-            log(task, $"[STAGE-D] 🔎 Pinging Flow Local health at '{flowBaseUrl}'...");
-            bool healthy = await _batchImageGenService.TestHealthAsync(flowBaseUrl);
-            log(task, healthy
-                ? "[STAGE-D] ✅ Flow Local API /health OK."
-                : $"[STAGE-D] ⚠️ Flow Local API /health không phản hồi (đã ping '{flowBaseUrl}'). Kiểm tra server python ở port 8787 hoặc vào Settings để bật lại.");
-            if (!healthy)
+            //
+            // Skip the health probe when all images already exist (we won't be calling
+            // the API this run — SceneImageBatchStep just syncs the BatchProject).
+            if (!allImagesAlreadyOnDisk)
             {
-                throw new InvalidOperationException(
-                    $"[STAGE-D] ❌ Flow Local API /health failed for '{flowBaseUrl}'. Hãy chắc chắn server python đã chạy (port 8787) hoặc vào Settings để bật lại.");
+                string flowBaseUrl = string.IsNullOrWhiteSpace(_configService.CurrentSettings.ImageApiUrl)
+                    ? "http://127.0.0.1:8787/v1"
+                    : _configService.CurrentSettings.ImageApiUrl;
+                log(task, $"[STAGE-D] 🔎 Pinging Flow Local health at '{flowBaseUrl}'...");
+                bool healthy = await _batchImageGenService.TestHealthAsync(flowBaseUrl);
+                log(task, healthy
+                    ? "[STAGE-D] ✅ Flow Local API /health OK."
+                    : $"[STAGE-D] ⚠️ Flow Local API /health không phản hồi (đã ping '{flowBaseUrl}'). Kiểm tra server python ở port 8787 hoặc vào Settings để bật lại.");
+                if (!healthy)
+                {
+                    throw new InvalidOperationException(
+                        $"[STAGE-D] ❌ Flow Local API /health failed for '{flowBaseUrl}'. Hãy chắc chắn server python đã chạy (port 8787) hoặc vào Settings để bật lại.");
+                }
             }
 
-            // Actually run image generation. Previously this stage was a stub that only
-            // pinged /health and slept 15s — that left scenes.json in place but no
-            // files in img/, while Step4Status was still marked Success.
+            // Always invoke the BatchImageGen step so the BatchProject is created or
+            // refreshed in the Batch Image Gen tab on every pipeline run — even when
+            // 100% of scenes already have images on disk. SceneImageBatchStep itself
+            // is idempotent (reuses existing project + skips already-done scenes).
             await _imageBatchStep.ExecuteAsync(
                 outputDir: outputDir,
                 providerKey: taskModel.SelectedImageProvider,
                 task: task,
                 logTask: log);
 
-            // Nghỉ 15 giây để GPU/API hạ nhiệt
-            log(task, $"[STAGE-D] 😴 Hoàn thành tạo ảnh. Nghỉ 15 giây để GPU hạ nhiệt...");
-            await Task.Delay(15_000);
+            // Only sleep between real generation bursts. Skip the 15s cool-down when
+            // we didn't actually call the API.
+            if (!allImagesAlreadyOnDisk)
+            {
+                log(task, $"[STAGE-D] 😴 Hoàn thành tạo ảnh. Nghỉ 15 giây để GPU hạ nhiệt...");
+                await Task.Delay(15_000);
+            }
         }
 
         // ─────────────────────────────────────────────────────
