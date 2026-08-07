@@ -529,7 +529,26 @@ namespace AssetAutomator.Application.Services
 
         private static string BuildScenePrompt()
         {
-            return @"Tạo scenes JSON cho video từ file SRT và transcript đính kèm.";
+            // Mirrors the rules baked into GeminiPlaywrightSceneBreakdownStep
+            // and the legacy API fallback. SceneDurationFixer downstream is
+            // the authoritative enforcer; this prompt just nudges Gemini to
+            // cooperate on the first pass.
+            return
+                "Tạo scenes JSON cho video từ file SRT và transcript đính kèm.\n\n" +
+                "HARD RULES (must follow, no exceptions, including the final scene):\n" +
+                "1. Maximum duration per scene: 20 seconds. Never exceed 20s.\n" +
+                "2. Maximum transcript words per scene: ~50 words.\n" +
+                "3. If a transcript segment is longer than the limit, you MUST split it " +
+                "into multiple scenes at natural sentence or breath boundaries. Each " +
+                "scene must be self-contained with its own image_prompt.\n" +
+                "4. The closing scene is NOT exempt. A long farewell/breath/sleep-well " +
+                "narration must be split into 3-6 scenes (e.g. gratitude, breath, " +
+                "settling-in, deep rest, closing words).\n" +
+                "5. Do NOT merge multiple SRT cues into one scene. Each scene's " +
+                "\"start\" and \"end\" must match the boundaries of one or more " +
+                "consecutive SRT cues whose total duration is <= 20s.\n" +
+                "6. Return SRT timestamps verbatim — do not invent or round them.\n" +
+                "7. Output JSON only, wrapped in ```json ... ```, no commentary.";
         }
 
         private static int GetAttachedFileCount(string srtPath, string transcriptPath)

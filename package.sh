@@ -59,6 +59,20 @@ echo -e "${GREEN}Đang chuẩn bị thư mục package...${NC}"
 mkdir -p "$PACKAGE_OUT_DIR"
 cp -r "$PUBLISH_DIR"/. "$PACKAGE_OUT_DIR/"
 
+# 5a. Copy Resources/ app_logo.{png,ico} into package so MainWindow.TryApplyAppLogo and
+#     XAML <Image Source="ms-appx:///Resources/app_logo.png"> have the asset at runtime.
+#     Without this, end-user zip would have a default WinUI icon in title bar / taskbar.
+RESOURCES_SRC="$PROJECT_ROOT/Resources"
+if [ -d "$RESOURCES_SRC" ]; then
+    echo -e "${GREEN}Đang copy Resources/ (app_logo) vào package...${NC}"
+    mkdir -p "$PACKAGE_OUT_DIR/Resources"
+    cp -f "$RESOURCES_SRC/app_logo.png" "$PACKAGE_OUT_DIR/Resources/app_logo.png"
+    if [ -f "$RESOURCES_SRC/app_logo.ico" ]; then
+        cp -f "$RESOURCES_SRC/app_logo.ico" "$PACKAGE_OUT_DIR/Resources/app_logo.ico"
+    fi
+    echo -e "  ${DARK_YELLOW}Da copy app_logo.{png,ico} thanh cong.${NC}"
+fi
+
 # 5b. Copy Modules/ folder từ repo root vào package
 #     CRITICAL: Modules chứa Gemini-API-2.0.0/server.py và google-flow-2.0.0/ — không có thì app crash khi khởi động Python server
 MODULES_SRC="$PROJECT_ROOT/Modules"

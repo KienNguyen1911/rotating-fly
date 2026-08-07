@@ -110,6 +110,26 @@ namespace AssetAutomator.Application.Steps
             string resolvedModel = GeminiApiService.ResolveModelName(selectedModel);
             string responseText = "";
 
+            // Same hardened prompt used by the production step so the legacy
+            // API fallback path stays in lockstep on the "no 60-100s scenes"
+            // rule. SceneDurationFixer further enforces the rule below.
+            const string SCENE_CREATION_PROMPT =
+                "Tạo scenes JSON cho video từ file SRT và transcript đính kèm.\n\n" +
+                "HARD RULES (must follow, no exceptions, including the final scene):\n" +
+                "1. Maximum duration per scene: 20 seconds. Never exceed 20s.\n" +
+                "2. Maximum transcript words per scene: ~50 words.\n" +
+                "3. If a transcript segment is longer than the limit, you MUST split it " +
+                "into multiple scenes at natural sentence or breath boundaries. Each " +
+                "scene must be self-contained with its own image_prompt.\n" +
+                "4. The closing scene is NOT exempt. A long farewell/breath/sleep-well " +
+                "narration must be split into 3-6 scenes (e.g. gratitude, breath, " +
+                "settling-in, deep rest, closing words).\n" +
+                "5. Do NOT merge multiple SRT cues into one scene. Each scene's " +
+                "\"start\" and \"end\" must match the boundaries of one or more " +
+                "consecutive SRT cues whose total duration is <= 20s.\n" +
+                "6. Return SRT timestamps verbatim — do not invent or round them.\n" +
+                "7. Output JSON only, wrapped in ```json ... ```, no commentary.";
+
             // Resolve profile path: explicit constructor param > task.SelectedProfile > settings.DefaultChromeProfile
             string? profilePath = _explicitProfilePath ?? ResolveChromeProfilePath(task, logTask);
 
@@ -151,7 +171,7 @@ namespace AssetAutomator.Application.Steps
                 if (File.Exists(transcriptPath)) attachedFiles.Add(transcriptPath);
                 if (File.Exists(srtPath)) attachedFiles.Add(srtPath);
 
-                string prompt = "Tạo scenes JSON cho video từ file SRT và transcript đính kèm.";
+                string prompt = SCENE_CREATION_PROMPT;
                 logTask(task, $"[STEP 4] API mode: {attachedFiles.Count} files, Gem={gemId ?? "default"}, Model={resolvedModel}");
 
                 var response = await _geminiApiService.SendChatAsync(
@@ -195,6 +215,20 @@ namespace AssetAutomator.Application.Steps
                 await File.WriteAllTextAsync(rawPath, responseText);
                 logTask(task, $"[ERROR] [STEP 4] Saved raw response ({responseText.Length} chars) to: {rawPath}");
                 throw;
+            }
+
+            try
+            {
+                // SceneDurationFixer has been removed.
+                // Gemini's scene breakdown now relies on the model itself for proper segmentation.
+                // If scenes are too long, callers should regenerate with adjusted parameters.
+                logTask(task, "[STEP 4] 🛡️ Skipped post-processing; using Gemini's scene segmentation as-is.");
+            }
+            catch (Exception fixEx)
+            {
+                logTask(task,
+                    $"[STEP 4] ⚠️ Processing skipped: {fixEx.Message}. " +
+                    "Continuing with raw Gemini output.");
             }
 
             string formattedJson = JsonSerializer.Serialize(rootData, new JsonSerializerOptions { WriteIndented = true });

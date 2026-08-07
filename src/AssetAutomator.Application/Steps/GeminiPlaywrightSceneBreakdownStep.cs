@@ -46,6 +46,32 @@ namespace AssetAutomator.Application.Steps
         private const int MIN_SRT_BYTES = 20;
 
         /// <summary>
+        /// The user-facing instruction sent to Gemini gem (and to the API
+        /// fallback). Kept in a single constant so the rules cannot drift
+        /// between Playwright and API code paths.
+        ///
+        /// The hard constraints in this prompt guide Gemini to produce properly
+        /// segmented scenes. Gemini's scene segmentation is now used as-is
+        /// without post-processing.
+        /// </summary>
+        internal const string SCENE_CREATION_PROMPT =
+            "Tạo scenes JSON cho video từ file SRT và transcript đính kèm.\n\n" +
+            "HARD RULES (must follow, no exceptions, including the final scene):\n" +
+            "1. Maximum duration per scene: 20 seconds. Never exceed 20s.\n" +
+            "2. Maximum transcript words per scene: ~50 words.\n" +
+            "3. If a transcript segment is longer than the limit, you MUST split it " +
+            "into multiple scenes at natural sentence or breath boundaries. Each " +
+            "scene must be self-contained with its own image_prompt.\n" +
+            "4. The closing scene is NOT exempt. A long farewell/breath/sleep-well " +
+            "narration must be split into 3-6 scenes (e.g. gratitude, breath, " +
+            "settling-in, deep rest, closing words).\n" +
+            "5. Do NOT merge multiple SRT cues into one scene. Each scene's " +
+            "\"start\" and \"end\" must match the boundaries of one or more " +
+            "consecutive SRT cues whose total duration is <= 20s.\n" +
+            "6. Return SRT timestamps verbatim — do not invent or round them.\n" +
+            "7. Output JSON only, wrapped in ```json ... ```, no commentary.";
+
+        /// <summary>
         /// Scene Creator execution mode.
         /// </summary>
         public enum SceneBreakdownMode
@@ -197,7 +223,7 @@ namespace AssetAutomator.Application.Steps
                 throw;
             }
 
-            await WriteScenesAsync(rootData, outputDir, logTask, task);
+            await WriteScenesAsync(rootData, outputDir, logTask, task, srtPath, gemId, resolvedModel);
         }
 
         /// <summary>
@@ -219,8 +245,6 @@ namespace AssetAutomator.Application.Steps
             AutomationTask task,
             Action<AutomationTask, string> logTask)
         {
-            const string Prompt = "Tạo scenes JSON cho video từ file SRT và transcript đính kèm.";
-
             var attachedFiles = new List<string>();
             if (File.Exists(transcriptPath)) attachedFiles.Add(transcriptPath);
             if (File.Exists(srtPath)) attachedFiles.Add(srtPath);
@@ -236,7 +260,7 @@ namespace AssetAutomator.Application.Steps
             logTask(task, "--- [BẮT ĐẦU CHUỖI TƯ DUY / THINKING PROCESS] ---");
 
             var streamResult = await _geminiApiService.SendChatStreamAsync(
-                message: Prompt,
+                message: SCENE_CREATION_PROMPT,
                 filePaths: attachedFiles,
                 gemId: gemId,
                 model: resolvedModel,
@@ -302,7 +326,7 @@ namespace AssetAutomator.Application.Steps
                 throw;
             }
 
-            await WriteScenesAsync(rootData, outputDir, logTask, task);
+            await WriteScenesAsync(rootData, outputDir, logTask, task, srtPath, gemId, resolvedModel);
         }
 
         /// <summary>
@@ -310,13 +334,32 @@ namespace AssetAutomator.Application.Steps
         /// <c>scenes.json</c> (canonical) and <c>output_scenes.json</c> (legacy
         /// alias consumed by downstream steps). Marks the step Done and logs the
         /// final result. Shared by API Stream and Playwright branches.
+        ///
+        /// SceneDurationFixer has been removed — Gemini's scene segmentation is used as-is.
+        /// If scenes are too long, callers should regenerate with adjusted parameters.
         /// </summary>
-        private static async Task WriteScenesAsync(
+        private async Task WriteScenesAsync(
             ScenesJsonRootModel rootData,
             string outputDir,
             Action<AutomationTask, string> logTask,
-            AutomationTask task)
+            AutomationTask task,
+            string srtPath,
+            string? gemId = null,
+            string? selectedModel = null)
         {
+            try
+            {
+                // SceneDurationFixer has been removed.
+                // Gemini's scene breakdown now relies on the model itself for proper segmentation.
+                logTask(task, "[STEP 3] 🛡️ Skipped post-processing; using Gemini's scene segmentation as-is.");
+            }
+            catch (Exception ex)
+            {
+                logTask(task,
+                    $"[STEP 3] ⚠️ Processing skipped: {ex.GetType().Name}: {ex.Message}. " +
+                    "Continuing with raw Gemini output.");
+            }
+
             string formattedJson = JsonSerializer.Serialize(
                 rootData,
                 new JsonSerializerOptions { WriteIndented = true });

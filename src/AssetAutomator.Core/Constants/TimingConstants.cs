@@ -120,6 +120,24 @@ namespace AssetAutomator.Core.Constants
     }
 
     /// <summary>
+    /// Scene duration limits enforced by SceneDurationFixer and the scene
+    /// generation prompts. These bounds exist because Gemini frequently
+    /// under-segments long closing/meditation monologues, producing a single
+    /// 60-100s scene that breaks downstream image batching and TTS alignment.
+    /// </summary>
+    public static class SceneLimits
+    {
+        /// <summary>Soft target — most scenes should land near this value.</summary>
+        public const double TargetSceneDurationSeconds = 18.0;
+
+        /// <summary>Hard ceiling. Any scene longer than this is split during post-processing.</summary>
+        public const double MaxSceneDurationSeconds = 25.0;
+
+        /// <summary>Approximate words-per-scene ceiling baked into prompts.</summary>
+        public const int MaxWordsPerScene = 50;
+    }
+
+    /// <summary>
     /// Service limit constants for concurrency and resource management.
     /// </summary>
     public static class ServiceLimits

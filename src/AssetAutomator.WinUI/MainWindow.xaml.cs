@@ -28,6 +28,11 @@ public sealed partial class MainWindow : Window
         SetSize();
         ExtendIntoTitleBar();
 
+        // Wire Resources/app_logo.ico into the WinUI 3 window icon (title bar + taskbar).
+        // Unpackaged WinUI 3 ignores <ApplicationIcon> at runtime, so the .exe icon shown by
+        // Explorer/taskbar must be set explicitly via AppWindow.SetIcon + SetTaskbarIcon.
+        TryApplyAppLogo();
+
         NavView.SelectedItem = NavView.MenuItems[0];
         ContentFrame.Navigate(typeof(GeminiPage));
 
@@ -38,10 +43,47 @@ public sealed partial class MainWindow : Window
         StartFlowLocalStatusPolling();
     }
 
+    private void TryApplyAppLogo()
+    {
+        try
+        {
+            var icoPath = System.IO.Path.Combine(
+                AppContext.BaseDirectory, "Resources", "app_logo.ico");
+            if (!System.IO.File.Exists(icoPath))
+            {
+                System.Diagnostics.Debug.WriteLine($"[Icon] app_logo.ico not found at '{icoPath}'");
+                return;
+            }
+
+            var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
+            var windowId = Microsoft.UI.Win32Interop.GetWindowIdFromWindow(hwnd);
+            var appWindow = Microsoft.UI.Windowing.AppWindow.GetFromWindowId(windowId);
+
+            // WinUI 3 AppWindow exposes (string filePath) overloads for both icons.
+            // We let the framework own the HICON lifecycle — no manual DestroyIcon needed.
+            appWindow.SetIcon(icoPath);
+            appWindow.SetTaskbarIcon(icoPath);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[Icon] Failed to apply app logo: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Re-applies the taskbar + title-bar icon. WinUI 3 has a well-known quirk where the
+    /// taskbar icon is cached by Explorer the first time the HWND is shown and is not
+    /// refreshed even after AppWindow.SetTaskbarIcon is called later (e.g. when the icon
+    /// resource was missing during the very first Activate). Hooking Activated ensures
+    /// the icon sticks as soon as the window has a real HWND on screen.
+    /// </summary>
     private void MainWindow_Activated(object sender, WindowActivatedEventArgs args)
     {
         // Trigger một lần update ngay khi window activated
         _ = UpdateFlowLocalIndicatorAsync();
+
+        // Cheap idempotent call; harmless if already applied.
+        TryApplyAppLogo();
     }
 
     private void StartFlowLocalStatusPolling()
@@ -105,7 +147,7 @@ public sealed partial class MainWindow : Window
     private void SetSize()
     {
         var hwnd = WindowNative.GetWindowHandle(this);
-        var windowId = Win32Interop.GetWindowIdFromWindow(hwnd);
+        var windowId = Microsoft.UI.Win32Interop.GetWindowIdFromWindow(hwnd);
         var appWindow = AppWindow.GetFromWindowId(windowId);
         appWindow.Resize(new SizeInt32(1240, 700));
     }

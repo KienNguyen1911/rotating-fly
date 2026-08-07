@@ -6,6 +6,7 @@
     <RootNamespace>AssetAutomator.WinUI</RootNamespace>
     <AssemblyName>AssetAutomator.WinUI</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>..\..\Resources\app_logo.ico</ApplicationIcon>
     <Platforms>x64</Platforms>
     <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
     <UseWinUI>true</UseWinUI>
@@ -38,5 +39,22 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <Link>tools\PythonSource\%(RecursiveDir)%(Filename)%(Extension)</Link>
     </None>
+  </ItemGroup>
+
+  <!-- Bundle app logo (high-res) into ms-appx:///Resources/ so XAML <Image Source> can reach it.
+       .ico separately wired via <ApplicationIcon> above for the unpackaged .exe taskbar/title icon.
+       The .ico MUST also be copied to Resources\ next to the .exe at runtime because
+       MainWindow.TryApplyAppLogo() resolves it via AppContext.BaseDirectory + "Resources\app_logo.ico".
+       Without this <Content> entry, dotnet run / WinUI 3 unpackaged silently fails to set the
+       taskbar icon (the file lookup in TryApplyAppLogo early-returns). -->
+  <ItemGroup>
+    <Content Include="..\..\Resources\app_logo.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>Resources\app_logo.png</Link>
+    </Content>
+    <Content Include="..\..\Resources\app_logo.ico">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>Resources\app_logo.ico</Link>
+    </Content>
   </ItemGroup>
 </Project>
