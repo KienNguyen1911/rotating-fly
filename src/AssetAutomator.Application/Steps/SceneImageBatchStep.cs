@@ -288,7 +288,7 @@ namespace AssetAutomator.Application.Steps
                     TaskId = task.Id.ToString(),
                     Prompt = scene.image_prompt,
                     Transcript = scene.transcript,
-                    SceneTitle = $"Scene #{sceneNumber}: {sceneId}",
+                    SceneTitle = sceneNumber.ToString("D3"),
                     Provider = provider,
                     Engine = "flow",
                     Model = defaultModel,

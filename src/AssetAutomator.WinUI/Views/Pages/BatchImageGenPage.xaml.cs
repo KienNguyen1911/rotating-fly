@@ -410,6 +410,86 @@ public sealed partial class BatchImageGenPage : Page
         }
     }
 
+    // Section: hover effects on the card overlay. We toggle the action button
+    // StackPanel's opacity directly (instead of Visibility) so users see a
+    // smooth fade in/out, matching the screenshot reqs.
+    private void CardGrid_PointerEntered(object sender, PointerRoutedEventArgs e)
+    {
+        if (sender is not Grid grid) return;
+
+        // Action buttons (top-right) appear on hover
+        var actionsStackPanel = FindVisualChild<StackPanel>(grid, "CardActions");
+        if (actionsStackPanel != null)
+        {
+            actionsStackPanel.Opacity = 1.0;
+        }
+
+        // Transcript + prompt overlay (bottom glass bar) appears on hover so the
+        // default card view stays clean and image-focused.
+        var promptOverlay = FindVisualChild<Border>(grid, "CardPromptOverlay");
+        if (promptOverlay != null)
+        {
+            promptOverlay.Opacity = 1.0;
+        }
+
+        // Lift the card border slightly for additional visual feedback.
+        if (grid.Parent is Border border)
+        {
+            border.BorderBrush = new Microsoft.UI.Xaml.Media.SolidColorBrush(
+                Microsoft.UI.Colors.LightSteelBlue);
+        }
+    }
+
+    private void CardGrid_PointerExited(object sender, PointerRoutedEventArgs e)
+    {
+        if (sender is not Grid grid) return;
+
+        var actionsStackPanel = FindVisualChild<StackPanel>(grid, "CardActions");
+        if (actionsStackPanel != null)
+        {
+            actionsStackPanel.Opacity = 0.0;
+        }
+
+        var promptOverlay = FindVisualChild<Border>(grid, "CardPromptOverlay");
+        if (promptOverlay != null)
+        {
+            promptOverlay.Opacity = 0.0;
+        }
+
+        if (grid.Parent is Border border)
+        {
+            border.BorderBrush = (Microsoft.UI.Xaml.Media.Brush)Microsoft.UI.Xaml.Application.Current.Resources["CardStrokeColorDefaultBrush"];
+        }
+    }
+
+    /// <summary>
+    /// Walks the visual tree of <paramref name="root"/> looking for a direct
+    /// descendant of type <typeparamref name="T"/> whose x:Name matches
+    /// <paramref name="name"/>. Used to reach into the templated card grid to
+    /// toggle the action button overlay without binding to a unique
+    /// dependency property.
+    /// </summary>
+    private static T? FindVisualChild<T>(DependencyObject root, string name) where T : FrameworkElement
+    {
+        if (root is T match && match.Name == name)
+        {
+            return match;
+        }
+
+        int count = Microsoft.UI.Xaml.Media.VisualTreeHelper.GetChildrenCount(root);
+        for (int i = 0; i < count; i++)
+        {
+            var child = Microsoft.UI.Xaml.Media.VisualTreeHelper.GetChild(root, i);
+            var result = FindVisualChild<T>(child, name);
+            if (result != null)
+            {
+                return result;
+            }
+        }
+
+        return null;
+    }
+
     public void CardImage_PointerPressed(object sender, PointerRoutedEventArgs e)
     {
         if (sender is FrameworkElement elem && elem.Tag is BatchImageItem item && !string.IsNullOrWhiteSpace(item.ImagePath) && File.Exists(item.ImagePath))

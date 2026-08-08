@@ -1,6 +1,7 @@
 using System;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
+using System.Text.RegularExpressions;
 
 namespace AssetAutomator.Core.Models
 {
@@ -161,6 +162,45 @@ namespace AssetAutomator.Core.Models
         protected void OnPropertyChanged([CallerMemberName] string? propertyName = null)
         {
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+        }
+
+        // Compiled once at type-init — matches anything like "Scene #1", "scene_001",
+        // "Cảnh 1", "1", etc. Used to extract the scene number from legacy titles
+        // so we can normalize them to the new compact "001" format.
+        private static readonly Regex LegacyTitleNumberRegex = new Regex(
+            @"\d+",
+            RegexOptions.Compiled);
+
+        /// <summary>
+        /// Normalizes any legacy or user-typed SceneTitle into the current compact
+        /// format — a 3-digit zero-padded scene number (e.g. "001", "042").
+        ///
+        /// Examples (for <paramref name="index"/> = 7):
+        ///   "Scene #7: scene_007"        → "007"
+        ///   "Cảnh 7"                      → "007"
+        ///   "scene_007"                   → "007"
+        ///   "7"                           → "007"
+        ///   "" / null                     → "007"
+        /// </summary>
+        /// <remarks>
+        /// We always fall back to <paramref name="index"/> so the title is never
+        /// empty, even if the persisted value is corrupted or belongs to a totally
+        /// different language/locale.
+        /// </remarks>
+        public static string NormalizeSceneTitle(string? rawTitle, int index)
+        {
+            // Default to index when the raw title is empty so we never display
+            // a blank badge even if the persisted value is corrupted.
+            int number = index;
+            if (!string.IsNullOrWhiteSpace(rawTitle))
+            {
+                var match = LegacyTitleNumberRegex.Match(rawTitle);
+                if (match.Success && int.TryParse(match.Value, out int parsed))
+                {
+                    number = parsed;
+                }
+            }
+            return number.ToString("D3");
         }
     }
 }

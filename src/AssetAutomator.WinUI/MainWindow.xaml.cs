@@ -144,6 +144,100 @@ public sealed partial class MainWindow : Window
         }
     }
 
+    // ─────────────────────────────────────────────────────
+    //  BottomBar Flow Local indicator — click handlers
+    // ─────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Mở dashboard Google Flow Local (http://127.0.0.1:8787) trong trình duyệt mặc định
+    /// khi user click vào bottom bar indicator. Dùng Windows.System.Launcher để hệ thống
+    /// tự chọn handler phù hợp (Edge/Chrome/...). Nếu server chưa chạy, browser vẫn mở
+    /// và hiển thị lỗi kết nối — không nuốt lỗi để user biết trạng thái thực tế.
+    /// </summary>
+    private async void FlowLocalIndicator_Tapped(object sender, Microsoft.UI.Xaml.Input.TappedRoutedEventArgs e)
+    {
+        try
+        {
+            const string FlowLocalUrl = "http://127.0.0.1:8787";
+            var uri = new Uri(FlowLocalUrl);
+            bool launched = await Windows.System.Launcher.LaunchUriAsync(uri);
+            if (!launched)
+            {
+                System.Diagnostics.Debug.WriteLine(
+                    $"[FlowLocalIndicator_Tapped] Launcher.LaunchUriAsync returned false for '{FlowLocalUrl}'.");
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[FlowLocalIndicator_Tapped] {ex.Message}");
+        }
+    }
+
+    private void FlowLocalIndicator_PointerEntered(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
+    {
+        // Hover feedback: tăng Opacity + đổi BorderBrush để người dùng biết đây là phần tử clickable.
+        // Đổi cursor sang bàn tay qua reflection vì UIElement.ProtectedCursor là protected setter,
+        // code-behind ngoài partial class không gọi trực tiếp được.
+        if (sender is Microsoft.UI.Xaml.Controls.Border border)
+        {
+            border.Opacity = 1.0;
+            border.BorderBrush = (Microsoft.UI.Xaml.Media.Brush)Microsoft.UI.Xaml.Application.Current.Resources["AccentFillColorDefaultBrush"];
+        }
+        TrySetHandCursor(sender as UIElement);
+    }
+
+    private void FlowLocalIndicator_PointerExited(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
+    {
+        if (sender is Microsoft.UI.Xaml.Controls.Border border)
+        {
+            border.Opacity = 0.92;
+            border.BorderBrush = (Microsoft.UI.Xaml.Media.Brush)Microsoft.UI.Xaml.Application.Current.Resources["CardStrokeColorDefaultBrush"];
+        }
+        TrySetArrowCursor(sender as UIElement);
+    }
+
+    // UIElement.ProtectedCursor là protected setter. Code-behind của MainWindow không kế thừa UIElement
+    // nên không gọi trực tiếp được — dùng reflection để set một lần, cache PropertyInfo để tránh lookup lặp.
+    private static System.Reflection.PropertyInfo? s_protectedCursorProp;
+    private static System.Reflection.PropertyInfo GetProtectedCursorProperty()
+    {
+        if (s_protectedCursorProp == null)
+        {
+            s_protectedCursorProp = typeof(UIElement).GetProperty(
+                "ProtectedCursor",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic);
+        }
+        return s_protectedCursorProp!;
+    }
+
+    private static void TrySetHandCursor(UIElement? element)
+    {
+        if (element == null) return;
+        try
+        {
+            var cursor = Microsoft.UI.Input.InputSystemCursor.Create(Microsoft.UI.Input.InputSystemCursorShape.Hand);
+            GetProtectedCursorProperty().SetValue(element, cursor);
+        }
+        catch
+        {
+            // best-effort; nếu SDK đổi API, hover chỉ mất cursor chứ không crash app.
+        }
+    }
+
+    private static void TrySetArrowCursor(UIElement? element)
+    {
+        if (element == null) return;
+        try
+        {
+            var cursor = Microsoft.UI.Input.InputSystemCursor.Create(Microsoft.UI.Input.InputSystemCursorShape.Arrow);
+            GetProtectedCursorProperty().SetValue(element, cursor);
+        }
+        catch
+        {
+            // best-effort
+        }
+    }
+
     private void SetSize()
     {
         var hwnd = WindowNative.GetWindowHandle(this);

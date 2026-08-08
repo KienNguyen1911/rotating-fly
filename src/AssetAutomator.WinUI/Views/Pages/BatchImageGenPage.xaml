@@ -361,6 +361,10 @@
                                             HorizontalAlignment="Stretch"
                                             Click="BtnUpdateScriptJson_Click" />
                                 </Grid>
+
+                                <!-- (Popup viewer buttons removed — viewers now live on
+                                     the Gemini AI Creator page as a single "View Assets"
+                                     button. See AssetViewerDialog.) -->
                             </StackPanel>
                         </Border>
 
@@ -505,7 +509,9 @@
                                             BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
                                             BorderThickness="1"
                                             Margin="0,0,16,16">
-                                        <Grid Height="{x:Bind AspectRatio, Mode=OneWay, Converter={StaticResource AspectRatioHeightConverter}, ConverterParameter=320}">
+                                        <Grid Height="{x:Bind AspectRatio, Mode=OneWay, Converter={StaticResource AspectRatioHeightConverter}, ConverterParameter=320}"
+                                              PointerEntered="CardGrid_PointerEntered"
+                                              PointerExited="CardGrid_PointerExited">
                                             <!-- Waiting/Status Placeholder -->
                                             <Grid Background="#12141A">
                                                 <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="6">
@@ -553,8 +559,13 @@
                                                         </Border>
                                                     </StackPanel>
 
-                                                    <!-- Right: Quick Action Buttons (Regenerate 🔄, Open 📁, Copy 📋) -->
-                                                    <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                                    <!-- Right: Quick Action Buttons (Regenerate 🔄, Open 📁, Copy 📋) — hover-only -->
+                                                    <StackPanel x:Name="CardActions"
+                                                                Grid.Column="2"
+                                                                Orientation="Horizontal"
+                                                                Spacing="6"
+                                                                VerticalAlignment="Center"
+                                                                Opacity="0">
                                                         <Button Content="🔄"
                                                                 Width="30" Height="30" Padding="0"
                                                                 CornerRadius="15"
@@ -576,14 +587,18 @@
                                                     </StackPanel>
                                                 </Grid>
 
-                                                <!-- Bottom Glass Bar: Transcript & Prompt Snippet -->
-                                                <Border Grid.Row="2"
+                                                <!-- Bottom Glass Bar: Transcript & Prompt Snippet
+                                                     Hidden by default — revealed on pointer hover via
+                                                     CardGrid_PointerEntered/Exited (same mechanism as CardActions). -->
+                                                <Border x:Name="CardPromptOverlay"
+                                                        Grid.Row="2"
                                                         Margin="10"
                                                         Background="#D9090D16"
                                                         CornerRadius="8"
                                                         Padding="10,8"
                                                         BorderBrush="#30FFFFFF"
-                                                        BorderThickness="1">
+                                                        BorderThickness="1"
+                                                        Opacity="0">
                                                     <StackPanel Spacing="3">
                                                         <TextBlock Text="{x:Bind Transcript, Mode=OneWay}"
                                                                    FontSize="11"

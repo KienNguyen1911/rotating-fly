@@ -92,14 +92,20 @@ namespace AssetAutomator.Application.Steps
                 logTask(task, $"[STEP 2] Phase 2: Converting Research Session context to final spoken script transcript in {targetLangName} (Session ID: {currentSessionId})...");
 
                 string scriptPrompt = $$"""
-Write a complete, high-quality script of approximately 1600 - 2000 words in {{targetLangName}} based on the deep research guidelines.
-CRITICAL RULES FOR OUTPUT FORMAT:
-1. You are generating raw input for a Text-To-Speech (TTS) engine.
-2. Output ONLY the raw spoken words.
-3. DO NOT include any titles, headers, or part numbers (e.g., NO "PART 1:", NO "Title:").
-4. DO NOT include any visual descriptions, character names, or scene directions (e.g., NO "(Visual Mascot...)", NO "Host:").
-5. DO NOT include any audio cues, pauses, or timestamps (e.g., NO "[Pause 2 seconds]", NO "00:00 - 00:30").
-6. The final output must consist EXCLUSIVELY of the paragraphs of text to be read aloud, with no other formatting.
+Write a complete, high-quality video script transcript in {{targetLangName}} about the topic: "{{topicOrUrl}}".
+
+STRICT WORD COUNT REQUIREMENT:
+- The total length of the final output MUST be strictly between 1600 and 2000 words.
+- Plan your pacing across 6 to 8 well-developed thematic sections to naturally hit this length without fluff.
+- Count the words carefully before finalizing. Do not output anything under 1600 words or over 2000 words.
+
+CRITICAL RULES FOR OUTPUT FORMAT (TTS OPTIMIZATION):
+1. Output ONLY the raw spoken words. No meta-commentary, notes, or explanations outside the script.
+2. DO NOT include any titles, headers, section names, or part numbers (e.g., NO "PART 1:", NO "Title:", NO "Introduction:").
+3. DO NOT include any visual descriptions, character names, speaker labels, or scene directions (e.g., NO "(Visual Mascot...)", NO "Host:", NO "[Cut to...]").
+4. DO NOT include any audio cues, sound effects, pauses, music notes, or timestamps (e.g., NO "[Pause 2 seconds]", NO "00:00 - 00:30", NO "*laughs*").
+5. Write numbers, percentages, and symbols out in full words (e.g., write "one thousand five hundred" instead of "1500", "percent" instead of "%") to ensure clean reading by the TTS engine.
+6. The final output must consist EXCLUSIVELY of continuous paragraphs of text to be read aloud, separated only by standard paragraph breaks.
 """;
 
                 var scriptResponse = await _geminiApiService.SendChatAsync(
@@ -143,14 +149,20 @@ CRITICAL RULES FOR OUTPUT FORMAT:
                 }
 
                 string prompt = $$"""
-Write a complete, high-quality video script transcript of approximately 1600 - 2000 words in {{targetLangName}} about the topic: '{{topicOrUrl}}'.
-CRITICAL RULES FOR OUTPUT FORMAT:
-1. You are generating raw input for a Text-To-Speech (TTS) engine.
-2. Output ONLY the raw spoken words.
-3. DO NOT include any titles, headers, or part numbers (e.g., NO "PART 1:", NO "Title:").
-4. DO NOT include any visual descriptions, character names, or scene directions (e.g., NO "(Visual Mascot...)", NO "Host:").
-5. DO NOT include any audio cues, pauses, or timestamps (e.g., NO "[Pause 2 seconds]", NO "00:00 - 00:30").
-6. The final output must consist EXCLUSIVELY of the paragraphs of text to be read aloud, with no other formatting.
+Write a complete, high-quality video script transcript in {{targetLangName}} about the topic: "{{topicOrUrl}}".
+
+STRICT WORD COUNT REQUIREMENT:
+- The total length of the final output MUST be strictly between 1600 and 2000 words.
+- Plan your pacing across 6 to 8 well-developed thematic sections to naturally hit this length without fluff.
+- Count the words carefully before finalizing. Do not output anything under 1600 words or over 2000 words.
+
+CRITICAL RULES FOR OUTPUT FORMAT (TTS OPTIMIZATION):
+1. Output ONLY the raw spoken words. No meta-commentary, notes, or explanations outside the script.
+2. DO NOT include any titles, headers, section names, or part numbers (e.g., NO "PART 1:", NO "Title:", NO "Introduction:").
+3. DO NOT include any visual descriptions, character names, speaker labels, or scene directions (e.g., NO "(Visual Mascot...)", NO "Host:", NO "[Cut to...]").
+4. DO NOT include any audio cues, sound effects, pauses, music notes, or timestamps (e.g., NO "[Pause 2 seconds]", NO "00:00 - 00:30", NO "*laughs*").
+5. Write numbers, percentages, and symbols out in full words (e.g., write "one thousand five hundred" instead of "1500", "percent" instead of "%") to ensure clean reading by the TTS engine.
+6. The final output must consist EXCLUSIVELY of continuous paragraphs of text to be read aloud, separated only by standard paragraph breaks.
 """;
                 logTask(task, $"[STEP 2] Sending request to Gemini API (Gem ID: {gemId ?? "Default"}, Model: {resolvedModel2}, Language: {targetLangName})...");
 

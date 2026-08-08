@@ -16,6 +16,7 @@ using AssetAutomator.Application.Steps;
 using AssetAutomator.Infrastructure.Helpers;
 using AssetAutomator.Infrastructure.Logging;
 using AssetAutomator.Infrastructure.Services;
+using AssetAutomator.WinUI.Views.Dialogs;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -1233,31 +1234,55 @@ public partial class GeminiViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private void ViewTaskScenes(GeminiTaskModel? task)
+    private async Task ViewTaskAssetsAsync(GeminiTaskModel? task)
     {
         if (task == null) return;
 
         string outputDir = GetTaskOutputDir(task);
-        string scenesPath = Path.Combine(outputDir, "scenes.json");
 
-        if (!File.Exists(scenesPath))
+        // Open a single tabbed viewer (scenes.json · transcript.txt · voiceover.srt).
+        // If no XamlRoot is available yet we fall back to opening the OS file manager
+        // so the user at least gets somewhere useful.
+        var xamlRoot = App.MainWindowInstance?.Content?.XamlRoot ?? PageFallbackXamlRoot;
+        if (xamlRoot == null)
         {
-            StatusLog = $"[SCENES] ⚠️ Không tìm thấy scenes.json tại {scenesPath}. Hãy chạy task trước.";
+            StatusLog = "[ASSETS] ⚠️ Không tìm thấy XamlRoot để hiển thị popup. Đang fallback mở thư mục.";
+            TryOpenInDefaultApp(outputDir, "[ASSETS]");
             return;
         }
 
         try
         {
+            var dialog = new AssetViewerDialog(outputDir) { XamlRoot = xamlRoot };
+            dialog.ApplyScreenSizedLayout();
+            await dialog.ShowAsync();
+            StatusLog = $"[ASSETS] ✅ Đã mở popup Assets cho task ({outputDir}).";
+        }
+        catch (Exception ex)
+        {
+            StatusLog = $"[ASSETS] ❌ Lỗi mở popup: {ex.Message}";
+        }
+    }
+
+    /// <summary>
+    /// Last-resort fallback when a popup can't be shown (no XamlRoot yet). Used
+    /// only by <see cref="ViewTaskAssetsAsync"/> so the user still gets to see
+    /// the assets even in error scenarios.
+    /// </summary>
+    private void TryOpenInDefaultApp(string filePath, string logPrefix)
+    {
+        try
+        {
             Process.Start(new ProcessStartInfo
             {
-                FileName = scenesPath,
+                FileName = filePath,
                 UseShellExecute = true,
                 Verb = "open"
             });
         }
         catch (Exception ex)
         {
-            StatusLog = $"[SCENES] ❌ Lỗi mở file: {ex.Message}";
+            StatusLog = $"{logPrefix} ❌ Lỗi mở file: {ex.Message}";
         }
     }
 

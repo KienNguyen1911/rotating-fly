@@ -264,7 +264,11 @@ public partial class BatchImageGenViewModel : ObservableObject
                 BatchImageItems.Add(new BatchImageItem
                 {
                     Index = state.Index,
-                    SceneTitle = state.SceneTitle,
+                    // Normalize here so projects saved with the old format
+                    // ("Scene #1: scene_001") display the new compact "001" badge
+                    // without needing a project migration. New pipeline runs
+                    // already write the compact format directly.
+                    SceneTitle = BatchImageItem.NormalizeSceneTitle(state.SceneTitle, state.Index),
                     Transcript = state.Transcript,
                     Prompt = state.Prompt,
                     Status = state.Status,
@@ -530,7 +534,11 @@ public partial class BatchImageGenViewModel : ObservableObject
                     var item = new BatchImageItem
                     {
                         Index = s.scene > 0 ? s.scene : idx,
-                        SceneTitle = $"Cảnh {(s.scene > 0 ? s.scene : idx)}",
+                        // Use the same compact "001" format as the pipeline so newly
+                        // imported scenes look identical to scenes already in the batch.
+                        SceneTitle = BatchImageItem.NormalizeSceneTitle(
+                            null,
+                            s.scene > 0 ? s.scene : idx),
                         Transcript = s.transcript ?? string.Empty,
                         Prompt = s.image_prompt,
                         Status = "Waiting",
@@ -787,6 +795,36 @@ public partial class BatchImageGenViewModel : ObservableObject
 
         IsGenerating = false;
         showNotification("Hoàn thành", $"Đã hoàn tất sinh {itemsToGenerate.Count} ảnh cảnh hàng loạt!");
+    }
+
+    /// <summary>
+    /// Locates the on-disk scenes.json file for the active project.
+    ///
+    /// Pipeline-managed projects store <c>project.json.ScriptJson</c> as an
+    /// absolute path to scenes.json (see <c>SceneImageBatchStep</c>); user-created
+    /// projects store the actual JSON content. So we have to try in priority
+    /// order:
+    ///   1. <c>ScriptJson</c> itself if it points at an existing .json file.
+    /// Returns the parent directory of <paramref name="outputDir"/>, but only
+    /// when that parent is a real folder on disk (so we never feed
+    /// <c>Path.GetDirectoryName(null!)</c> to <see cref="File.Exists"/>).
+    /// </summary>
+    private static string? TryGetParentOfImagesDir(string? outputDir)
+    {
+        if (string.IsNullOrWhiteSpace(outputDir)) return null;
+        try
+        {
+            string? parent = Directory.GetParent(outputDir)?.FullName;
+            if (!string.IsNullOrWhiteSpace(parent) && Directory.Exists(parent))
+            {
+                return parent;
+            }
+        }
+        catch
+        {
+            // Invalid path (e.g. contains illegal chars). Just return null.
+        }
+        return null;
     }
 
     private static string GetDefaultScriptJson()

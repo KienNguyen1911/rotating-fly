@@ -911,17 +911,23 @@ public sealed partial class GeminiPage : Page
         Grid.SetColumn(runBtn, 0);
         grid.Children.Add(runBtn);
 
-        var scenesBtn = new Button
+        // Single tabbed "View Assets" button — opens a popup with 3 tabs:
+        // scenes.json · transcript.txt · voiceover.srt. Replaces the previous
+        // pair of separate viewers so the user clicks once and can flip between
+        // any of the three task outputs.
+        var assetsBtn = new Button
         {
-            Command = ViewModel.ViewTaskScenesCommand,
+            Command = ViewModel.ViewTaskAssetsCommand,
             CommandParameter = task
         };
-        var scenesStack = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
-        scenesStack.Children.Add(new FontIcon { Glyph = "\uE8A5", FontSize = 12 });
-        scenesStack.Children.Add(new TextBlock { Text = "Xem scenes.json" });
-        scenesBtn.Content = scenesStack;
-        Grid.SetColumn(scenesBtn, 1);
-        grid.Children.Add(scenesBtn);
+        ToolTipService.SetToolTip(assetsBtn,
+            "Mở popup xem scenes.json / transcript.txt / voiceover.srt của task này");
+        var assetsStack = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+        assetsStack.Children.Add(new FontIcon { Glyph = "\uE8B7", FontSize = 12 });
+        assetsStack.Children.Add(new TextBlock { Text = "View Assets", FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
+        assetsBtn.Content = assetsStack;
+        Grid.SetColumn(assetsBtn, 1);
+        grid.Children.Add(assetsBtn);
 
         var folderBtn = new Button
         {
