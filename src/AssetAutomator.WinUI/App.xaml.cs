@@ -32,14 +32,17 @@ public partial class App : Microsoft.UI.Xaml.Application
         // Defense-in-depth: prevent stray async exceptions from crashing the process.
         TaskScheduler.UnobservedTaskException += (s, e) =>
         {
-            System.Diagnostics.Debug.WriteLine($"[UnobservedTaskException] {e.Exception?.Message}");
+            var ex = e.Exception;
+            System.Diagnostics.Debug.WriteLine($"[UnobservedTaskException] {ex?.Message}\n{ex}");
+            TryWriteCrashLog("UnobservedTaskException", ex);
             e.SetObserved();
         };
 
         AppDomain.CurrentDomain.UnhandledException += (s, e) =>
         {
             var ex = e.ExceptionObject as Exception;
-            System.Diagnostics.Debug.WriteLine($"[UnhandledException] {ex?.Message}");
+            System.Diagnostics.Debug.WriteLine($"[UnhandledException] {ex?.Message}\n{ex}");
+            TryWriteCrashLog("UnhandledException", ex);
         };
 
         // Safety net: when the WinUI process is about to exit (graceful close,
@@ -69,6 +72,13 @@ public partial class App : Microsoft.UI.Xaml.Application
                 // Core Infrastructure Services
                 services.AddSingleton<IConfigService, Infrastructure.Services.ConfigService>();
                 services.AddSingleton<ILogService, Infrastructure.Logging.LogService>();
+
+                // ─────────────────────────────────────────────────────
+                //  History persistence — SQLite local DB (v2).
+                //  Single shared store instance: thread-safe via internal SemaphoreSlim.
+                //  Path: %APPDATA%\AssetAutomator\history.db (override qua ctor nếu cần).
+                // ─────────────────────────────────────────────────────
+                services.AddSingleton<AssetAutomator.Core.Interfaces.ITaskHistoryStore, Infrastructure.Persistence.SqliteTaskHistoryStore>();
 
                 // ─────────────────────────────────────────────────────
                 //  Named HttpClient + Polly resilience pipelines
@@ -109,7 +119,8 @@ public partial class App : Microsoft.UI.Xaml.Application
                 services.AddSingleton<HistoryService>(sp =>
                 {
                     var logger = sp.GetRequiredService<ILogService>();
-                    return new HistoryService(msg => logger.Info(LogCategory.General, msg));
+                    var store = sp.GetRequiredService<AssetAutomator.Core.Interfaces.ITaskHistoryStore>();
+                    return new HistoryService(store, msg => logger.Info(LogCategory.General, msg));
                 });
 
                 services.AddSingleton<BrowserService>(sp =>
@@ -146,7 +157,16 @@ public partial class App : Microsoft.UI.Xaml.Application
                 services.AddSingleton<SceneImageBatchStep>();
 
                 // Orchestrator
-                services.AddSingleton<PipelineOrchestrator>();
+                services.AddSingleton<PipelineOrchestrator>(sp => new PipelineOrchestrator(
+                    sp.GetRequiredService<GeminiApiService>(),
+                    sp.GetRequiredService<IConfigService>(),
+                    sp.GetRequiredService<VoiceoverGenerationStep>(),
+                    sp.GetRequiredService<GeminiPlaywrightSceneBreakdownStep>(),
+                    sp.GetRequiredService<BatchImageGenService>(),
+                    sp.GetRequiredService<GeminiTopicResearchStep>(),
+                    sp.GetRequiredService<SceneImageBatchStep>(),
+                    sp.GetRequiredService<HistoryService>()
+                ));
 
                 // ViewModels
                 services.AddSingleton<ViewModels.SidebarViewModel>();
@@ -171,7 +191,8 @@ public partial class App : Microsoft.UI.Xaml.Application
                 services.AddTransient<ViewModels.BatchImageGenViewModel>(sp => new ViewModels.BatchImageGenViewModel(
                     sp.GetRequiredService<BatchProjectService>(),
                     sp.GetRequiredService<BatchImageGenService>(),
-                    sp.GetRequiredService<IConfigService>()
+                    sp.GetRequiredService<IConfigService>(),
+                    sp.GetRequiredService<HistoryService>()
                 ));
 
                 // GeminiViewModel is registered as Singleton so its state (GeminiTasks,
@@ -395,6 +416,29 @@ public partial class App : Microsoft.UI.Xaml.Application
             await _host.StopAsync();
             _host.Dispose();
             _host = null;
+        }
+    }
+
+    /// <summary>
+    /// Best-effort crash log writer. Log vào <c>%LOCALAPPDATA%\AssetAutomator\crash.log</c>
+    /// để khi crash còn biết nguyên nhân (process bị kill trước khi có stack trace in ra IDE).
+    /// KHÔNG throw — chính nó cũng có thể fail trên môi trường đặc biệt.
+    /// </summary>
+    private static void TryWriteCrashLog(string source, Exception? ex)
+    {
+        try
+        {
+            string dir = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "AssetAutomator");
+            Directory.CreateDirectory(dir);
+            string file = Path.Combine(dir, "crash.log");
+            string entry = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {source}: {ex}\n{new string('-', 80)}\n";
+            File.AppendAllText(file, entry);
+        }
+        catch
+        {
+            // swallow — defense-in-depth không được làm crash app
         }
     }
 }

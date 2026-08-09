@@ -34,6 +34,7 @@ namespace AssetAutomator.Application.Services
         private readonly BatchImageGenService _batchImageGenService;
         private readonly GeminiTopicResearchStep _topicResearchStep;
         private readonly SceneImageBatchStep _imageBatchStep;
+        private readonly HistoryService? _historyService;
 
         private readonly int _maxDeepResearch;
         private readonly int _maxVoiceover;
@@ -48,9 +49,10 @@ namespace AssetAutomator.Application.Services
             BatchImageGenService batchImageGenService,
             GeminiTopicResearchStep topicResearchStep,
             SceneImageBatchStep imageBatchStep,
-            int maxDeepResearch = 2,
-            int maxVoiceover = 3,
-            int maxSceneCreator = 4,
+            HistoryService? historyService = null,
+            int maxDeepResearch = 1,
+            int maxVoiceover = 1,
+            int maxSceneCreator = 1,
             int maxImageGen = 1)
         {
             _geminiApiService = geminiApiService;
@@ -60,6 +62,7 @@ namespace AssetAutomator.Application.Services
             _batchImageGenService = batchImageGenService;
             _topicResearchStep = topicResearchStep;
             _imageBatchStep = imageBatchStep;
+            _historyService = historyService;
             _maxDeepResearch = Math.Max(1, maxDeepResearch);
             _maxVoiceover = Math.Max(1, maxVoiceover);
             _maxSceneCreator = Math.Max(1, maxSceneCreator);
@@ -126,11 +129,41 @@ namespace AssetAutomator.Application.Services
                 return;
             }
 
-            taskModel.Status = NodeStatus.Running;
-            logTask(taskModel, $"[PIPELINE] 🚀 Task '{topic}' vào hàng đợi pipeline...");
-
             // ── Build internal AutomationTask ──
             var internalTask = BuildInternalAutomationTask(taskModel);
+
+            // ── History hook: ghi entry Running vào SQLite (best-effort, không fail pipeline nếu lỗi) ──
+            string? historyId = null;
+            string projectName = !string.IsNullOrWhiteSpace(taskModel.OutputFolderName)
+                ? taskModel.OutputFolderName
+                : Core.Constants.YoutubeHelper.ToSafeTopicSlug(topic);
+            string? outputDir = !string.IsNullOrWhiteSpace(internalTask.OutputFolderOverride)
+                ? ResolveOutputDir(internalTask.OutputFolderOverride)
+                : null;
+            if (_historyService != null)
+            {
+                try
+                {
+                    historyId = await _historyService.StartTaskRunAsync(new Core.Models.TaskRunHistoryEntry
+                    {
+                        TaskType = Core.Models.HistoryTaskType.FullPipeline,
+                        ProjectName = projectName,
+                        OutputDirectory = outputDir,
+                        Status = Core.Models.HistoryTaskStatus.Running,
+                        StartedAt = DateTime.Now,
+                        LogsSummary = $"Pipeline bắt đầu: {topic}",
+                        ScriptwriterGemName = taskModel.SelectedScriptwriterGem?.Name,
+                        SceneCreatorGemName = taskModel.SelectedSceneCreatorGem?.Name,
+                    });
+                }
+                catch (Exception histEx)
+                {
+                    logTask(taskModel, $"[HISTORY-WARN] Không ghi được history start: {histEx.Message}");
+                }
+            }
+
+            taskModel.Status = NodeStatus.Running;
+            logTask(taskModel, $"[PIPELINE] 🚀 Task '{topic}' vào hàng đợi pipeline...");
 
             // Forward log từ internal AutomationTask sang GeminiTaskModel
             Action<AutomationTask, string> internalLog = (t, msg) => logTask(taskModel, msg);
@@ -226,19 +259,83 @@ namespace AssetAutomator.Application.Services
                 taskModel.Status = NodeStatus.Success;
                 taskModel.CurrentStepInfo = "✔️ Hoàn thành 100%";
                 logTask(taskModel, $"[PIPELINE] 🎉 Task '{topic}' hoàn thành toàn bộ pipeline!");
+
+                // ── History hook: mark Success + scan output dir cho assets ──
+                await FinishHistoryAsync(historyId, Core.Models.HistoryTaskStatus.Success, null, $"Pipeline hoàn thành: {topic}", outputDir);
             }
             catch (OperationCanceledException)
             {
                 taskModel.Status = NodeStatus.Failed;
                 taskModel.CurrentStepInfo = "⏹️ Đã hủy";
                 logTask(taskModel, $"[PIPELINE] ⏹️ Task '{topic}' bị hủy.");
+                await FinishHistoryAsync(historyId, Core.Models.HistoryTaskStatus.Cancelled, null, $"Pipeline bị hủy: {topic}", outputDir);
             }
             catch (Exception ex)
             {
                 taskModel.Status = NodeStatus.Failed;
                 taskModel.CurrentStepInfo = $"❌ Lỗi: {ex.Message}";
                 logTask(taskModel, $"[PIPELINE-ERROR] ❌ Task '{topic}' thất bại: {ex.Message}");
+                await FinishHistoryAsync(historyId, Core.Models.HistoryTaskStatus.Failed, ex.Message, $"Pipeline lỗi: {ex.Message}", outputDir);
             }
+        }
+
+        /// <summary>
+        /// Helper: ghi history finished (status + assets scan). Best-effort — không
+        /// bao giờ throw ra ngoài để tránh nuốt exception pipeline thật.
+        /// </summary>
+        private async Task FinishHistoryAsync(string? historyId, Core.Models.HistoryTaskStatus status, string? error, string? summary, string? outputDir)
+        {
+            if (_historyService == null || string.IsNullOrWhiteSpace(historyId)) return;
+            try
+            {
+                await _historyService.FinishTaskRunAsync(historyId, status, error, summary);
+                // Scan output dir cho ảnh scenes — append vào asset paths.
+                if (!string.IsNullOrWhiteSpace(outputDir) && Directory.Exists(outputDir))
+                {
+                    try
+                    {
+                        var assetFiles = new List<string>();
+                        string imgDir = Path.Combine(outputDir, "img");
+                        if (Directory.Exists(imgDir))
+                        {
+                            assetFiles.AddRange(Directory.GetFiles(imgDir, "*.png"));
+                            assetFiles.AddRange(Directory.GetFiles(imgDir, "*.jpg"));
+                            assetFiles.AddRange(Directory.GetFiles(imgDir, "*.webp"));
+                        }
+                        // Voiceover outputs (mp3/wav/srt) cũng được coi là assets
+                        foreach (var ext in new[] { "voiceover.mp3", "voiceover.wav", "voiceover.srt", "transcript.txt", "scenes.json" })
+                        {
+                            var p = Path.Combine(outputDir, ext);
+                            if (File.Exists(p)) assetFiles.Add(p);
+                        }
+                        if (assetFiles.Count > 0)
+                        {
+                            await _historyService.AppendAssetPathsAsync(historyId, assetFiles);
+                        }
+                    }
+                    catch
+                    {
+                        // Asset scan failure không critical.
+                    }
+                }
+            }
+            catch (Exception histEx)
+            {
+                System.Diagnostics.Debug.WriteLine($"[History-Finish] {histEx.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Resolve absolute output directory dựa trên OutputsDir config (giống pattern trong BatchImageGenViewModel).
+        /// </summary>
+        private string ResolveOutputDir(string folderName)
+        {
+            string? baseDir = _configService?.CurrentSettings?.OutputsDir;
+            if (string.IsNullOrWhiteSpace(baseDir))
+            {
+                baseDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Outputs");
+            }
+            return Path.Combine(baseDir, "Gemini", folderName);
         }
 
         // ─────────────────────────────────────────────────────

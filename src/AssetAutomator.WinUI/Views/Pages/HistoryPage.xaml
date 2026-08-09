@@ -1,63 +1,302 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Page x:Class="AssetAutomator.WinUI.Views.Pages.HistoryPage"
       xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      xmlns:models="using:AssetAutomator.Core.Models"
+      xmlns:vm="using:AssetAutomator.WinUI.ViewModels">
 
-    <Grid Padding="24">
+    <Grid x:Name="PageRoot" Padding="24" RowSpacing="12">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
+            <!-- Header -->
             <RowDefinition Height="Auto" />
+            <!-- Filter bar -->
+            <RowDefinition Height="Auto" />
+            <!-- Status -->
             <RowDefinition Height="*" />
+            <!-- Grouped ListView -->
         </Grid.RowDefinitions>
 
         <!-- Header -->
-        <StackPanel Grid.Row="0" Spacing="4" Margin="0,0,0,16">
+        <StackPanel Grid.Row="0" Spacing="4">
             <TextBlock Text="Task Execution History"
                        Style="{ThemeResource TitleTextBlockStyle}" />
-            <TextBlock Text="Nhật ký chi tiết các lần chạy tác vụ tự động hóa."
+            <TextBlock Text="Nhật ký chi tiết các lần chạy task. SQLite lưu tại %APPDATA%\AssetAutomator\history.db."
                        Style="{ThemeResource BodyTextBlockStyle}"
                        Opacity="0.7" />
         </StackPanel>
 
-        <!-- Command bar & status -->
-        <StackPanel Grid.Row="1" Spacing="8" Margin="0,0,0,12">
-            <CommandBar DefaultLabelPosition="Right"
-                        Background="Transparent"
-                        IsOpen="False"
-                        HorizontalAlignment="Left">
-                <AppBarButton Icon="Refresh" Label="Tải lại Lịch sử" Command="{Binding LoadHistoryCommand}" />
-                <AppBarButton Icon="Delete" Label="Xóa Lịch sử" Command="{Binding ClearHistoryCommand}" />
-            </CommandBar>
-            <InfoBar IsOpen="True" IsClosable="False" Severity="Informational" Title="Nhật ký:" Message="{Binding StatusText}" />
-        </StackPanel>
+        <!-- Filter bar -->
+        <Grid Grid.Row="1" ColumnSpacing="8">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="280" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
 
-        <!-- History ListView -->
-        <Border Grid.Row="2"
+            <ComboBox Grid.Column="0"
+                      Header="Loại task"
+                      ItemsSource="{Binding TaskTypeFilterOptions}"
+                      SelectedItem="{Binding SelectedTaskTypeOption, Mode=TwoWay}"
+                      DisplayMemberPath="DisplayName"
+                      HorizontalAlignment="Stretch" />
+
+            <TextBox Grid.Column="1"
+                     Header="Tìm kiếm (project name / logs / error)"
+                     Text="{Binding SearchQuery, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                     PlaceholderText="Nhập từ khóa..." />
+
+            <StackPanel Grid.Column="2" Spacing="4" VerticalAlignment="Bottom">
+                <ToggleSwitch Header="Cũ nhất trước"
+                              IsOn="{Binding SortOldestFirst, Mode=TwoWay}"
+                              OffContent="Mới nhất"
+                              OnContent="Cũ nhất" />
+            </StackPanel>
+        </Grid>
+
+        <!-- Status bar + command buttons -->
+        <Grid Grid.Row="2" ColumnSpacing="12">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <InfoBar Grid.Column="0"
+                     IsOpen="True"
+                     IsClosable="False"
+                     Severity="Informational"
+                     Title="Trạng thái"
+                     Message="{Binding StatusText}" />
+
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                <Button Command="{Binding LoadHistoryCommand}" ToolTipService.ToolTip="Tải lại lịch sử từ disk">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <FontIcon Glyph="&#xE72C;" FontSize="14" />
+                        <TextBlock Text="Tải lại" />
+                    </StackPanel>
+                </Button>
+                <Button Command="{Binding ClearAllHistoryCommand}" ToolTipService.ToolTip="Xóa toàn bộ lịch sử">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <FontIcon Glyph="&#xE74D;" FontSize="14" />
+                        <TextBlock Text="Xóa hết" />
+                    </StackPanel>
+                </Button>
+            </StackPanel>
+        </Grid>
+
+        <!-- Outer ListView bind RunGroups (list of HistoryDateGroup).
+             Mỗi row = 1 group: header (group name + count) + inner ListView (items).
+             Approach này tránh được WinUI GroupStyle + x:Bind interop issue và
+             cho phép explicit control rendering, đảm bảo chắc chắn hoạt động. -->
+        <Border Grid.Row="3"
                 Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
                 BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
                 BorderThickness="1"
                 CornerRadius="8"
-                Padding="12">
-            <ListView ItemsSource="{Binding HistoryEntries}"
-                      SelectedItem="{Binding SelectedEntry, Mode=TwoWay}"
-                      SelectionMode="Single">
-                <ListView.ItemTemplate>
-                    <DataTemplate>
-                        <Grid Padding="8">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="220" />
-                                <ColumnDefinition Width="200" />
-                                <ColumnDefinition Width="160" />
-                                <ColumnDefinition Width="100" />
-                                <ColumnDefinition Width="*" />
-                            </Grid.ColumnDefinitions>
+                Padding="8">
+            <ListView ItemsSource="{Binding RunGroups}"
+                      SelectionMode="None"
+                      IsItemClickEnabled="False">
+                <ListView.ItemContainerStyle>
+                    <Style TargetType="ListViewItem">
+                        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                        <Setter Property="Padding" Value="0" />
+                        <Setter Property="Margin" Value="0,0,0,12" />
+                    </Style>
+                </ListView.ItemContainerStyle>
 
-                            <TextBlock Grid.Column="0" Text="{Binding Id}" FontWeight="SemiBold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
-                            <TextBlock Grid.Column="1" Text="{Binding VideoUrl}" Opacity="0.8" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
-                            <TextBlock Grid.Column="2" Text="{Binding CreatedAtFormatted}" VerticalAlignment="Center" />
-                            <TextBlock Grid.Column="3" Text="{Binding Status}" Foreground="LightGreen" VerticalAlignment="Center" />
-                            <TextBlock Grid.Column="4" Text="{Binding Logs}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
-                        </Grid>
+                <ListView.ItemTemplate>
+                    <DataTemplate x:DataType="vm:HistoryDateGroup">
+                        <StackPanel Spacing="4" VerticalAlignment="Top" HorizontalAlignment="Stretch">
+                            <!-- Group header -->
+                            <Border Background="{ThemeResource SubtleFillColorSecondaryBrush}"
+                                    BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="6"
+                                    Padding="12,8"
+                                    HorizontalAlignment="Stretch">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <FontIcon Glyph="&#xE787;" FontSize="14" Opacity="0.7" />
+                                    <TextBlock Text="{x:Bind GroupName}"
+                                               FontWeight="SemiBold"
+                                               FontSize="14"
+                                               Opacity="0.9" />
+                                    <TextBlock Text="{x:Bind Items.Count, Mode=OneWay}"
+                                               Opacity="0.6"
+                                               FontSize="12"
+                                               VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Inner ListView render entries trong group. -->
+                            <ListView ItemsSource="{x:Bind Items, Mode=OneWay}"
+                                      SelectionMode="Single"
+                                      SelectedItem="{Binding DataContext.SelectedEntry, ElementName=PageRoot, Mode=TwoWay}"
+                                      HorizontalAlignment="Stretch">
+                                <ListView.ItemContainerStyle>
+                                    <Style TargetType="ListViewItem">
+                                        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                        <Setter Property="Padding" Value="0" />
+                                    </Style>
+                                </ListView.ItemContainerStyle>
+
+                                <ListView.ItemTemplate>
+                                    <DataTemplate x:DataType="models:TaskRunHistoryEntry">
+                                        <Grid Padding="10,8" HorizontalAlignment="Stretch">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" />
+                                                <!-- Task type badge -->
+                                                <ColumnDefinition Width="16" />
+                                                <!-- Spacer -->
+                                                <ColumnDefinition Width="*" MinWidth="180" />
+                                                <!-- Project name + sub-info -->
+                                                <ColumnDefinition Width="16" />
+                                                <!-- Spacer -->
+                                                <ColumnDefinition Width="Auto" />
+                                                <!-- Status pill -->
+                                                <ColumnDefinition Width="16" />
+                                                <!-- Spacer -->
+                                                <ColumnDefinition Width="Auto" />
+                                                <!-- Action buttons -->
+                                            </Grid.ColumnDefinitions>
+
+                                            <!-- Task type badge (left) -->
+                                            <Border Grid.Column="0"
+                                                    Background="{ThemeResource AccentFillColorDefaultBrush}"
+                                                    CornerRadius="4"
+                                                    Padding="8,4"
+                                                    VerticalAlignment="Center">
+                                                <TextBlock Text="{x:Bind TaskTypeDisplayName}"
+                                                           Foreground="White"
+                                                           FontSize="11"
+                                                           FontWeight="SemiBold"
+                                                           TextTrimming="CharacterEllipsis" />
+                                            </Border>
+
+                                            <!-- Project name + sub-info (center) -->
+                                            <StackPanel Grid.Column="2"
+                                                        VerticalAlignment="Center"
+                                                        Spacing="2">
+                                                <!-- Line 1: Project name -->
+                                                <TextBlock Text="{x:Bind ProjectName}"
+                                                           FontWeight="SemiBold"
+                                                           FontSize="14"
+                                                           TextTrimming="CharacterEllipsis"
+                                                           ToolTipService.ToolTip="{x:Bind ProjectName}" />
+
+                                                <!-- Line 2: Gems used -->
+                                                <TextBlock Text="{x:Bind GemsSummary}"
+                                                           FontSize="12"
+                                                           Opacity="0.75"
+                                                           TextTrimming="CharacterEllipsis"
+                                                           ToolTipService.ToolTip="{x:Bind GemsSummary}" />
+
+                                                <!-- Line 3: Timestamp + Duration -->
+                                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                                    <TextBlock Text="{x:Bind StartedAtFormatted}"
+                                                               FontSize="11"
+                                                               Opacity="0.6" />
+                                                    <TextBlock Text="·"
+                                                               FontSize="11"
+                                                               Opacity="0.4" />
+                                                    <TextBlock Text="{x:Bind DurationFormatted}"
+                                                               FontSize="11"
+                                                               Opacity="0.6" />
+                                                </StackPanel>
+                                            </StackPanel>
+
+                                            <!-- Status pill (right side, before actions).
+                                     Dùng Binding (không x:Bind) để Converter-in-template
+                                     hoạt động đúng trong nested DataTemplate của WinUI 3.
+                                     x:Bind + Converter trong template có thể gây crash runtime. -->
+                                            <Border Grid.Column="4"
+                                                    Background="{Binding Status, Converter={StaticResource HistoryStatusBackground}}"
+                                                    CornerRadius="12"
+                                                    Padding="10,4"
+                                                    VerticalAlignment="Center"
+                                                    HorizontalAlignment="Center"
+                                                    MinWidth="80">
+                                                <TextBlock Text="{Binding StatusDisplayName}"
+                                                           FontSize="11"
+                                                           FontWeight="SemiBold"
+                                                           Foreground="{Binding Status, Converter={StaticResource HistoryStatusForeground}}"
+                                                           HorizontalAlignment="Center" />
+                                            </Border>
+
+                                            <!-- Action buttons (far right) -->
+                                            <StackPanel Grid.Column="6"
+                                                        Orientation="Horizontal"
+                                                        Spacing="2"
+                                                        VerticalAlignment="Center">
+                                                <!-- Open Folder -->
+                                                <Button Width="36"
+                                                        Height="36"
+                                                        Padding="0"
+                                                        BorderThickness="0"
+                                                        Background="Transparent"
+                                                        ToolTipService.ToolTip="📂 Mở Output Folder"
+                                                        Command="{Binding DataContext.OpenOutputFolderCommand, ElementName=PageRoot}"
+                                                        CommandParameter="{Binding}">
+                                                    <FontIcon Glyph="&#xE838;" FontSize="16" />
+                                                </Button>
+                                                <!-- View Assets -->
+                                                <Button Width="36"
+                                                        Height="36"
+                                                        Padding="0"
+                                                        BorderThickness="0"
+                                                        Background="Transparent"
+                                                        ToolTipService.ToolTip="📦 Xem Assets (gallery)"
+                                                        Command="{Binding DataContext.ViewAssetsCommand, ElementName=PageRoot}"
+                                                        CommandParameter="{Binding}">
+                                                    <FontIcon Glyph="&#xE890;" FontSize="16" />
+                                                </Button>
+                                                <!-- Delete -->
+                                                <Button Width="36"
+                                                        Height="36"
+                                                        Padding="0"
+                                                        BorderThickness="0"
+                                                        Background="Transparent"
+                                                        ToolTipService.ToolTip="🗑️ Xóa entry"
+                                                        Command="{Binding DataContext.DeleteEntryCommand, ElementName=PageRoot}"
+                                                        CommandParameter="{Binding}">
+                                                    <FontIcon Glyph="&#xE74D;" FontSize="15" Foreground="#C42F1C" />
+                                                </Button>
+                                            </StackPanel>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ListView.ItemTemplate>
+
+                                <!-- Right-click context menu cho từng entry.
+                                     CommandParameter dùng {Binding} (relative to DataContext của row)
+                                     để reference chính entry đó, không cần SelectedItem. -->
+                                <ListView.ContextFlyout>
+                                    <MenuFlyout>
+                                        <MenuFlyoutItem Text="📂 Mở Output Folder"
+                                                        Command="{Binding DataContext.OpenOutputFolderCommand, ElementName=PageRoot}"
+                                                        CommandParameter="{Binding}">
+                                            <MenuFlyoutItem.Icon>
+                                                <FontIcon Glyph="&#xE838;" />
+                                            </MenuFlyoutItem.Icon>
+                                        </MenuFlyoutItem>
+                                        <MenuFlyoutItem Text="📦 View Assets (popup)"
+                                                        Command="{Binding DataContext.ViewAssetsCommand, ElementName=PageRoot}"
+                                                        CommandParameter="{Binding}">
+                                            <MenuFlyoutItem.Icon>
+                                                <FontIcon Glyph="&#xE890;" />
+                                            </MenuFlyoutItem.Icon>
+                                        </MenuFlyoutItem>
+                                        <MenuFlyoutSeparator />
+                                        <MenuFlyoutItem Text="🗑️ Xóa entry này"
+                                                        Command="{Binding DataContext.DeleteEntryCommand, ElementName=PageRoot}"
+                                                        CommandParameter="{Binding}">
+                                            <MenuFlyoutItem.Icon>
+                                                <FontIcon Glyph="&#xE74D;" />
+                                            </MenuFlyoutItem.Icon>
+                                        </MenuFlyoutItem>
+                                    </MenuFlyout>
+                                </ListView.ContextFlyout>
+                            </ListView>
+                        </StackPanel>
                     </DataTemplate>
                 </ListView.ItemTemplate>
             </ListView>

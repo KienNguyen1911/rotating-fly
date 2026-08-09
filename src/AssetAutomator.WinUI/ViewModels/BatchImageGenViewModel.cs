@@ -22,6 +22,7 @@ public partial class BatchImageGenViewModel : ObservableObject
     private readonly BatchProjectService? _batchProjectService;
     private readonly BatchImageGenService? _batchImageGenService;
     private readonly IConfigService? _configService;
+    private readonly AssetAutomator.Application.Services.HistoryService? _historyService;
 
     private readonly List<(string base64Data, string tag, string filePath)> _batchRefImages = new();
 
@@ -150,11 +151,13 @@ public partial class BatchImageGenViewModel : ObservableObject
     public BatchImageGenViewModel(
         BatchProjectService? batchProjectService = null,
         BatchImageGenService? batchImageGenService = null,
-        IConfigService? configService = null)
+        IConfigService? configService = null,
+        AssetAutomator.Application.Services.HistoryService? historyService = null)
     {
         _batchProjectService = batchProjectService;
         _batchImageGenService = batchImageGenService;
         _configService = configService;
+        _historyService = historyService;
 
         ScriptJson = GetDefaultScriptJson();
         OutputDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Output", "BatchImages");
@@ -663,6 +666,29 @@ public partial class BatchImageGenViewModel : ObservableObject
             if (!proceed) return;
         }
 
+        // ── History hook: ghi entry Running ──
+        string? historyId = null;
+        if (_historyService != null)
+        {
+            try
+            {
+                historyId = await _historyService.StartTaskRunAsync(new AssetAutomator.Core.Models.TaskRunHistoryEntry
+                {
+                    TaskType = AssetAutomator.Core.Models.HistoryTaskType.BatchImageGen,
+                    ProjectName = !string.IsNullOrWhiteSpace(ActiveProject?.ProjectName) ? ActiveProject.ProjectName : ProjectTitle,
+                    FlowProjectId = ActiveProject?.FlowProjectId,
+                    OutputDirectory = OutputDir,
+                    Status = AssetAutomator.Core.Models.HistoryTaskStatus.Running,
+                    StartedAt = DateTime.Now,
+                    LogsSummary = $"Bắt đầu sinh ảnh (concurrency={SelectedConcurrency}).",
+                });
+            }
+            catch (Exception histEx)
+            {
+                System.Diagnostics.Debug.WriteLine($"[BatchHistory-Start] {histEx.Message}");
+            }
+        }
+
         IsGenerating = true;
 
         // Google Flow Local API is the only image-gen backend now.
@@ -795,6 +821,34 @@ public partial class BatchImageGenViewModel : ObservableObject
 
         IsGenerating = false;
         showNotification("Hoàn thành", $"Đã hoàn tất sinh {itemsToGenerate.Count} ảnh cảnh hàng loạt!");
+
+        // ── History hook: mark Finished + scan output dir cho assets ──
+        if (_historyService != null && !string.IsNullOrWhiteSpace(historyId))
+        {
+            try
+            {
+                int doneCount = BatchImageItems.Count(i => string.Equals(i.Status, "Done", StringComparison.OrdinalIgnoreCase));
+                int failedCount = BatchImageItems.Count(i => string.Equals(i.Status, "Failed", StringComparison.OrdinalIgnoreCase));
+                var status = failedCount > 0
+                    ? (doneCount > 0 ? AssetAutomator.Core.Models.HistoryTaskStatus.Success : AssetAutomator.Core.Models.HistoryTaskStatus.Failed)
+                    : AssetAutomator.Core.Models.HistoryTaskStatus.Success;
+                string summary = $"Batch image gen: {doneCount} done / {failedCount} failed.";
+                await _historyService.FinishTaskRunAsync(historyId, status, null, summary);
+
+                if (Directory.Exists(outputDir))
+                {
+                    var pngs = Directory.GetFiles(outputDir, "*.png");
+                    if (pngs.Length > 0)
+                    {
+                        await _historyService.AppendAssetPathsAsync(historyId, pngs);
+                    }
+                }
+            }
+            catch (Exception histEx)
+            {
+                System.Diagnostics.Debug.WriteLine($"[BatchHistory-Finish] {histEx.Message}");
+            }
+        }
     }
 
     /// <summary>
