@@ -41,6 +41,16 @@ public sealed partial class SettingsPage : Page
             ThemeToggle.IsOn = mw.Content is FrameworkElement fe && fe.RequestedTheme == ElementTheme.Dark;
             _isThemeToggleInitialized = false;
         }
+
+        // Cancel any in-flight Run + delete temp file when leaving the page.
+        // Without this, leaving the page mid-run would leak the temp file in
+        // %TEMP% and the CancellationTokenSource would never be disposed.
+        Unloaded += SettingsPage_Unloaded;
+    }
+
+    private void SettingsPage_Unloaded(object sender, RoutedEventArgs e)
+    {
+        ViewModel.CleanupTempFile();
     }
 
     // Wire the buttons that used to live in the MainWindow header.

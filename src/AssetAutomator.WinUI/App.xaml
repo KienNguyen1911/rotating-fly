@@ -18,6 +18,8 @@
                  unreliable inside nested ListView templates in WinUI 3). -->
             <conv:HistoryStatusToBackgroundConverter x:Key="HistoryStatusBackground" />
             <conv:HistoryStatusToForegroundConverter x:Key="HistoryStatusForeground" />
+            <conv:NullToVisibilityConverter x:Key="NullToVisibilityConverter" />
+            <conv:BoolToBrushConverter x:Key="BoolToBrushConverter" />
             <!--
               Theme.Dark.xaml is registered in ThemeDictionaries so the framework
               automatically swaps it in when the active theme is "Default" (Dark).

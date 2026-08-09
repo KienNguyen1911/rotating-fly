@@ -21,6 +21,9 @@ namespace AssetAutomator.Core.Models
         private string? _flowProjectUrl;
         private DateTime? _startedAt;
         private DateTime? _finishedAt;
+        private bool _watermarkRemoved;
+        private string? _watermarkNote;
+        private long _imageCacheVersion;
 
         private string _transcript = string.Empty;
         private string _sceneTitle = string.Empty;
@@ -103,7 +106,55 @@ namespace AssetAutomator.Core.Models
         public string ImagePath
         {
             get => _imagePath;
-            set { _imagePath = value; OnPropertyChanged(); }
+            set { _imagePath = value; OnPropertyChanged(); OnPropertyChanged(nameof(ImageCacheKey)); }
+        }
+
+        /// <summary>
+        /// Computed property: <c>ImagePath</c> joined with the
+        /// <see cref="ImageCacheVersion"/> as a query string. The XAML
+        /// converter binds to this so every bump of the version produces
+        /// a different string, which forces <c>x:Bind OneWay</c> to
+        /// re-evaluate and the underlying BitmapImage to reload from
+        /// disk (WinUI keys decoded pixels on URI identity).
+        /// </summary>
+        public string ImageCacheKey
+        {
+            get
+            {
+                if (string.IsNullOrEmpty(_imagePath)) return string.Empty;
+                return _imagePath + "?v=" + _imageCacheVersion.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            }
+        }
+
+        /// <summary>
+        /// Monotonic counter that bumps every time the file at
+        /// <see cref="ImagePath"/> is rewritten in-place (Gemini
+        /// watermark removal, etc.). Pair with <see cref="ImageCacheKey"/>
+        /// for the actual cache-bust.
+        /// </summary>
+        public long ImageCacheVersion
+        {
+            get => _imageCacheVersion;
+            set
+            {
+                if (_imageCacheVersion == value) return;
+                _imageCacheVersion = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(ImageCacheKey));
+            }
+        }
+
+        /// <summary>
+        /// Bumps <see cref="ImageCacheVersion"/> to force a UI reload of
+        /// the thumbnail. Safe to call multiple times; each call produces
+        /// a new value. Returns the new version.
+        /// </summary>
+        public long BumpImageCacheVersion()
+        {
+            long next = unchecked(++_imageCacheVersion);
+            OnPropertyChanged(nameof(ImageCacheVersion));
+            OnPropertyChanged(nameof(ImageCacheKey));
+            return next;
         }
 
         public string ErrorMessage
@@ -157,6 +208,70 @@ namespace AssetAutomator.Core.Models
         public string IndexFormatted => Index.ToString();
         public string CreatedTimeFormatted => EnqueuedAt.ToString("HH:mm:ss");
         public string FinishedTimeFormatted => FinishedAt?.ToString("HH:mm:ss") ?? string.Empty;
+
+        /// <summary>
+        /// True if the Gemini watermark has been successfully removed from
+        /// <see cref="ImagePath"/>. False means the image on disk still has
+        /// the watermark (either user disabled the option, removal failed,
+        /// or the image isn't a Gemini output).
+        /// </summary>
+        public bool WatermarkRemoved
+        {
+            get => _watermarkRemoved;
+            set
+            {
+                _watermarkRemoved = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(WatermarkBadgeText));
+                OnPropertyChanged(nameof(HasWatermarkBadge));
+            }
+        }
+
+        /// <summary>
+        /// Human-readable status note. Set on success ("exact, 42ms") or
+        /// failure ("Node.js chưa được cài"). Empty when no removal was attempted.
+        /// </summary>
+        public string? WatermarkNote
+        {
+            get => _watermarkNote;
+            set
+            {
+                _watermarkNote = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(WatermarkBadgeText));
+            }
+        }
+
+        /// <summary>
+        /// Badge text shown in the UI. "✨ Clean" when removed, "💧" when the
+        /// image still has watermark, "──" when no removal was attempted.
+        /// </summary>
+        public string WatermarkBadgeText
+        {
+            get
+            {
+                if (string.IsNullOrWhiteSpace(ImagePath)) return "──";
+                if (WatermarkRemoved) return "✨ Clean";
+                if (!string.IsNullOrWhiteSpace(WatermarkNote)) return "💧";
+                return "💧";
+            }
+        }
+
+        /// <summary>
+        /// True when the badge should be rendered (i.e. there's an image on disk
+        /// and a removal result to show).
+        /// </summary>
+        public bool HasWatermarkBadge => !string.IsNullOrWhiteSpace(ImagePath);
+
+        /// <summary>
+        /// Trimmed tooltip for the badge — falls back to "Chưa xử lý" when
+        /// no watermark state was ever computed.
+        /// </summary>
+        public string WatermarkTooltip => WatermarkRemoved
+            ? $"Watermark removed. {WatermarkNote}"
+            : (!string.IsNullOrWhiteSpace(WatermarkNote)
+                ? WatermarkNote
+                : "Watermark state chưa được kiểm tra");
 
         public event PropertyChangedEventHandler? PropertyChanged;
         protected void OnPropertyChanged([CallerMemberName] string? propertyName = null)

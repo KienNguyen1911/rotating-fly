@@ -17,6 +17,7 @@ namespace AssetAutomator.Application.Services
     public class BatchProjectService
     {
         private readonly IConfigService _configService;
+        private static readonly System.Threading.SemaphoreSlim _fileLock = new(1, 1);
         private static readonly JsonSerializerOptions _jsonOptions = new JsonSerializerOptions
         {
             WriteIndented = true,
@@ -65,7 +66,9 @@ namespace AssetAutomator.Application.Services
                     {
                         try
                         {
-                            string json = await File.ReadAllTextAsync(jsonPath);
+                            using var fs = new FileStream(jsonPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+                            using var reader = new StreamReader(fs);
+                            string json = await reader.ReadToEndAsync();
                             var proj = JsonSerializer.Deserialize<BatchProjectModel>(json, _jsonOptions);
                             if (proj != null)
                             {
@@ -143,7 +146,9 @@ namespace AssetAutomator.Application.Services
             {
                 try
                 {
-                    string json = await File.ReadAllTextAsync(jsonPath);
+                    using var fs = new FileStream(jsonPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+                    using var reader = new StreamReader(fs);
+                    string json = await reader.ReadToEndAsync();
                     var existing = JsonSerializer.Deserialize<BatchProjectModel>(json, _jsonOptions);
                     if (existing != null)
                     {
@@ -208,27 +213,45 @@ namespace AssetAutomator.Application.Services
         {
             if (proj == null || string.IsNullOrWhiteSpace(proj.ProjectName)) return;
 
-            string baseDir = GetProjectsBaseDirectory();
-            string cleanName = SanitizeProjectName(proj.ProjectName);
-            string projectDir = Path.Combine(baseDir, cleanName);
-            Directory.CreateDirectory(projectDir);
-
-            if (string.IsNullOrWhiteSpace(proj.OutputDir))
+            await _fileLock.WaitAsync();
+            try
             {
-                // Only fall back to a project-local "Images" subdirectory when the
-                // caller has not yet set an explicit output dir. We do not eagerly
-                // create that folder here — the caller (or the next save) decides
-                // whether to materialize it. The pipeline later overrides OutputDir
-                // with {outputDir}/img so an empty Images/ folder would just be
-                // confusing dead weight.
-                proj.OutputDir = Path.Combine(projectDir, "Images");
+                string baseDir = GetProjectsBaseDirectory();
+                string cleanName = SanitizeProjectName(proj.ProjectName);
+                string projectDir = Path.Combine(baseDir, cleanName);
+                Directory.CreateDirectory(projectDir);
+
+                if (string.IsNullOrWhiteSpace(proj.OutputDir))
+                {
+                    proj.OutputDir = Path.Combine(projectDir, "Images");
+                }
+
+                proj.LastModified = DateTime.Now;
+                string jsonPath = Path.Combine(projectDir, "project.json");
+
+                string jsonString = JsonSerializer.Serialize(proj, _jsonOptions);
+
+                // Robust retry loop (up to 5 attempts, 100ms delay) to handle transient
+                // file locks e.g. when antivirus or background scanners briefly hold a handle.
+                for (int attempt = 1; attempt <= 5; attempt++)
+                {
+                    try
+                    {
+                        using var fs = new FileStream(jsonPath, FileMode.Create, FileAccess.Write, FileShare.ReadWrite);
+                        using var writer = new StreamWriter(fs);
+                        await writer.WriteAsync(jsonString);
+                        break;
+                    }
+                    catch (IOException) when (attempt < 5)
+                    {
+                        await Task.Delay(100);
+                    }
+                }
             }
-
-            proj.LastModified = DateTime.Now;
-            string jsonPath = Path.Combine(projectDir, "project.json");
-
-            string jsonString = JsonSerializer.Serialize(proj, _jsonOptions);
-            await File.WriteAllTextAsync(jsonPath, jsonString);
+            finally
+            {
+                _fileLock.Release();
+            }
         }
 
         /// <summary>

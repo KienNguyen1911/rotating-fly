@@ -14,6 +14,8 @@
         <converters:HexToBrushConverter x:Key="HexToBrushConverter" />
         <converters:BoolToVisibilityConverter x:Key="BoolToVisibilityConverter" />
         <converters:StringToImageSourceConverter x:Key="StringToImageSourceConverter" />
+        <converters:WatermarkStatusToBrushConverter x:Key="WatermarkStatusToBrushConverter" />
+        <converters:WatermarkStatusToForegroundConverter x:Key="WatermarkStatusToForegroundConverter" />
     </Page.Resources>
 
     <Grid Padding="24">
@@ -239,6 +241,11 @@
                         <Button Content="💾 Lưu dự án"
                                 Style="{StaticResource AccentButtonStyle}"
                                 Click="BtnSaveProject_Click" />
+                        <Button x:Name="BtnRemoveWatermark"
+                                Content="🪄 Xóa Watermark"
+                                Click="BtnRemoveWatermark_Click"
+                                IsEnabled="{x:Bind ViewModel.HasDoneItems, Mode=OneWay}"
+                                ToolTipService.ToolTip="Chạy lại gwr CLI để xóa watermark Gemini trên tất cả ảnh đã tạo. Cần Node.js (sẽ tự cài nếu chưa có)." />
                         <Button Content="🌐 Google Flow Web"
                                 Click="BtnOpenFlowProjectUrl_Click"
                                 ToolTipService.ToolTip="Mở dự án này trực tiếp trên Web Google Flow (labs.google)" />
@@ -525,7 +532,11 @@
                                             </Grid>
 
                                             <!-- Clear Generated Image -->
-                                            <Image Source="{x:Bind ImagePath, Mode=OneWay, Converter={StaticResource StringToImageSourceConverter}}"
+                                            <!-- Bind ImageCacheKey (not ImagePath) so the
+                                                 thumbnail refreshes after in-place rewrites
+                                                 like watermark removal. ImageCacheKey returns
+                                                 "path?v=N" where N bumps from the provider. -->
+                                            <Image Source="{x:Bind ImageCacheKey, Mode=OneWay, Converter={StaticResource StringToImageSourceConverter}}"
                                                    Stretch="UniformToFill"
                                                    Tag="{x:Bind}" />
 
@@ -556,6 +567,19 @@
                                                                 BorderBrush="#30FFFFFF"
                                                                 BorderThickness="1">
                                                             <TextBlock Text="{x:Bind Status, Mode=OneWay}" FontSize="10" FontWeight="SemiBold" Foreground="#E2E8F0" />
+                                                        </Border>
+                                                        <!-- Watermark badge (v2.0.6+): ✨ Clean / 💧 Watermarked -->
+                                                        <Border Background="{x:Bind WatermarkRemoved, Mode=OneWay, Converter={StaticResource WatermarkStatusToBrushConverter}}"
+                                                                CornerRadius="6"
+                                                                Padding="7,4"
+                                                                BorderBrush="#30FFFFFF"
+                                                                BorderThickness="1"
+                                                                Visibility="{x:Bind HasWatermarkBadge, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
+                                                                ToolTipService.ToolTip="{x:Bind WatermarkTooltip, Mode=OneWay}">
+                                                            <TextBlock Text="{x:Bind WatermarkBadgeText, Mode=OneWay}"
+                                                                       FontSize="10"
+                                                                       FontWeight="SemiBold"
+                                                                       Foreground="{x:Bind WatermarkRemoved, Mode=OneWay, Converter={StaticResource WatermarkStatusToForegroundConverter}}" />
                                                         </Border>
                                                     </StackPanel>
 
@@ -644,6 +668,7 @@
                                             <ColumnDefinition Width="70" />
                                             <ColumnDefinition Width="65" />
                                             <ColumnDefinition Width="90" />
+                                            <ColumnDefinition Width="80" />
                                             <ColumnDefinition Width="2*" />
                                             <ColumnDefinition Width="100" />
                                         </Grid.ColumnDefinitions>
@@ -654,8 +679,9 @@
                                         <TextBlock Grid.Column="4" Text="Engine" FontWeight="Bold" FontSize="12" />
                                         <TextBlock Grid.Column="5" Text="Aspect" FontWeight="Bold" FontSize="12" />
                                         <TextBlock Grid.Column="6" Text="Finished" FontWeight="Bold" FontSize="12" />
-                                        <TextBlock Grid.Column="7" Text="Error / Info" FontWeight="Bold" FontSize="12" />
-                                        <TextBlock Grid.Column="8" Text="Action" FontWeight="Bold" FontSize="12" />
+                                        <TextBlock Grid.Column="7" Text="Watermark" FontWeight="Bold" FontSize="12" />
+                                        <TextBlock Grid.Column="8" Text="Error / Info" FontWeight="Bold" FontSize="12" />
+                                        <TextBlock Grid.Column="9" Text="Action" FontWeight="Bold" FontSize="12" />
                                     </Grid>
                                 </DataTemplate>
                             </ListView.HeaderTemplate>
@@ -670,6 +696,7 @@
                                             <ColumnDefinition Width="70" />
                                             <ColumnDefinition Width="65" />
                                             <ColumnDefinition Width="90" />
+                                            <ColumnDefinition Width="80" />
                                             <ColumnDefinition Width="2*" />
                                             <ColumnDefinition Width="100" />
                                         </Grid.ColumnDefinitions>
@@ -682,8 +709,21 @@
                                         <TextBlock Grid.Column="4" Text="{x:Bind Engine, Mode=OneWay}" FontSize="11" VerticalAlignment="Center" />
                                         <TextBlock Grid.Column="5" Text="{x:Bind AspectRatio, Mode=OneWay}" FontSize="11" VerticalAlignment="Center" />
                                         <TextBlock Grid.Column="6" Text="{x:Bind FinishedTimeFormatted, Mode=OneWay}" FontSize="11" VerticalAlignment="Center" />
-                                        <TextBlock Grid.Column="7" Text="{x:Bind ErrorMessage, Mode=OneWay}" FontSize="11" Foreground="{ThemeResource SystemFillColorCriticalBrush}" TextTrimming="CharacterEllipsis" MaxLines="1" VerticalAlignment="Center" />
-                                        <Button Grid.Column="8" Content="Open Image" FontSize="11" Padding="8,4" Tag="{x:Bind}" Click="BtnCardOpenImage_Click" VerticalAlignment="Center" />
+                                        <Border Grid.Column="7"
+                                                Background="{x:Bind WatermarkRemoved, Mode=OneWay, Converter={StaticResource WatermarkStatusToBrushConverter}}"
+                                                CornerRadius="4"
+                                                Padding="6,2"
+                                                HorizontalAlignment="Left"
+                                                VerticalAlignment="Center"
+                                                Visibility="{x:Bind HasWatermarkBadge, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}"
+                                                ToolTipService.ToolTip="{x:Bind WatermarkTooltip, Mode=OneWay}">
+                                            <TextBlock Text="{x:Bind WatermarkBadgeText, Mode=OneWay}"
+                                                       FontSize="11"
+                                                       FontWeight="SemiBold"
+                                                       Foreground="{x:Bind WatermarkRemoved, Mode=OneWay, Converter={StaticResource WatermarkStatusToForegroundConverter}}" />
+                                        </Border>
+                                        <TextBlock Grid.Column="8" Text="{x:Bind ErrorMessage, Mode=OneWay}" FontSize="11" Foreground="{ThemeResource SystemFillColorCriticalBrush}" TextTrimming="CharacterEllipsis" MaxLines="1" VerticalAlignment="Center" />
+                                        <Button Grid.Column="9" Content="Open Image" FontSize="11" Padding="8,4" Tag="{x:Bind}" Click="BtnCardOpenImage_Click" VerticalAlignment="Center" />
                                     </Grid>
                                 </DataTemplate>
                             </ListView.ItemTemplate>

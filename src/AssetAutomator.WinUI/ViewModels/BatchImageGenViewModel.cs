@@ -17,26 +17,28 @@ using Microsoft.UI.Xaml;
 
 namespace AssetAutomator.WinUI.ViewModels;
 
-public partial class BatchImageGenViewModel : ObservableObject
-{
-    private readonly BatchProjectService? _batchProjectService;
-    private readonly BatchImageGenService? _batchImageGenService;
-    private readonly IConfigService? _configService;
-    private readonly AssetAutomator.Application.Services.HistoryService? _historyService;
+    public partial class BatchImageGenViewModel : ObservableObject
+    {
+        private readonly BatchProjectService? _batchProjectService;
+        private readonly BatchImageGenService? _batchImageGenService;
+        private readonly IConfigService? _configService;
+        private readonly AssetAutomator.Application.Services.HistoryService? _historyService;
+        private readonly AssetAutomator.Application.Services.WatermarkRemovalQueue? _watermarkQueue;
+        private readonly AssetAutomator.Core.Interfaces.IWatermarkRemover? _watermarkRemover;
 
-    private readonly List<(string base64Data, string tag, string filePath)> _batchRefImages = new();
+        private readonly List<(string base64Data, string tag, string filePath)> _batchRefImages = new();
 
-    [ObservableProperty]
-    private string _projectsStoragePath = string.Empty;
+        [ObservableProperty]
+        private string _projectsStoragePath = string.Empty;
 
-    [ObservableProperty]
-    private ObservableCollection<BatchProjectModel> _projects = new();
+        [ObservableProperty]
+        private ObservableCollection<BatchProjectModel> _projects = new();
 
-    [ObservableProperty]
-    private BatchProjectModel? _activeProject;
+        [ObservableProperty]
+        private BatchProjectModel? _activeProject;
 
-    [ObservableProperty]
-    private bool _isDashboardVisible = true;
+        [ObservableProperty]
+        private bool _isDashboardVisible = true;
 
     [ObservableProperty]
     private bool _isEditorVisible = false;
@@ -131,8 +133,24 @@ public partial class BatchImageGenViewModel : ObservableObject
     [ObservableProperty]
     private string _progressText = "Đã tạo 0/0 ảnh (0%)";
 
+    /// <summary>
+    /// Transient status message (e.g. errors from the watermark pipeline that
+    /// don't fit into a per-item <see cref="BatchImageItem.WatermarkNote"/>).
+    /// Bound to the editor's status bar; cleared by the next mutation.
+    /// </summary>
+    [ObservableProperty]
+    private string _statusMessage = string.Empty;
+
     [ObservableProperty]
     private bool _isGenerating = false;
+
+    /// <summary>
+    /// True while there is at least one <c>Done</c> item with an image on disk
+    /// that could benefit from watermark removal. Used by the XAML button to
+    /// enable/disable itself based on context.
+    /// </summary>
+    [ObservableProperty]
+    private bool _hasDoneItems = false;
 
     public string GenerateButtonText => $"⚡ Tạo hàng loạt ({SelectedConcurrency} ảnh song song)";
 
@@ -152,12 +170,16 @@ public partial class BatchImageGenViewModel : ObservableObject
         BatchProjectService? batchProjectService = null,
         BatchImageGenService? batchImageGenService = null,
         IConfigService? configService = null,
-        AssetAutomator.Application.Services.HistoryService? historyService = null)
+        AssetAutomator.Application.Services.HistoryService? historyService = null,
+        AssetAutomator.Application.Services.WatermarkRemovalQueue? watermarkQueue = null,
+        AssetAutomator.Core.Interfaces.IWatermarkRemover? watermarkRemover = null)
     {
         _batchProjectService = batchProjectService;
         _batchImageGenService = batchImageGenService;
         _configService = configService;
         _historyService = historyService;
+        _watermarkQueue = watermarkQueue;
+        _watermarkRemover = watermarkRemover;
 
         ScriptJson = GetDefaultScriptJson();
         OutputDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Output", "BatchImages");
@@ -285,7 +307,9 @@ public partial class BatchImageGenViewModel : ObservableObject
                     Engine = state.Engine,
                     Model = state.Model,
                     AspectRatio = state.AspectRatio,
-                    Upscale = state.Upscale
+                    Upscale = state.Upscale,
+                    WatermarkRemoved = state.WatermarkRemoved,
+                    WatermarkNote = state.WatermarkNote
                 });
             }
         }
@@ -455,7 +479,9 @@ public partial class BatchImageGenViewModel : ObservableObject
             Engine = item.Engine,
             Model = item.Model,
             AspectRatio = item.AspectRatio,
-            Upscale = item.Upscale
+            Upscale = item.Upscale,
+            WatermarkRemoved = item.WatermarkRemoved,
+            WatermarkNote = item.WatermarkNote
         }).ToList();
 
         await _batchProjectService.SaveProjectAsync(ActiveProject);
@@ -625,6 +651,165 @@ public partial class BatchImageGenViewModel : ObservableObject
         TotalDoneCount = BatchImageItems.Count(i => i.IsDone || string.Equals(i.Status, "Done", StringComparison.OrdinalIgnoreCase));
         ProgressPercent = TotalCount > 0 ? (int)((TotalDoneCount * 100) / TotalCount) : 0;
         ProgressText = $"Đã tạo {TotalDoneCount}/{TotalCount} ảnh ({ProgressPercent}%)";
+        // Refresh the watermark-removal button enable state whenever a batch
+        // completes (gating whether there's any image to clean).
+        HasDoneItems = BatchImageItems.Any(i =>
+            string.Equals(i.Status, "Done", StringComparison.OrdinalIgnoreCase)
+            && !string.IsNullOrWhiteSpace(i.ImagePath)
+            && File.Exists(i.ImagePath));
+    }
+
+    /// <summary>
+    /// Re-enumerates all <c>Done</c> items and re-enqueues them for watermark
+    /// removal. Backs the <c>🪄 Xóa Watermark</c> button in the editor header.
+    ///
+    /// Behavior:
+    ///   - Pre-checks the CLI back-end via <see cref="IWatermarkRemover.ProbeAsync"/>.
+    ///     If Node.js isn't installed or the CLI can't be reached, surfaces a
+    ///     friendly "Cài Node.js" notification and aborts without touching items.
+    ///   - Marks each item's <c>WatermarkRemoved = false</c> + clears
+    ///     <c>WatermarkNote</c> so the badge goes back to "💧" while the CLI runs.
+    ///   - Updates ProgressText in real time so the user sees how many images
+    ///     have been processed out of the total.
+    ///   - Waits for the pool to drain (up to 5 min) so the user gets a final
+    ///     "Done" notification when the batch finishes.
+    /// </summary>
+    [RelayCommand]
+    public async Task RemoveWatermarkAsync()
+    {
+        if (_watermarkQueue == null)
+        {
+            return;
+        }
+
+        var eligible = BatchImageItems
+            .Where(i => string.Equals(i.Status, "Done", StringComparison.OrdinalIgnoreCase)
+                        && !string.IsNullOrWhiteSpace(i.ImagePath)
+                        && File.Exists(i.ImagePath))
+            .ToList();
+
+        if (eligible.Count == 0)
+        {
+            return;
+        }
+
+        // Pre-flight: probe the CLI back-end so the user doesn't wait 5 min only
+        // to discover Node.js was missing. We surface a short Vietnamese
+        // message and let the Settings page handle the actual install.
+        if (_watermarkRemover != null)
+        {
+            try
+            {
+                var status = await _watermarkRemover.ProbeAsync();
+                if (!status.IsAvailable)
+                {
+                    StatusMessage = $"Watermark CLI chưa sẵn sàng: {status.Diagnostic}. Mở Settings → Gemini Watermark Removal → bấm 'Kiểm tra Node.js & CLI'.";
+                    return;
+                }
+            }
+            catch (Exception probeEx)
+            {
+                StatusMessage = $"Không probe được Watermark CLI: {probeEx.Message}";
+                return;
+            }
+        }
+
+        // Master toggle: user disabled watermark removal in Settings.
+        if (_configService != null && !_configService.CurrentSettings.EnableWatermarkRemoval)
+        {
+            StatusMessage = "Watermark removal đang TẮT trong Settings. Bật rồi thử lại.";
+            return;
+        }
+
+        IsGenerating = true;
+        int total = eligible.Count;
+        int done = 0;
+        ProgressText = $"Đang xóa watermark 0/{total} ảnh...";
+
+        // Reset badges to in-progress state so the UI shows the work is happening.
+        var uiSyncContext = SynchronizationContext.Current;
+        foreach (var item in eligible)
+        {
+            void Apply()
+            {
+                item.WatermarkRemoved = false;
+                item.WatermarkNote = "Đang xóa watermark...";
+            }
+            if (uiSyncContext != null)
+            {
+                uiSyncContext.Post(_ => Apply(), null);
+            }
+            else
+            {
+                Apply();
+            }
+        }
+
+        // Track completion so we can update ProgressText in real time without
+        // having to read from BatchImageItems (which the pool mutates from a
+        // background thread).
+        foreach (var item in eligible)
+        {
+            var captured = item;
+            captured.PropertyChanged += (s, e) =>
+            {
+                if (e.PropertyName == nameof(BatchImageItem.WatermarkRemoved) && captured.WatermarkRemoved)
+                {
+                    int current = System.Threading.Interlocked.Increment(ref done);
+                    int percent = (current * 100) / total;
+                    void ApplyProgress()
+                    {
+                        ProgressText = $"Đã xóa watermark {current}/{total} ảnh ({percent}%).";
+                    }
+                    if (uiSyncContext != null)
+                    {
+                        uiSyncContext.Post(_ => ApplyProgress(), null);
+                    }
+                    else
+                    {
+                        ApplyProgress();
+                    }
+                }
+            };
+        }
+
+        // Enqueue to the parallel pool. The pool will fire-and-forget; we wait
+        // for completion below so the SaveCurrentProjectStateAsync at the end
+        // captures the final states.
+        foreach (var item in eligible)
+        {
+            _watermarkQueue.Enqueue(item, item.ImagePath, uiSyncContext);
+        }
+
+        // Wait up to 5 minutes for the pool to drain.
+        await _watermarkQueue.WaitForCompletionAsync(TimeSpan.FromMinutes(5));
+
+        // Persist project state so the new WatermarkRemoved = true survives
+        // app restarts.
+        if (ActiveProject != null)
+        {
+            await SaveCurrentProjectStateAsync();
+        }
+
+        int cleaned = BatchImageItems.Count(i => i.WatermarkRemoved);
+        UpdateProgressUI();
+        IsGenerating = false;
+        StatusMessage = cleaned > 0
+            ? $"Hoàn tất: đã xóa watermark cho {cleaned}/{total} ảnh."
+            : $"Không có ảnh nào được xóa watermark (kiểm tra log để biết lý do).";
+    }
+
+    /// <summary>
+    /// Refreshes the <see cref="HasDoneItems"/> boolean. Called automatically
+    /// from <see cref="UpdateProgressUI"/>; callers can also invoke after batch
+    /// edges that mutate <see cref="BatchImageItems"/>.
+    /// </summary>
+    public void RefreshHasDoneItems()
+    {
+        HasDoneItems = BatchImageItems.Any(i =>
+            string.Equals(i.Status, "Done", StringComparison.OrdinalIgnoreCase)
+            && !string.IsNullOrWhiteSpace(i.ImagePath)
+            && File.Exists(i.ImagePath));
     }
 
     public async Task OnNewProjectCreatedAsync(string projectName)

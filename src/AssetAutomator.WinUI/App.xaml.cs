@@ -138,6 +138,41 @@ public partial class App : Microsoft.UI.Xaml.Application
                 services.AddSingleton<BatchImageGenService>();
                 services.AddSingleton<Infrastructure.Helpers.PythonServerManager>();
                 services.AddSingleton<Infrastructure.Helpers.GoogleFlow2ServerLauncher>();
+
+                // ─────────────────────────────────────────────────────
+                //  Watermark removal pipeline (v2.1.0+).
+                //  wiltodelta/remove-ai-watermarks (Python) — visible-mark
+                //  inpainting via OpenCV/MI-GAN/LaMa. Replaces the math-only
+                //  @pilio/gemini-watermark-remover Node CLI which was brittle
+                //  on non-catalog watermark positions (e.g. centre-bottom on
+                //  Flow Local renders).
+                //  - PythonLauncher           : resolves embedded Python at
+                //    tools/PythonEmbed/python.exe, installs
+                //    remove-ai-watermarks[visible] on first run.
+                //  - PythonWatermarkRemover   : spawns the Python CLI per
+                //    image with --json envelope. Supports `visible` (auto
+                //    detect) and `erase --region` (user-drawn box) modes.
+                //  - WatermarkRemovalQueue    : bounded-concurrency fan-out
+                //    pool used by the Flow Local provider.
+                // ─────────────────────────────────────────────────────
+                services.AddSingleton<Infrastructure.Helpers.PythonLauncher>();
+                services.AddSingleton<AssetAutomator.Core.Interfaces.IWatermarkRemover, Infrastructure.Helpers.PythonWatermarkRemover>(sp =>
+                {
+                    var launcher = sp.GetRequiredService<Infrastructure.Helpers.PythonLauncher>();
+                    var log = sp.GetRequiredService<ILogService>();
+                    var config = sp.GetRequiredService<Core.Interfaces.IConfigService>();
+                    return new Infrastructure.Helpers.PythonWatermarkRemover(launcher, log, config);
+                });
+                services.AddSingleton<AssetAutomator.Application.Services.WatermarkRemovalQueue>(sp =>
+                {
+                    var remover = sp.GetRequiredService<AssetAutomator.Core.Interfaces.IWatermarkRemover>();
+                    var config = sp.GetRequiredService<Core.Interfaces.IConfigService>();
+                    int maxParallel = config.CurrentSettings.WatermarkMaxParallel > 0
+                        ? config.CurrentSettings.WatermarkMaxParallel
+                        : Math.Max(2, Environment.ProcessorCount / 2);
+                    return new AssetAutomator.Application.Services.WatermarkRemovalQueue(remover, maxParallel);
+                });
+
                 services.AddSingleton<YoutubeTopicSuggestionStep>();
 
                 services.AddSingleton<GeminiCreatorService>(sp =>
@@ -186,13 +221,17 @@ public partial class App : Microsoft.UI.Xaml.Application
                     sp.GetRequiredService<HistoryService>()
                 ));
                 services.AddTransient<ViewModels.SettingsViewModel>(sp => new ViewModels.SettingsViewModel(
-                    sp.GetRequiredService<IConfigService>()
+                    sp.GetRequiredService<IConfigService>(),
+                    sp.GetRequiredService<AssetAutomator.Core.Interfaces.IWatermarkRemover>(),
+                    sp.GetRequiredService<ILogService>()
                 ));
                 services.AddTransient<ViewModels.BatchImageGenViewModel>(sp => new ViewModels.BatchImageGenViewModel(
                     sp.GetRequiredService<BatchProjectService>(),
                     sp.GetRequiredService<BatchImageGenService>(),
                     sp.GetRequiredService<IConfigService>(),
-                    sp.GetRequiredService<HistoryService>()
+                    sp.GetRequiredService<HistoryService>(),
+                    sp.GetRequiredService<AssetAutomator.Application.Services.WatermarkRemovalQueue>(),
+                    sp.GetRequiredService<AssetAutomator.Core.Interfaces.IWatermarkRemover>()
                 ));
 
                 // GeminiViewModel is registered as Singleton so its state (GeminiTasks,
@@ -274,6 +313,44 @@ public partial class App : Microsoft.UI.Xaml.Application
                         });
                         await tcs.Task;
                     }
+                }
+
+                // Wire the watermark-removal queue into the image-gen provider
+                // so every Flow Local download gets automatically cleaned of
+                // the Gemini logo. FAILURES HERE ARE NON-FATAL — the image-gen
+                // pipeline must keep working even if Node.js isn't installed.
+                try
+                {
+                    var wmQueue = Services.GetService<AssetAutomator.Application.Services.WatermarkRemovalQueue>();
+                    if (wmQueue != null)
+                    {
+                        AssetAutomator.Application.Services.Providers.FlowLocalImageGenProvider
+                            .RegisterWatermarkPool(wmQueue);
+                        System.Diagnostics.Debug.WriteLine("[Watermark] Queue registered with FlowLocalImageGenProvider.");
+
+                        // Best-effort warm-up: probe the Python launcher so the
+                        // first batch doesn't pay the pip install cost. 60s
+                        // ceiling is generous because pip downloads can be slow.
+                        var wmLauncher = Services.GetService<Infrastructure.Helpers.PythonLauncher>();
+                        if (wmLauncher != null)
+                        {
+                            var (wmOk, wmDiag) = await wmLauncher.EnsureInstalledAsync();
+                            if (!wmOk)
+                            {
+                                System.Diagnostics.Debug.WriteLine($"[Watermark] Lazy probe: {wmDiag}");
+                                // Expected when Python isn't installed yet — UI will
+                                // surface a clear "Chạy Setup-PythonEmbed.ps1" hint.
+                            }
+                            else
+                            {
+                                System.Diagnostics.Debug.WriteLine($"[Watermark] {wmDiag}");
+                            }
+                        }
+                    }
+                }
+                catch (Exception wmEx)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[Watermark] registration failed (non-fatal): {wmEx.Message}");
                 }
             }
             catch (Exception ex)

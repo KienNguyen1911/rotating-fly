@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.UI.Xaml;
@@ -380,6 +381,33 @@ public sealed partial class BatchImageGenPage : Page
         if (sender is FrameworkElement elem && elem.Tag is BatchImageItem item)
         {
             await ViewModel.RegenerateSingleItemAsync(item);
+        }
+    }
+
+    /// <summary>
+    /// Re-runs the watermark-removal pipeline for all <c>Done</c> items in the
+    /// active project. Backs the <c>🪄 Xóa Watermark</c> button in the editor
+    /// header.
+    /// </summary>
+    public async void BtnRemoveWatermark_Click(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel.RemoveWatermarkCommand.CanExecute(null))
+        {
+            try
+            {
+                await ViewModel.RemoveWatermarkAsync();
+                int cleaned = ViewModel.BatchImageItems.Count(i => i.WatermarkRemoved);
+                string msg = cleaned > 0
+                    ? $"Đã xóa thành công watermark cho {cleaned}/{ViewModel.BatchImageItems.Count} ảnh."
+                    : $"Đã kiểm tra {ViewModel.BatchImageItems.Count} ảnh: Tất cả đều không phát hiện watermark Gemini (hoặc đã sạch).";
+                await ShowNotificationAsync("✅ Hoàn tất", msg);
+            }
+            catch (Exception ex)
+            {
+                await ShowNotificationAsync(
+                    "❌ Lỗi",
+                    $"Watermark removal failed: {ex.Message}");
+            }
         }
     }
 

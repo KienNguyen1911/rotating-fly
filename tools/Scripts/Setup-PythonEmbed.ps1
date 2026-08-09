@@ -37,6 +37,14 @@ $Deps = @(
     "redis"
 )
 
+# Watermark removal (wiltodelta/remove-ai-watermarks) — visible-mark
+# inpainting backend. Replaces @pilio/gemini-watermark-remover (math-only
+# reverse-alpha) which was brittle on non-catalog watermark positions.
+# We pull the [visible] extra so the `visible` subcommand is available
+# out of the box; OpenCV ships in that extra. To enable MI-GAN or LaMa
+# later, append the matching extra to the install line below.
+$Deps += "remove-ai-watermarks[visible]"
+
 function Write-Step {
     param([string]$Text)
     Write-Host ""

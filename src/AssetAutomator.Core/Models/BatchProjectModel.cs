@@ -53,5 +53,7 @@ namespace AssetAutomator.Core.Models
         public string Model { get; set; } = "nano-banana-2";
         public string AspectRatio { get; set; } = "16:9";
         public string Upscale { get; set; } = "none";
+        public bool WatermarkRemoved { get; set; }
+        public string? WatermarkNote { get; set; }
     }
 }

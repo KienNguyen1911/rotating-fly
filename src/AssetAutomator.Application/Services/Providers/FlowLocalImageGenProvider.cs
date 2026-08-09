@@ -23,6 +23,23 @@ namespace AssetAutomator.Application.Services.Providers
         private static readonly SemaphoreSlim _mediaIdLock = new SemaphoreSlim(1, 1);
         private static readonly Dictionary<string, string> _uploadedReferenceMediaIds = new Dictionary<string, string>();
 
+        /// <summary>
+        /// Optional hook into the watermark-removal pool. Set once at app
+        /// startup from <c>App.xaml.cs</c> via <see cref="RegisterWatermarkPool"/>.
+        /// When null, the provider skips watermark removal entirely (legacy
+        /// behavior preserved for tests / minimal builds).
+        /// </summary>
+        private static WatermarkRemovalQueue? _watermarkQueue;
+
+        /// <summary>
+        /// Wires the watermark-removal pool into the provider. Idempotent.
+        /// Called from <c>App.xaml.cs</c> at startup.
+        /// </summary>
+        public static void RegisterWatermarkPool(WatermarkRemovalQueue queue)
+        {
+            _watermarkQueue = queue ?? throw new ArgumentNullException(nameof(queue));
+        }
+
         public string ProviderKey => "flow_local";
 
         /// <summary>
@@ -520,6 +537,7 @@ namespace AssetAutomator.Application.Services.Providers
                     string fileUrl = urlProp.GetString()!;
                     string savedPath = await DownloadOrSaveImageAsync(fileUrl, outputDirectory, item.Index);
                     SetItemStatusDone(item, uiContext, savedPath, mediaId, projId, projUrl);
+                    EnqueueWatermarkRemoval(item, savedPath);
                     return;
                 }
                 else if (firstItem.TryGetProperty("b64_json", out var b64Prop) && !string.IsNullOrEmpty(b64Prop.GetString()))
@@ -529,11 +547,32 @@ namespace AssetAutomator.Application.Services.Providers
                     Directory.CreateDirectory(outputDirectory);
                     await File.WriteAllBytesAsync(savedPath, bytes);
                     SetItemStatusDone(item, uiContext, savedPath, mediaId, projId, projUrl);
+                    EnqueueWatermarkRemoval(item, savedPath);
                     return;
                 }
             }
 
             SetItemStatusFailed(item, uiContext, "Flow API did not return image URL or base64 data.");
+        }
+
+        /// <summary>
+        /// Fire-and-forget watermark removal. No-op when the pool hasn't been
+        /// registered (e.g. in unit tests / minimal builds). Failures are
+        /// surfaced via <see cref="BatchImageItem.WatermarkNote"/>; the image
+        /// is still marked <c>Done</c> regardless.
+        /// </summary>
+        private static void EnqueueWatermarkRemoval(BatchImageItem item, string savedPath)
+        {
+            if (_watermarkQueue == null) return;
+            try
+            {
+                SynchronizationContext? uiCtx = SynchronizationContext.Current;
+                _watermarkQueue.Enqueue(item, savedPath, uiCtx);
+            }
+            catch
+            {
+                // Never let a watermark-removal exception escape the provider.
+            }
         }
 
         private async Task<string> DownloadOrSaveImageAsync(string fileUrl, string outputDir, int index)

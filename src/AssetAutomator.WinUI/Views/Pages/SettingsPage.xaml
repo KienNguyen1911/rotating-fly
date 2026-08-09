@@ -242,6 +242,198 @@
                 </Border>
             </Grid>
 
+        <!-- Row 3: Gemini Watermark Removal (2-column: preview left | controls right) -->
+            <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                    BorderThickness="1"
+                    CornerRadius="8"
+                    Padding="16">
+                <Grid ColumnSpacing="20">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="540" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+
+                    <!-- LEFT: Before/After preview gallery -->
+                    <StackPanel Spacing="8">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <FontIcon Glyph="&#xE8B7;" FontSize="14" VerticalAlignment="Center" Foreground="#FF107C10" />
+                            <TextBlock Text="Preview kết quả" FontWeight="SemiBold" FontSize="13" />
+                            <Border Background="#1A107C10" CornerRadius="4" Padding="6,2" VerticalAlignment="Center">
+                                <TextBlock Text="Output thật từ gwr CLI" FontSize="10" Foreground="#FF107C10" />
+                            </Border>
+                        </StackPanel>
+
+                        <!-- Try-on-your-image: pick file, run gwr, view output -->
+                        <Border Background="{ThemeResource LayerFillColorDefaultBrush}"
+                                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                BorderThickness="1" CornerRadius="6"
+                                Padding="10">
+                            <StackPanel Spacing="8">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <FontIcon Glyph="&#xE8E5;" FontSize="12" VerticalAlignment="Center" />
+                                    <TextBlock Text="Thử trên ảnh của bạn" FontSize="12" FontWeight="SemiBold" />
+                                </StackPanel>
+
+                                <!-- File picker + Run button + status -->
+                                <Grid ColumnSpacing="6">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBox Text="{Binding TestImagePath, Mode=OneWay, UpdateSourceTrigger=PropertyChanged}"
+                                             IsReadOnly="True"
+                                             PlaceholderText="Chọn 1 ảnh PNG/JPEG/WebP..."
+                                             FontSize="11" />
+                                    <Button Grid.Column="1" Content="Browse..."
+                                            Command="{Binding PickTestImageCommand}"
+                                            ToolTipService.ToolTip="Chọn ảnh từ File Explorer" />
+                                    <Button Grid.Column="2"
+                                            Style="{StaticResource AccentButtonStyle}"
+                                            Command="{Binding RunWatermarkTestCommand}"
+                                            IsEnabled="{Binding CanRunWatermarkTest, Mode=OneWay}">
+                                        <StackPanel Orientation="Horizontal" Spacing="4">
+                                            <FontIcon Glyph="&#xE768;" FontSize="11" />
+                                            <TextBlock Text="Run Remove" />
+                                        </StackPanel>
+                                    </Button>
+                                </Grid>
+
+                                <!-- Progress ring + status -->
+                                <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                    <ProgressRing IsActive="{Binding IsRunningWatermarkTest, Mode=OneWay}"
+                                                  Width="14" Height="14" />
+                                    <TextBlock Text="{Binding WatermarkTestStatus, Mode=OneWay}"
+                                               FontSize="11" Opacity="0.75"
+                                               TextWrapping="Wrap" />
+                                </StackPanel>
+
+                                <!-- Result viewer: single After image (centered) -->
+                                <Border BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                        BorderThickness="1" CornerRadius="6"
+                                        Background="#FF101010"
+                                        MinHeight="180">
+                                    <Grid>
+                                        <Image Source="{Binding TestResultImage, Mode=OneWay}"
+                                               Stretch="Uniform"
+                                               HorizontalAlignment="Center"
+                                               VerticalAlignment="Center" />
+                                        <Border Background="#CC107C10"
+                                                CornerRadius="0,0,0,6"
+                                                Padding="8,3"
+                                                HorizontalAlignment="Left"
+                                                VerticalAlignment="Top">
+                                            <TextBlock Text="AFTER" FontSize="10" FontWeight="SemiBold" Foreground="White" />
+                                        </Border>
+                                        <TextBlock Text="Chưa có kết quả — chọn ảnh và bấm Run Remove"
+                                                   FontSize="11" Opacity="0.5"
+                                                   HorizontalAlignment="Center"
+                                                   VerticalAlignment="Center"
+                                                   Visibility="{Binding TestResultImage, Mode=OneWay, Converter={StaticResource NullToVisibilityConverter}}" />
+                                    </Grid>
+                                </Border>
+                            </StackPanel>
+                        </Border>
+
+                    </StackPanel>
+
+                    <!-- RIGHT: Controls -->
+                    <StackPanel Grid.Column="1" Spacing="12">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <FontIcon Glyph="&#xE7C3;" FontSize="14" VerticalAlignment="Center" />
+                            <TextBlock Text="Gemini Watermark Removal" Style="{ThemeResource SubtitleTextBlockStyle}" />
+                        </StackPanel>
+                        <TextBlock Text="Xóa logo 'Gemini' bằng wiltodelta/remove-ai-watermarks (Python embedded + OpenCV/MI-GAN/LaMa inpainting). Robust với watermark ở mọi vị trí, không phụ thuộc Gemini catalog."
+                                   Style="{ThemeResource CaptionTextBlockStyle}"
+                                   Opacity="0.7"
+                                   TextWrapping="Wrap" />
+
+                        <!-- Master row: Enable | Parallel | Probe -->
+                        <Border Background="{ThemeResource LayerFillColorDefaultBrush}"
+                                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                BorderThickness="1"
+                                CornerRadius="6"
+                                Padding="12,8">
+                            <Grid ColumnSpacing="16">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <ToggleSwitch Header="Bật xóa watermark"
+                                              IsOn="{Binding EnableWatermarkRemoval, Mode=TwoWay}"
+                                              OnContent="Bật" OffContent="Tắt" />
+                                <StackPanel Grid.Column="1" Spacing="4" HorizontalAlignment="Left">
+                                    <TextBlock Text="Số luồng song song" Style="{ThemeResource CaptionTextBlockStyle}" Opacity="0.7" />
+                                    <NumberBox Value="{Binding WatermarkMaxParallel, Mode=TwoWay}"
+                                               Minimum="0" Maximum="8" SmallChange="1" LargeChange="2"
+                                               Width="120" HorizontalAlignment="Left" />
+                                    <TextBlock Text="(0 = auto theo CPU)" FontSize="10" Opacity="0.55" />
+                                </StackPanel>
+                                <Button Grid.Column="2"
+                                        Command="{Binding CheckWatermarkCliCommand}"
+                                        Style="{StaticResource AccentButtonStyle}"
+                                        VerticalAlignment="Bottom">
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <FontIcon Glyph="&#xE73E;" FontSize="12" />
+                                        <TextBlock Text="Kiểm tra Python &amp; CLI" />
+                                    </StackPanel>
+                                </Button>
+                            </Grid>
+                        </Border>
+
+                        <!-- InfoBar explaining the new pipeline -->
+                        <InfoBar IsOpen="True" IsClosable="False" Severity="Success"
+                                 Title="wiltodelta/remove-ai-watermarks (Python)"
+                                 Message="Pipeline mới dùng inpainting (OpenCV / MI-GAN / LaMa). Auto-detect watermark Gemini, không cần cấu hình vị trí. Yêu cầu Python embedded tại tools/PythonEmbed/python.exe (cài qua tools/Scripts/Setup-PythonEmbed.ps1 nếu chưa có)." />
+
+                        <!-- Backend selector + per-image timeout. Region override
+                             was removed: wiltodelta's auto-detector is reliable on
+                             standard Gemini watermarks, and the user can fall back
+                             to the CLI manually if a rare layout fails. -->
+                        <Border Background="{ThemeResource LayerFillColorDefaultBrush}"
+                                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                BorderThickness="1" CornerRadius="6" Padding="12">
+                            <StackPanel Spacing="10">
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <FontIcon Glyph="&#xE713;" FontSize="12" VerticalAlignment="Center" />
+                                    <TextBlock Text="Tùy chọn nâng cao" FontWeight="SemiBold" FontSize="12" />
+                                </StackPanel>
+
+                                <Grid ColumnSpacing="12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+
+                                    <!-- Backend selector -->
+                                    <StackPanel Spacing="4">
+                                        <TextBlock Text="Inpainting backend" FontSize="11" Opacity="0.7" />
+                                        <ComboBox SelectedItem="{Binding WatermarkInpaintBackend, Mode=TwoWay}"
+                                                  HorizontalAlignment="Stretch"
+                                                  ToolTipService.ToolTip="auto: best installed backend (LaMa > MI-GAN > cv2). cv2: classical OpenCV, nhanh, không cần model. migan: ONNX learned, ~1GB. lama: ONNX learned, ~4.7GB, chất lượng tốt nhất.">
+                                            <x:String>auto</x:String>
+                                            <x:String>cv2</x:String>
+                                            <x:String>migan</x:String>
+                                            <x:String>lama</x:String>
+                                        </ComboBox>
+                                    </StackPanel>
+
+                                    <!-- Per-image timeout -->
+                                    <StackPanel Grid.Column="1" Spacing="4">
+                                        <TextBlock Text="Timeout mỗi ảnh (giây)" FontSize="11" Opacity="0.7" />
+                                        <NumberBox Value="{Binding WatermarkPerImageTimeoutSec, Mode=TwoWay}"
+                                                   Minimum="10" Maximum="600" SmallChange="10" LargeChange="30"
+                                                   SpinButtonPlacementMode="Inline" />
+                                    </StackPanel>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
         </StackPanel>
     </ScrollViewer>
 </Page>

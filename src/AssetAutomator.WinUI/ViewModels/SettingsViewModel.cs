@@ -3,13 +3,16 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using AssetAutomator.Core;
 using AssetAutomator.Core.Interfaces;
 using AssetAutomator.Core.Models;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media.Imaging;
 using Windows.Storage;
 using Windows.Storage.Pickers;
 using WinRT.Interop;
@@ -19,7 +22,15 @@ namespace AssetAutomator.WinUI.ViewModels;
 public partial class SettingsViewModel : ObservableObject
 {
     private readonly IConfigService? _configService;
+    private readonly IWatermarkRemover? _watermarkRemover;
+    private readonly ILogService? _log;
     public event EventHandler? SettingsImported;
+
+    // Watermark test workflow: temp file gets cleaned up when user picks a
+    // different image, runs again, or the page unloads. We never overwrite
+    // the user's original file.
+    private string? _testTempFilePath;
+    private CancellationTokenSource? _testRunCts;
 
     [ObservableProperty]
     private string _outputPath = @"C:\AssetAutomator\Outputs";
@@ -64,10 +75,114 @@ public partial class SettingsViewModel : ObservableObject
     [ObservableProperty]
     private string _projectsStorageDir = string.Empty;
 
-    public SettingsViewModel(IConfigService? configService = null)
+    // ─────────────────────────────────────────────────────
+    //  Gemini Watermark Removal — wiltodelta/remove-ai-watermarks (Python).
+    //  - EnableWatermarkRemoval  : master toggle.
+    //  - WatermarkMaxParallel    : subprocess concurrency.
+    //  - WatermarkInpaintBackend : auto / cv2 / migan / lama.
+    //  - WatermarkPerImageTimeoutSec : per-image ceiling.
+    //
+    //  All other knobs (catalog position, catalog size, region override,
+    //  python path) were removed because wiltodelta's `visible` subcommand
+    //  auto-detects position+size from the image itself; passing hints
+    //  had zero effect on the actual CLI invocation.
+    // ─────────────────────────────────────────────────────
+    [ObservableProperty]
+    private bool _enableWatermarkRemoval = true;
+
+    [ObservableProperty]
+    private int _watermarkMaxParallel = 0;
+
+    // wiltodelta/remove-ai-watermarks (Python) knobs.
+    // Chỉ 2 field có ý nghĩa runtime — backend (auto/cv2/migan/lama) và
+    // timeout per-image. Mọi vị trí/kích thước catalog đều bị CLI bỏ qua
+    // (auto-detect từ ảnh) nên đã được dọn khỏi UI.
+    [ObservableProperty]
+    private string _watermarkInpaintBackend = "auto";
+
+    [ObservableProperty]
+    private int _watermarkPerImageTimeoutSec = 30;
+
+    // ─────────────────────────────────────────────────────
+    //  Watermark removal TEST workflow (independent of the batch pipeline).
+    //  Lets the user pick a single image via File Explorer, run gwr CLI on
+    //  a temp copy (so the original is never overwritten), and view the
+    //  after-result inline. Lives in SettingsViewModel because the test only
+    //  makes sense in the Settings page context, not BatchImageGen.
+    // ─────────────────────────────────────────────────────
+    [ObservableProperty]
+    private string _testImagePath = string.Empty;
+
+    [ObservableProperty]
+    private string _watermarkTestStatus = "Chưa chọn ảnh.";
+
+    [ObservableProperty]
+    private bool _isRunningWatermarkTest;
+
+    [ObservableProperty]
+    private BitmapImage? _testResultImage;
+
+    public bool CanRunWatermarkTest =>
+        !string.IsNullOrWhiteSpace(TestImagePath)
+        && File.Exists(TestImagePath)
+        && !IsRunningWatermarkTest;
+
+    public SettingsViewModel(
+        IConfigService? configService = null,
+        IWatermarkRemover? watermarkRemover = null,
+        ILogService? log = null)
     {
         _configService = configService;
+        _watermarkRemover = watermarkRemover;
+        _log = log;
         LoadSettings();
+    }
+
+    /// <summary>
+    /// Called from <see cref="SettingsPage.OnUnloaded"/> to cancel any
+    /// in-flight Run + delete the temp file copy. Keeps the user's disk clean.
+    /// </summary>
+    public void CleanupTempFile()
+    {
+        try { _testRunCts?.Cancel(); } catch { /* swallow */ }
+        _testRunCts?.Dispose();
+        _testRunCts = null;
+        DeleteTempFile();
+    }
+
+    private void DeleteTempFile()
+    {
+        if (string.IsNullOrEmpty(_testTempFilePath)) return;
+        try
+        {
+            if (File.Exists(_testTempFilePath))
+            {
+                File.Delete(_testTempFilePath);
+            }
+        }
+        catch (Exception ex)
+        {
+            _log?.Warning(LogCategory.General, $"Failed to delete temp file: {ex.Message}");
+        }
+        finally
+        {
+            _testTempFilePath = null;
+        }
+    }
+
+    partial void OnTestImagePathChanged(string value)
+    {
+        // When the user picks a different image, clear the previous result
+        // and the temp file. The bound Button.IsEnabled reacts to
+        // CanRunWatermarkTest re-evaluation automatically.
+        TestResultImage = null;
+        DeleteTempFile();
+        OnPropertyChanged(nameof(CanRunWatermarkTest));
+    }
+
+    partial void OnIsRunningWatermarkTestChanged(bool value)
+    {
+        OnPropertyChanged(nameof(CanRunWatermarkTest));
     }
 
     private void LoadSettings()
@@ -87,7 +202,21 @@ public partial class SettingsViewModel : ObservableObject
                 AppContext.BaseDirectory, "tools", "PythonSource");
             GoogleFlow2Port = settings.GoogleFlow2Port > 0 ? settings.GoogleFlow2Port : 8787;
             GoogleFlow2AutoLaunch = settings.GoogleFlow2AutoLaunch;
+
+            // Watermark removal
+            EnableWatermarkRemoval = settings.EnableWatermarkRemoval;
+            WatermarkMaxParallel = settings.WatermarkMaxParallel;
+            WatermarkInpaintBackend = string.IsNullOrWhiteSpace(settings.WatermarkInpaintBackend)
+                ? "auto" : settings.WatermarkInpaintBackend;
+            WatermarkPerImageTimeoutSec = settings.WatermarkPerImageTimeoutSec > 0
+                ? settings.WatermarkPerImageTimeoutSec : 30;
         }
+    }
+
+    private static int Clamp(int v, int min, int max, int fallback)
+    {
+        if (v < min || v > max) return fallback;
+        return v;
     }
 
     [RelayCommand]
@@ -107,6 +236,13 @@ public partial class SettingsViewModel : ObservableObject
             settings.GoogleFlow2RootPath = GoogleFlow2RootPath;
             settings.GoogleFlow2Port = GoogleFlow2Port;
             settings.GoogleFlow2AutoLaunch = GoogleFlow2AutoLaunch;
+
+            // Watermark removal
+            settings.EnableWatermarkRemoval = EnableWatermarkRemoval;
+            settings.WatermarkMaxParallel = WatermarkMaxParallel;
+            settings.WatermarkInpaintBackend = WatermarkInpaintBackend;
+            settings.WatermarkPerImageTimeoutSec = WatermarkPerImageTimeoutSec;
+
             _configService.SaveSettings(settings);
         }
 
@@ -376,6 +512,179 @@ public partial class SettingsViewModel : ObservableObject
         catch (Exception ex)
         {
             StatusMessage = $"❌ Lỗi: {ex.Message}";
+        }
+    }
+
+    /// <summary>
+    /// Probes the wiltodelta Python watermark-remover stack end-to-end:
+    ///   1. Verifies the embedded Python (or system Python) is reachable.
+    ///   2. Verifies the <c>remove-ai-watermarks[visible]</c> package is
+    ///      importable (one-time pip install if missing).
+    ///   3. Reports the resolved Python path + package version.
+    /// Bound to the "Kiểm tra Python & CLI" button in the Watermark card.
+    /// </summary>
+    [RelayCommand]
+    private async Task CheckWatermarkCliAsync()
+    {
+        var launcher = App.Services.GetService<AssetAutomator.Infrastructure.Helpers.PythonLauncher>();
+        if (launcher == null)
+        {
+            StatusMessage = "⚠️ PythonLauncher chưa được đăng ký trong DI.";
+            return;
+        }
+
+        StatusMessage = "🔍 Đang kiểm tra Python + remove-ai-watermarks (cold-start có thể mất ~30s cho pip)...";
+        try
+        {
+            var (ok, diag) = await launcher.EnsureInstalledAsync();
+            StatusMessage = ok
+                ? $"✅ Watermark CLI sẵn sàng — {diag}"
+                : $"❌ Watermark CLI chưa sẵn sàng — {diag}";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"❌ Lỗi kiểm tra Watermark CLI: {ex.Message}";
+        }
+    }
+
+    /// <summary>
+    /// Opens a File Explorer picker so the user can choose a single PNG/JPEG/WebP
+    /// to test watermark removal on. Stores the path on <see cref="TestImagePath"/>.
+    /// </summary>
+    [RelayCommand]
+    private async Task PickTestImageAsync()
+    {
+        try
+        {
+            var picker = new FileOpenPicker();
+            picker.SuggestedStartLocation = PickerLocationId.Desktop;
+            picker.FileTypeFilter.Add(".png");
+            picker.FileTypeFilter.Add(".jpg");
+            picker.FileTypeFilter.Add(".jpeg");
+            picker.FileTypeFilter.Add(".webp");
+            picker.FileTypeFilter.Add(".bmp");
+
+            var hwnd = WindowNative.GetWindowHandle(App.MainWindowInstance);
+            InitializeWithWindow.Initialize(picker, hwnd);
+
+            var file = await picker.PickSingleFileAsync();
+            if (file != null)
+            {
+                TestImagePath = file.Path;
+                WatermarkTestStatus = $"Đã chọn: {Path.GetFileName(file.Path)} ({file.FileType})";
+            }
+        }
+        catch (Exception ex)
+        {
+            WatermarkTestStatus = $"Lỗi mở File Picker: {ex.Message}";
+        }
+    }
+
+    /// <summary>
+    /// Runs the gwr CLI on a TEMP COPY of the user's chosen image so the
+    /// original file is never overwritten. The CLI is passed a 30s per-image
+    /// timeout — most cleanups finish in &lt;1s. Result is loaded into
+    /// <see cref="TestResultImage"/>; the temp file is deleted on next pick
+    /// or page unload.
+    /// </summary>
+    [RelayCommand]
+    private async Task RunWatermarkTestAsync()
+    {
+        if (_watermarkRemover == null)
+        {
+            WatermarkTestStatus = "⚠️ IWatermarkRemover chưa được đăng ký trong DI.";
+            return;
+        }
+        if (!File.Exists(TestImagePath))
+        {
+            WatermarkTestStatus = "⚠️ File không tồn tại.";
+            return;
+        }
+
+        // Defensive: clear pending run + previous temp file
+        try { _testRunCts?.Cancel(); } catch { /* swallow */ }
+        _testRunCts?.Dispose();
+        _testRunCts = new CancellationTokenSource();
+        DeleteTempFile();
+
+        IsRunningWatermarkTest = true;
+        TestResultImage = null;
+        WatermarkTestStatus = "Đang chuẩn bị temp copy...";
+
+        try
+        {
+            // Copy original to temp so the user's file stays untouched.
+            string ext = Path.GetExtension(TestImagePath);
+            string tempPath = Path.Combine(
+                Path.GetTempPath(),
+                $"watermark_test_{Guid.NewGuid():N}{ext}");
+            File.Copy(TestImagePath, tempPath, overwrite: true);
+            _testTempFilePath = tempPath;
+
+            WatermarkTestStatus = $"Đang chạy gwr CLI trên temp copy... (size: {new FileInfo(tempPath).Length / 1024} KB)";
+            _log?.Info(LogCategory.General, $"Watermark test: running gwr on {tempPath}");
+
+            using var linked = CancellationTokenSource.CreateLinkedTokenSource(
+                _testRunCts.Token,
+                new CancellationTokenSource(TimeSpan.FromSeconds(30)).Token);
+
+            var result = await _watermarkRemover.RemoveAsync(tempPath, linked.Token);
+
+            if (!result.Applied)
+            {
+                WatermarkTestStatus = $"❌ CLI không áp dụng được: {result.Reason}";
+                _log?.Warning(LogCategory.General, $"Watermark test not applied: {result.Reason}");
+                DeleteTempFile();
+                return;
+            }
+
+            // CLI overwrote tempPath in-place. Load the result as a BitmapImage
+            // for the AFTER viewer (use a fresh stream so the file lock is released).
+            WatermarkTestStatus = $"✅ Xong trong {result.DurationMs / 1000.0:F1}s — đang tải kết quả...";
+            _log?.Success(LogCategory.General, $"Watermark test OK in {result.DurationMs}ms");
+
+            // Try a few times because the CLI may still hold the file briefly
+            // after returning. ~150ms total spin is enough in practice.
+            BitmapImage? bmp = null;
+            for (int i = 0; i < 5; i++)
+            {
+                try
+                {
+                    bmp = new BitmapImage();
+                    using var stream = File.OpenRead(tempPath);
+                    await bmp.SetSourceAsync(stream.AsRandomAccessStream());
+                    break;
+                }
+                catch (IOException) when (i < 4)
+                {
+                    await Task.Delay(50);
+                }
+            }
+
+            if (bmp == null)
+            {
+                WatermarkTestStatus = "❌ Không đọc được file output sau khi CLI chạy xong.";
+            }
+            else
+            {
+                TestResultImage = bmp;
+                WatermarkTestStatus = $"✅ Hoàn tất ({result.DurationMs / 1000.0:F1}s) — ảnh gốc KHÔNG bị thay đổi.";
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            WatermarkTestStatus = "⏹️ Đã hủy.";
+            DeleteTempFile();
+        }
+        catch (Exception ex)
+        {
+            WatermarkTestStatus = $"❌ Lỗi: {ex.GetType().Name}: {ex.Message}";
+            _log?.Error(LogCategory.General, $"Watermark test failed: {ex.Message}");
+            DeleteTempFile();
+        }
+        finally
+        {
+            IsRunningWatermarkTest = false;
         }
     }
 }

@@ -66,5 +66,50 @@ namespace AssetAutomator.Core.Models
         /// <c>appsettings.json</c> files; new code treats this as a constant.
         /// </summary>
         public string DefaultImageGenProvider { get; set; } = "flow_local";
+
+        /// <summary>
+        /// Master toggle for the Gemini watermark-removal pipeline. When
+        /// <c>false</c>, the gwr CLI is never invoked and images are saved
+        /// with the Gemini watermark intact. Default <c>true</c> per product
+        /// requirement (user explicitly opted out via settings UI).
+        /// </summary>
+        public bool EnableWatermarkRemoval { get; set; } = true;
+
+        /// <summary>
+        /// Max concurrent watermark-removal subprocesses. Bounded 1..8.
+        /// Falls back to <c>max(2, ProcessorCount / 2)</c> when 0.
+        /// </summary>
+        public int WatermarkMaxParallel { get; set; } = 0;
+
+        // ─────────────────────────────────────────────────────
+        //  wiltodelta/remove-ai-watermarks (Python) — v2.1.0+
+        //  Switched from @pilio/gemini-watermark-remover (math-only,
+        //  catalog-bound, brittle) to remove-ai-watermarks (inpainting
+        //  via OpenCV/MI-GAN/LaMa, robust to non-standard layouts).
+        //
+        //  The Python runtime is the embedded one created by
+        //  tools/Scripts/Setup-PythonEmbed.ps1 (Python 3.11.9 at
+        //  tools/PythonEmbed/python.exe). The package
+        //  `remove-ai-watermarks[visible]` is installed into the
+        //  embedded venv during that same setup.
+        // ─────────────────────────────────────────────────────
+
+        /// <summary>
+        /// Inpainting backend for the <c>visible</c> subcommand:
+        /// <c>auto</c> (CLI picks best installed: LaMa > MI-GAN > cv2),
+        /// <c>cv2</c> (classical OpenCV Telea, fast, no model download),
+        /// <c>migan</c> (MI-GAN ONNX, ~1GB, texture-aware), or
+        /// <c>lama</c> (LaMa ONNX, ~4.7GB, best quality). The MI-GAN/LaMa
+        /// options require the matching <c>remove-ai-watermarks[backend]</c>
+        /// extra to be installed in the embedded Python.
+        /// </summary>
+        public string WatermarkInpaintBackend { get; set; } = "auto";
+
+        /// <summary>
+        /// Per-image timeout in seconds. The default (30s) is generous for
+        /// cv2 inpainting on 4K images. MI-GAN/LaMa are slower and may
+        /// need 60-120s for large images.
+        /// </summary>
+        public int WatermarkPerImageTimeoutSec { get; set; } = 30;
     }
 }
