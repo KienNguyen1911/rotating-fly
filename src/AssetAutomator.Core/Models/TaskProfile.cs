@@ -38,6 +38,23 @@ public class TaskProfile
     /// </summary>
     public bool EnableDeepResearch { get; set; } = true;
 
+    // ── Script Length (Step 2 — Deep Research Transcript) ──
+    /// <summary>
+    /// Hard lower bound for the script word count (default 1600 — matches the
+    /// legacy hardcoded prompt before the Word Count UI was added).
+    /// </summary>
+    public int ScriptMinWords { get; set; } = 1600;
+
+    /// <summary>
+    /// Target word count for the generated script (default 2000).
+    /// </summary>
+    public int ScriptTargetWords { get; set; } = 2000;
+
+    /// <summary>
+    /// Hard upper bound for the script word count (default 2200).
+    /// </summary>
+    public int ScriptMaxWords { get; set; } = 2200;
+
     // ── Scene Creator ─────────────────────────────────────
     /// <summary>
     /// The Gemini Gem id used for Scene Breakdown.
@@ -110,6 +127,10 @@ public class TaskProfile
 
         if (!string.IsNullOrEmpty(CharacterRef))
             task.CharacterRef = CharacterRef;
+
+        task.ScriptMinWords = ScriptMinWords;
+        task.ScriptTargetWords = ScriptTargetWords;
+        task.ScriptMaxWords = ScriptMaxWords;
     }
 
     /// <summary>
@@ -134,6 +155,9 @@ public class TaskProfile
             VoiceId = VoiceId,
             SelectedImageProvider = SelectedImageProvider,
             CharacterRef = CharacterRef,
+            ScriptMinWords = ScriptMinWords,
+            ScriptTargetWords = ScriptTargetWords,
+            ScriptMaxWords = ScriptMaxWords,
         };
     }
 }

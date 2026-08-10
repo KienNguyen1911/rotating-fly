@@ -69,6 +69,56 @@
                               IsEnabled="False"
                               Opacity="0.8"
                               FontSize="11" />
+
+                    <!-- Word Count: controls the Gemini prompt's STRICT WORD COUNT REQUIREMENT block.
+                         Min / Target / Max are independent so users can have e.g. Min=2000, Target=2500,
+                         Max=2800 without being forced into a fixed 80%/100%/110% ratio. -->
+                    <StackPanel Spacing="6">
+                        <TextBlock Text="📏 Script Word Count (Step 2 Transcript)"
+                                   FontSize="11"
+                                   Opacity="0.7" />
+                        <Grid ColumnSpacing="6">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0" Spacing="2">
+                                <TextBlock Text="Min" FontSize="10" Opacity="0.6" />
+                                <NumberBox x:Name="NumScriptMinWords"
+                                           Value="1600"
+                                           Minimum="100"
+                                           Maximum="50000"
+                                           SmallChange="100"
+                                           LargeChange="500"
+                                           SpinButtonPlacementMode="Compact" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="1" Spacing="2">
+                                <TextBlock Text="Target" FontSize="10" Opacity="0.6" />
+                                <NumberBox x:Name="NumScriptTargetWords"
+                                           Value="2000"
+                                           Minimum="100"
+                                           Maximum="50000"
+                                           SmallChange="100"
+                                           LargeChange="500"
+                                           SpinButtonPlacementMode="Compact" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="2" Spacing="2">
+                                <TextBlock Text="Max" FontSize="10" Opacity="0.6" />
+                                <NumberBox x:Name="NumScriptMaxWords"
+                                           Value="2200"
+                                           Minimum="100"
+                                           Maximum="50000"
+                                           SmallChange="100"
+                                           LargeChange="500"
+                                           SpinButtonPlacementMode="Compact" />
+                            </StackPanel>
+                        </Grid>
+                        <TextBlock Text="⚠️ Min ≤ Target ≤ Max. Số ngoài phạm vi sẽ được tự động giới hạn về giá trị mặc định."
+                                   FontSize="10"
+                                   Opacity="0.6"
+                                   TextWrapping="Wrap" />
+                    </StackPanel>
                 </StackPanel>
             </Border>
 

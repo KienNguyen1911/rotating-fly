@@ -547,7 +547,10 @@ namespace AssetAutomator.Application.Services
                 VoiceId = "",
                 SelectedImageProvider = "flow_local",
                 Status = NodeStatus.Idle,
-                CurrentStepInfo = "Sẵn sàng"
+                CurrentStepInfo = "Sẵn sàng",
+                ScriptMinWords = 1600,
+                ScriptTargetWords = 2000,
+                ScriptMaxWords = 2200
             };
         }
     }

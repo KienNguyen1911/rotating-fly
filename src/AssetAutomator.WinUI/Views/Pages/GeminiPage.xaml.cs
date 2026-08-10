@@ -475,14 +475,9 @@ public sealed partial class GeminiPage : Page
         Grid.SetRow(voiceRowCard, 1);
         Grid.SetColumnSpan(voiceRowCard, 2);
 
-        // ── Row 2: Channel URL / Suggested topics helper ──
-        var topicCard = AddTopicSuggestionPanel(mainGrid, task);
-        Grid.SetRow(topicCard, 2);
-        Grid.SetColumnSpan(topicCard, 2);
-
-        // ── Row 3: Actions row (full width) ──
+        // ── Row 2: Actions row (full width) ──
         var actionsCard = AddActionsPanel(mainGrid, task);
-        Grid.SetRow(actionsCard, 3);
+        Grid.SetRow(actionsCard, 2);
         Grid.SetColumnSpan(actionsCard, 2);
 
         return mainGrid;
@@ -557,6 +552,65 @@ public sealed partial class GeminiPage : Page
         // Force the value back to true even if the binding tries to set it false.
         task.EnableDeepResearch = true;
         stack.Children.Add(deepResearchCheck);
+
+        // ── Word Count (Min / Target / Max) — drives the STRICT WORD COUNT REQUIREMENT
+        // block inside Gemini's Step 2 transcript prompt. Min ≤ Target ≤ Max is enforced
+        // by GeminiTopicResearchStep.ClampWordCount at runtime, so the UI itself can be
+        // permissive (any positive int in [100, 50000]). ──
+        stack.Children.Add(new TextBlock
+        {
+            Text = "📏 Script Word Count",
+            FontSize = 11,
+            Opacity = 0.7,
+            Margin = new Thickness(0, 4, 0, 0)
+        });
+
+        var wordCountGrid = new Grid { ColumnSpacing = 6 };
+        wordCountGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        wordCountGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        wordCountGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+        NumberBox MakeWordCountBox(int initialValue, string header)
+        {
+            var num = new NumberBox
+            {
+                Value = initialValue,
+                Minimum = 100,
+                Maximum = 50000,
+                SmallChange = 100,
+                LargeChange = 500,
+                SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Compact,
+                Header = header,
+            };
+            return num;
+        }
+
+        var minBox = MakeWordCountBox(task.ScriptMinWords, "Min");
+        minBox.ValueChanged += (s, e) =>
+        {
+            // NaN guard: NumberBox can momentarily report NaN while typing. Fall back to current model value.
+            if (!double.IsNaN(e.NewValue)) task.ScriptMinWords = (int)Math.Round(e.NewValue);
+        };
+        Grid.SetColumn(minBox, 0);
+        wordCountGrid.Children.Add(minBox);
+
+        var targetBox = MakeWordCountBox(task.ScriptTargetWords, "Target");
+        targetBox.ValueChanged += (s, e) =>
+        {
+            if (!double.IsNaN(e.NewValue)) task.ScriptTargetWords = (int)Math.Round(e.NewValue);
+        };
+        Grid.SetColumn(targetBox, 1);
+        wordCountGrid.Children.Add(targetBox);
+
+        var maxBox = MakeWordCountBox(task.ScriptMaxWords, "Max");
+        maxBox.ValueChanged += (s, e) =>
+        {
+            if (!double.IsNaN(e.NewValue)) task.ScriptMaxWords = (int)Math.Round(e.NewValue);
+        };
+        Grid.SetColumn(maxBox, 2);
+        wordCountGrid.Children.Add(maxBox);
+
+        stack.Children.Add(wordCountGrid);
 
         card.Child = stack;
         Grid.SetRow(card, row);
@@ -765,117 +819,6 @@ public sealed partial class GeminiPage : Page
         grid.Children.Add(charStack);
 
         card.Child = grid;
-        parent.Children.Add(card);
-        return card;
-    }
-
-    private Border AddTopicSuggestionPanel(Grid parent, GeminiTaskModel task)
-    {
-        var card = new Border
-        {
-            Background = Microsoft.UI.Xaml.Application.Current.Resources["CardBackgroundFillColorDefaultBrush"] as Brush,
-            BorderBrush = Microsoft.UI.Xaml.Application.Current.Resources["CardStrokeColorDefaultBrush"] as Brush,
-            BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(8),
-            Padding = new Thickness(12)
-        };
-
-        var stack = new StackPanel { Spacing = 8 };
-
-        var header = new Grid();
-        header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        var titleBlock = new TextBlock
-        {
-            Text = "💡 Gợi Ý Chủ Đề (YouTube channel)",
-            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-            FontSize = 13
-        };
-        Grid.SetColumn(titleBlock, 0);
-        header.Children.Add(titleBlock);
-
-        var suggestBtn = new Button
-        {
-            Command = ViewModel.SuggestTopicsCommand,
-            Content = "🔍 Phân Tích Channel",
-            VerticalAlignment = VerticalAlignment.Center
-        };
-        Grid.SetColumn(suggestBtn, 1);
-        header.Children.Add(suggestBtn);
-        stack.Children.Add(header);
-
-        stack.Children.Add(new TextBlock
-        {
-            Text = "Channel URL (hoặc mô tả chủ đề):",
-            FontSize = 11,
-            Opacity = 0.7
-        });
-        var urlBox = new TextBox
-        {
-            Text = task.ChannelUrl,
-            PlaceholderText = "https://youtube.com/@handle"
-        };
-        urlBox.TextChanged += (s, e) => task.ChannelUrl = urlBox.Text;
-        stack.Children.Add(urlBox);
-
-        if (task.SuggestedTopics != null && task.SuggestedTopics.Count > 0)
-        {
-            var listPanel = new StackPanel { Spacing = 4, Margin = new Thickness(0, 8, 0, 0) };
-            listPanel.Children.Add(new TextBlock
-            {
-                Text = $"Gợi ý ({task.SuggestedTopics.Count}):",
-                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-                FontSize = 11
-            });
-
-            var scroll = new ScrollViewer { MaxHeight = 140, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
-            var innerStack = new StackPanel { Spacing = 4 };
-            foreach (var topic in task.SuggestedTopics.Take(10))
-            {
-                var topicRow = new Grid();
-                topicRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-                topicRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-
-                var info = new StackPanel { Spacing = 2 };
-                info.Children.Add(new TextBlock
-                {
-                    Text = topic.Title,
-                    FontSize = 11,
-                    FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-                    TextTrimming = TextTrimming.CharacterEllipsis
-                });
-                if (!string.IsNullOrWhiteSpace(topic.Description))
-                {
-                    info.Children.Add(new TextBlock
-                    {
-                        Text = topic.Description,
-                        FontSize = 10,
-                        Opacity = 0.7,
-                        TextWrapping = TextWrapping.Wrap
-                    });
-                }
-                Grid.SetColumn(info, 0);
-                topicRow.Children.Add(info);
-
-                var applyBtn = new Button
-                {
-                    Content = "↩",
-                    Padding = new Thickness(6, 2, 6, 2),
-                    Command = ViewModel.ApplySuggestedTopicCommand,
-                    CommandParameter = topic
-                };
-                ToolTipService.SetToolTip(applyBtn, "Áp dụng topic này");
-                Grid.SetColumn(applyBtn, 1);
-                topicRow.Children.Add(applyBtn);
-
-                innerStack.Children.Add(topicRow);
-            }
-            scroll.Content = innerStack;
-            listPanel.Children.Add(scroll);
-            stack.Children.Add(listPanel);
-        }
-
-        card.Child = stack;
         parent.Children.Add(card);
         return card;
     }

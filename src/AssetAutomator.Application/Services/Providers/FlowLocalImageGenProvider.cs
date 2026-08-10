@@ -537,7 +537,11 @@ namespace AssetAutomator.Application.Services.Providers
                     string fileUrl = urlProp.GetString()!;
                     string savedPath = await DownloadOrSaveImageAsync(fileUrl, outputDirectory, item.Index);
                     SetItemStatusDone(item, uiContext, savedPath, mediaId, projId, projUrl);
-                    EnqueueWatermarkRemoval(item, savedPath);
+                    // NOTE: Watermark removal is intentionally NOT enqueued here. The
+                    // raw file path is flow_image_{Index}_{ts}.png — SceneImageBatchStep
+                    // renames it to scene_{XXX}.png immediately after, which races with the
+                    // Python CLI and breaks removal. The Step now owns the enqueue (see
+                    // SceneImageBatchStep.ExecuteAsync) so it always uses the canonical path.
                     return;
                 }
                 else if (firstItem.TryGetProperty("b64_json", out var b64Prop) && !string.IsNullOrEmpty(b64Prop.GetString()))
@@ -547,7 +551,7 @@ namespace AssetAutomator.Application.Services.Providers
                     Directory.CreateDirectory(outputDirectory);
                     await File.WriteAllBytesAsync(savedPath, bytes);
                     SetItemStatusDone(item, uiContext, savedPath, mediaId, projId, projUrl);
-                    EnqueueWatermarkRemoval(item, savedPath);
+                    // Same reasoning as the url branch above — the Step enqueues after rename.
                     return;
                 }
             }

@@ -198,37 +198,40 @@ namespace AssetAutomator.Core.Models
             set { if (_characterRef != value) { _characterRef = value; OnPropertyChanged(); } }
         }
 
+        // ── Script Length (Step 2 — Deep Research Transcript) ──
+        private int _scriptMinWords = 1600;
         /// <summary>
-        /// YouTube channel URL for topic suggestions (Step 1).
+        /// Hard lower bound for the script word count Gemini must produce.
+        /// If the model outputs less than this, the user considers the run failed.
+        /// Default 1600 to match the legacy hardcoded prompt.
         /// </summary>
-        private string _channelUrl = "";
-        public string ChannelUrl
+        public int ScriptMinWords
         {
-            get => _channelUrl;
-            set { if (_channelUrl != value) { _channelUrl = value; OnPropertyChanged(); } }
+            get => _scriptMinWords;
+            set { if (_scriptMinWords != value) { _scriptMinWords = value; OnPropertyChanged(); } }
         }
 
+        private int _scriptTargetWords = 2000;
         /// <summary>
-        /// List of suggested topics from Step 1 analysis.
+        /// Target word count the user wants the script to land on.
+        /// Default 2000 to match the legacy hardcoded prompt.
         /// </summary>
-        private List<SuggestedTopic> _suggestedTopics = new();
-        public List<SuggestedTopic> SuggestedTopics
+        public int ScriptTargetWords
         {
-            get => _suggestedTopics;
-            set { _suggestedTopics = value ?? new(); OnPropertyChanged(); OnPropertyChanged(nameof(HasSuggestions)); }
+            get => _scriptTargetWords;
+            set { if (_scriptTargetWords != value) { _scriptTargetWords = value; OnPropertyChanged(); } }
         }
 
+        private int _scriptMaxWords = 2200;
         /// <summary>
-        /// Whether topic suggestions are currently loading.
+        /// Hard upper bound for the script word count Gemini must produce.
+        /// Default 2200 to match the legacy hardcoded prompt.
         /// </summary>
-        private bool _isLoadingSuggestions;
-        public bool IsLoadingSuggestions
+        public int ScriptMaxWords
         {
-            get => _isLoadingSuggestions;
-            set { _isLoadingSuggestions = value; OnPropertyChanged(); }
+            get => _scriptMaxWords;
+            set { if (_scriptMaxWords != value) { _scriptMaxWords = value; OnPropertyChanged(); } }
         }
-
-        public bool HasSuggestions => SuggestedTopics.Count > 0;
 
         public string SelectedImageProvider
         {

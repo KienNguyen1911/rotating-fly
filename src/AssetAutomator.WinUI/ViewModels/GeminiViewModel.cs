@@ -28,7 +28,6 @@ public partial class GeminiViewModel : ObservableObject
 {
     private readonly GeminiCreatorService? _geminiCreatorService;
     private readonly PipelineOrchestrator? _pipelineOrchestrator;
-    private readonly YoutubeTopicSuggestionStep? _topicSuggestionStep;
     private readonly GeminiApiService? _geminiApiService;
     private readonly PythonServerManager? _pythonServerManager;
     private readonly IConfigService? _configService;
@@ -84,9 +83,6 @@ public partial class GeminiViewModel : ObservableObject
 
     [ObservableProperty]
     private bool _isImportingCookies;
-
-    [ObservableProperty]
-    private bool _isSuggestingTopics;
 
     // ─────────────────────────────────────────────────────
     //  Detail Panel (master-detail layout: replaces the old dual-drawer UI)
@@ -240,7 +236,6 @@ public partial class GeminiViewModel : ObservableObject
     public GeminiViewModel(
         GeminiCreatorService? geminiCreatorService = null,
         PipelineOrchestrator? pipelineOrchestrator = null,
-        YoutubeTopicSuggestionStep? topicSuggestionStep = null,
         GeminiApiService? geminiApiService = null,
         PythonServerManager? pythonServerManager = null,
         IConfigService? configService = null,
@@ -249,7 +244,6 @@ public partial class GeminiViewModel : ObservableObject
     {
         _geminiCreatorService = geminiCreatorService;
         _pipelineOrchestrator = pipelineOrchestrator;
-        _topicSuggestionStep = topicSuggestionStep;
         _geminiApiService = geminiApiService;
         _pythonServerManager = pythonServerManager;
         _configService = configService;
@@ -795,59 +789,6 @@ public partial class GeminiViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private async Task SuggestTopicsAsync()
-    {
-        if (_topicSuggestionStep == null || SelectedTask == null)
-        {
-            StatusLog = "⚠️ Vui lòng chọn 1 task trong bảng trước khi gợi ý chủ đề.";
-            return;
-        }
-
-        string channelUrl = !string.IsNullOrWhiteSpace(SelectedTask.ChannelUrl)
-            ? SelectedTask.ChannelUrl
-            : SelectedTask.Topic;
-
-        if (string.IsNullOrWhiteSpace(channelUrl))
-        {
-            StatusLog = "⚠️ Vui lòng nhập Channel URL hoặc Topic mô tả trước.";
-            return;
-        }
-
-        IsSuggestingTopics = true;
-        SelectedTask.IsLoadingSuggestions = true;
-        StatusLog = "[SUGGEST] 💡 Đang phân tích và gợi ý chủ đề...";
-
-        try
-        {
-            var response = await _topicSuggestionStep.SuggestTopicsAsync(
-                channelUrl,
-                SelectedTask.SelectedScriptwriterGem?.Id,
-                SelectedTask.ScriptwriterModel,
-                msg => _dispatcherQueue.TryEnqueue(() => StatusLog = msg));
-
-            if (response != null && response.SuggestedTopics.Count > 0)
-            {
-                SelectedTask.SuggestedTopics = response.SuggestedTopics;
-                StatusLog = $"[SUGGEST] ✅ Gợi ý {response.SuggestedTopics.Count} chủ đề từ '{response.ChannelName}'.";
-            }
-            else
-            {
-                StatusLog = "[SUGGEST] ⚠️ Không nhận được gợi ý. Vui lòng thử lại.";
-            }
-        }
-        catch (Exception ex)
-        {
-            StatusLog = $"[SUGGEST] ❌ Lỗi: {ex.Message}";
-            _logService?.Error(LogCategory.GeminiCreator, $"Topic suggestion failed: {ex.Message}");
-        }
-        finally
-        {
-            SelectedTask.IsLoadingSuggestions = false;
-            IsSuggestingTopics = false;
-        }
-    }
-
-    [RelayCommand]
     private async Task RunSelectedTasksAsync()
     {
         var selected = GeminiTasks.Where(t => t.IsSelected).ToList();
@@ -1284,14 +1225,6 @@ public partial class GeminiViewModel : ObservableObject
         {
             StatusLog = $"{logPrefix} ❌ Lỗi mở file: {ex.Message}";
         }
-    }
-
-    [RelayCommand]
-    private void ApplySuggestedTopic(SuggestedTopic? topic)
-    {
-        if (topic == null || SelectedTask == null) return;
-        SelectedTask.Topic = topic.Title;
-        StatusLog = $"[SUGGEST] ✅ Đã áp dụng topic: '{topic.Title}'.";
     }
 
     // ─────────────────────────────────────────────────────

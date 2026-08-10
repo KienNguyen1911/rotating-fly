@@ -38,16 +38,28 @@ namespace AssetAutomator.Application.Steps
         private readonly BatchImageGenService _batchImageGenService;
         private readonly BatchProjectService _batchProjectService;
         private readonly IConfigService _configService;
+
+        /// <summary>
+        /// Optional watermark-removal pool. The provider used to enqueue
+        /// removal itself (with the raw <c>flow_image_*.png</c> path),
+        /// but that path was deleted by the canonical rename below and
+        /// the Python CLI would fail. The Step now owns the enqueue
+        /// because it knows the final canonical path. Nullable so unit
+        /// tests / minimal builds can omit it (preserves legacy behavior).
+        /// </summary>
+        private readonly WatermarkRemovalQueue? _watermarkQueue;
         private const int MaxConcurrentImages = 6;
 
         public SceneImageBatchStep(
             BatchImageGenService batchImageGenService,
             BatchProjectService batchProjectService,
-            IConfigService configService)
+            IConfigService configService,
+            WatermarkRemovalQueue? watermarkQueue = null)
         {
             _batchImageGenService = batchImageGenService;
             _batchProjectService = batchProjectService;
             _configService = configService;
+            _watermarkQueue = watermarkQueue;
         }
 
         public async Task ExecuteAsync(
@@ -359,6 +371,28 @@ namespace AssetAutomator.Application.Steps
                         // Rename raw file to canonical scene_XXX.png so re-running the pipeline (and the
                         // AreAllSceneImagesGenerated skip check) sees real assets.
                         await TryRenameToCanonicalFileNameAsync(entry.item, imgDir, entry.sceneId);
+
+                        // Enqueue watermark removal AFTER the rename. The provider no
+                        // longer enqueues itself (race with rename). We also honor the
+                        // master toggle in Settings so a user who opts out of watermark
+                        // removal doesn't get the Python CLI spun up for nothing.
+                        if (_watermarkQueue != null &&
+                            _configService?.CurrentSettings?.EnableWatermarkRemoval == true)
+                        {
+                            try
+                            {
+                                SynchronizationContext? uiCtx = SynchronizationContext.Current;
+                                _watermarkQueue.Enqueue(entry.item, entry.item.ImagePath, uiCtx);
+                                logTask(task, $"[STEP 5] 🪄 Queued watermark removal for {entry.sceneId} → {Path.GetFileName(entry.item.ImagePath)}");
+                            }
+                            catch (Exception wmEx)
+                            {
+                                // Never let a watermark-removal exception fail the
+                                // image-gen pipeline — the on-disk file is fine, the
+                                // user can still re-trigger removal from Batch Image Gen.
+                                logTask(task, $"[STEP 5] ⚠️ Watermark enqueue failed for {entry.sceneId}: {wmEx.Message}");
+                            }
+                        }
                     }
                     else
                     {

@@ -137,15 +137,6 @@
 
                     <AppBarSeparator />
 
-                    <Button Command="{x:Bind ViewModel.SuggestTopicsCommand}"
-                            IsEnabled="{x:Bind ViewModel.HasSelectedTask, Mode=OneWay}"
-                            ToolTipService.ToolTip="Gợi ý chủ đề từ channel">
-                        <StackPanel Orientation="Horizontal" Spacing="6">
-                            <FontIcon Glyph="&#xE721;" FontSize="12" />
-                            <TextBlock Text="Gợi Ý Chủ Đề" />
-                        </StackPanel>
-                    </Button>
-
                     <Button Command="{x:Bind ViewModel.RefreshGemsCommand}"
                             IsEnabled="{x:Bind ViewModel.IsLoadingGems, Mode=OneWay, Converter={StaticResource InvertBoolConverter}}"
                             ToolTipService.ToolTip="Tải lại danh sách Gemini Gems">

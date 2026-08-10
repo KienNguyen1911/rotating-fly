@@ -173,8 +173,6 @@ public partial class App : Microsoft.UI.Xaml.Application
                     return new AssetAutomator.Application.Services.WatermarkRemovalQueue(remover, maxParallel);
                 });
 
-                services.AddSingleton<YoutubeTopicSuggestionStep>();
-
                 services.AddSingleton<GeminiCreatorService>(sp =>
                 {
                     var logger = sp.GetRequiredService<ILogService>();
@@ -189,7 +187,15 @@ public partial class App : Microsoft.UI.Xaml.Application
                 services.AddSingleton<VoiceoverGenerationStep>();
                 services.AddSingleton<GeminiPlaywrightSceneBreakdownStep>();
                 services.AddSingleton<GeminiTopicResearchStep>();
-                services.AddSingleton<SceneImageBatchStep>();
+                // SceneImageBatchStep now takes an optional WatermarkRemovalQueue
+                // so the pipeline path can enqueue watermark removal AFTER the
+                // canonical rename — see SceneImageBatchStep for the rationale.
+                services.AddSingleton<SceneImageBatchStep>(sp => new SceneImageBatchStep(
+                    sp.GetRequiredService<BatchImageGenService>(),
+                    sp.GetRequiredService<BatchProjectService>(),
+                    sp.GetRequiredService<IConfigService>(),
+                    sp.GetService<AssetAutomator.Application.Services.WatermarkRemovalQueue>()
+                ));
 
                 // Orchestrator
                 services.AddSingleton<PipelineOrchestrator>(sp => new PipelineOrchestrator(
@@ -241,7 +247,6 @@ public partial class App : Microsoft.UI.Xaml.Application
                 services.AddSingleton<ViewModels.GeminiViewModel>(sp => new ViewModels.GeminiViewModel(
                     sp.GetRequiredService<GeminiCreatorService>(),
                     sp.GetRequiredService<PipelineOrchestrator>(),
-                    sp.GetRequiredService<YoutubeTopicSuggestionStep>(),
                     sp.GetRequiredService<GeminiApiService>(),
                     sp.GetRequiredService<Infrastructure.Helpers.PythonServerManager>(),
                     sp.GetRequiredService<IConfigService>(),

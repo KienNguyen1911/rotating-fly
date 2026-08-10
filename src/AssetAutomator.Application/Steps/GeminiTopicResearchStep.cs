@@ -27,9 +27,17 @@ namespace AssetAutomator.Application.Steps
             AutomationTask task,
             Action<AutomationTask, string> logTask,
             string? selectedModel = null,
-            string? existingSessionId = null)
+            string? existingSessionId = null,
+            int scriptMinWords = 1600,
+            int scriptTargetWords = 2000,
+            int scriptMaxWords = 2200)
         {
-            logTask(task, "[STEP 2] Starting Deep Research & Transcript Generation via Gemini API...");
+            // ── Defensive bounds so a misconfigured UI value can't ask for e.g. 0 or 100k words ──
+            scriptMinWords = ClampWordCount(scriptMinWords, min: 100, max: 50_000, fallback: 1600);
+            scriptTargetWords = ClampWordCount(scriptTargetWords, min: scriptMinWords, max: 50_000, fallback: 2000);
+            scriptMaxWords = ClampWordCount(scriptMaxWords, min: scriptTargetWords, max: 50_000, fallback: 2200);
+
+            logTask(task, $"[STEP 2] Starting Deep Research & Transcript Generation via Gemini API (Word Count: min={scriptMinWords}, target={scriptTargetWords}, max={scriptMaxWords})...");
 
             Directory.CreateDirectory(outputDir);
             string transcriptPath = Path.Combine(outputDir, "transcript.txt");
@@ -95,9 +103,9 @@ namespace AssetAutomator.Application.Steps
 Write a complete, high-quality video script transcript in {{targetLangName}} about the topic: "{{topicOrUrl}}".
 
 STRICT WORD COUNT REQUIREMENT:
-- The total length of the final output MUST be strictly between 1600 and 2000 words.
+- The total length of the final output MUST be strictly between {{scriptTargetWords}} words (target) and {{scriptMaxWords}} words (hard upper limit).
 - Plan your pacing across 6 to 8 well-developed thematic sections to naturally hit this length without fluff.
-- Count the words carefully before finalizing. Do not output anything under 1600 words or over 2000 words.
+- Count the words carefully before finalizing. Do not output anything under {{scriptMinWords}} words or over {{scriptMaxWords}} words.
 
 CRITICAL RULES FOR OUTPUT FORMAT (TTS OPTIMIZATION):
 1. Output ONLY the raw spoken words. No meta-commentary, notes, or explanations outside the script.
@@ -152,9 +160,9 @@ CRITICAL RULES FOR OUTPUT FORMAT (TTS OPTIMIZATION):
 Write a complete, high-quality video script transcript in {{targetLangName}} about the topic: "{{topicOrUrl}}".
 
 STRICT WORD COUNT REQUIREMENT:
-- The total length of the final output MUST be strictly between 1600 and 2000 words.
+- The total length of the final output MUST be strictly between {{scriptTargetWords}} words (target) and {{scriptMaxWords}} words (hard upper limit).
 - Plan your pacing across 6 to 8 well-developed thematic sections to naturally hit this length without fluff.
-- Count the words carefully before finalizing. Do not output anything under 1600 words or over 2000 words.
+- Count the words carefully before finalizing. Do not output anything under {{scriptMinWords}} words or over {{scriptMaxWords}} words.
 
 CRITICAL RULES FOR OUTPUT FORMAT (TTS OPTIMIZATION):
 1. Output ONLY the raw spoken words. No meta-commentary, notes, or explanations outside the script.
@@ -191,6 +199,19 @@ CRITICAL RULES FOR OUTPUT FORMAT (TTS OPTIMIZATION):
             }
 
             return currentSessionId;
+        }
+
+        /// <summary>
+        /// Clamp a user-supplied word count into a sane range. Used to prevent
+        /// misconfigured UI inputs (0, negative, absurdly large) from breaking
+        /// the Gemini prompt. <paramref name="min"/> / <paramref name="max"/>
+        /// are inclusive bounds; <paramref name="fallback"/> is returned when
+        /// the raw value falls outside the bounds.
+        /// </summary>
+        private static int ClampWordCount(int raw, int min, int max, int fallback)
+        {
+            if (raw < min || raw > max) return fallback;
+            return raw;
         }
     }
 }

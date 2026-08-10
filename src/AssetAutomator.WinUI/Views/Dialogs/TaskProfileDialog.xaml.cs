@@ -79,6 +79,12 @@ public sealed partial class TaskProfileDialog : ContentDialog
         ChkDeepResearch.IsChecked = true; // Always true; UI is disabled.
         _profile.EnableDeepResearch = true;
 
+        // Word Count (Min / Target / Max) — load current profile values, fall back to defaults
+        // if the profile was created before this feature was added (legacy profiles).
+        NumScriptMinWords.Value = _profile.ScriptMinWords > 0 ? _profile.ScriptMinWords : 1600;
+        NumScriptTargetWords.Value = _profile.ScriptTargetWords > 0 ? _profile.ScriptTargetWords : 2000;
+        NumScriptMaxWords.Value = _profile.ScriptMaxWords > 0 ? _profile.ScriptMaxWords : 2200;
+
         // Scene Creator
         CmbSceneCreatorGem.ItemsSource = _availableSceneCreatorGems;
         CmbSceneCreatorModel.ItemsSource = _availableAiModels;
@@ -156,6 +162,13 @@ public sealed partial class TaskProfileDialog : ContentDialog
         _profile.VoiceId = TxtVoiceId.Text?.Trim() ?? string.Empty;
         _profile.SelectedImageProvider = CmbImageProvider.SelectedItem as string ?? "flow_local";
         _profile.CharacterRef = TxtCharacterRef.Text?.Trim() ?? string.Empty;
+
+        // Word Count — NumberBox.Value is double in WinUI 3; round to int. The pipeline
+        // step itself clamps to sane bounds (Min ≤ Target ≤ Max, all in [100, 50000]) so
+        // we don't need to validate here — the step is the single source of truth.
+        _profile.ScriptMinWords = (int)Math.Round(NumScriptMinWords.Value);
+        _profile.ScriptTargetWords = (int)Math.Round(NumScriptTargetWords.Value);
+        _profile.ScriptMaxWords = (int)Math.Round(NumScriptMaxWords.Value);
 
         ResultProfile = _profile;
         DialogResult = true;

@@ -372,7 +372,10 @@ namespace AssetAutomator.Application.Services
                 task: task,
                 logTask: log,
                 selectedModel: model,
-                existingSessionId: null
+                existingSessionId: null,
+                scriptMinWords: taskModel.ScriptMinWords,
+                scriptTargetWords: taskModel.ScriptTargetWords,
+                scriptMaxWords: taskModel.ScriptMaxWords
             );
         }
 
