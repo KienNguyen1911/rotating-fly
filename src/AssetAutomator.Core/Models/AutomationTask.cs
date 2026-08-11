@@ -16,6 +16,7 @@ namespace AssetAutomator.Core.Models
         private bool _step3 = true;
         private bool _step4 = true;
         private bool _step5 = true;
+        private bool _step6 = true;
         private bool _stepSrt = true;
         private bool _isSelected = false;
         private string _status = "Pending";
@@ -27,6 +28,7 @@ namespace AssetAutomator.Core.Models
         private string _step3Status = "Pending";
         private string _step4Status = "Pending";
         private string _step5Status = "Pending";
+        private string _step6Status = "Pending";
         private string _stepSrtStatus = "Pending";
         private int _srtMethod = 1;
         private string _characterRef = string.Empty;
@@ -105,6 +107,12 @@ namespace AssetAutomator.Core.Models
             set { _step5 = value; OnPropertyChanged(); }
         }
 
+        public bool Step6
+        {
+            get => _step6;
+            set { _step6 = value; OnPropertyChanged(); }
+        }
+
         public bool StepSrt
         {
             get => _stepSrt;
@@ -157,6 +165,12 @@ namespace AssetAutomator.Core.Models
         {
             get => _step5Status;
             set { _step5Status = value ?? "Pending"; OnPropertyChanged(); }
+        }
+
+        public string Step6Status
+        {
+            get => _step6Status;
+            set { _step6Status = value ?? "Pending"; OnPropertyChanged(); }
         }
 
         public string StepSrtStatus

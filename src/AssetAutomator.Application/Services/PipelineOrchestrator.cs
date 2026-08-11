@@ -15,22 +15,24 @@ namespace AssetAutomator.Application.Services
     /// Pipeline Orchestrator — ma trận hàng ngang (tasks) × hàng dọc (stages) với giới hạn slot riêng từng stage.
     ///
     /// Mô hình Assembly Line:
-    ///   - Mỗi task chạy độc lập qua 4 stage tuần tự.
+    ///   - Mỗi task chạy độc lập qua 6 stage tuần tự.
     ///   - Mỗi stage có SemaphoreSlim riêng giới hạn số task đồng thời.
     ///   - Khi 1 task hoàn thành stage A, nó lập tức vào stage B (nếu còn slot), nhường slot A cho task khác.
     ///
     /// Slot mặc định:
-    ///   Deep Research : 2
-    ///   Voiceover     : 3
-    ///   Scene Creator : 4
-    ///   Image Gen     : 1 (tuần tự tuyệt đối, sleep 15s giữa các task)
+    ///   Deep Research       : 2
+    ///   Voiceover           : 3
+    ///   Scene Segmentation  : 4 (STAGE C - NEW)
+    ///   Image Prompt Gen    : 4 (STAGE D - NEW)
+    ///   Image Gen           : 1 (tuần tự tuyệt đối, sleep 15s giữa các task)
     /// </summary>
     public class PipelineOrchestrator
     {
         private readonly GeminiApiService _geminiApiService;
         private readonly IConfigService _configService;
         private readonly VoiceoverGenerationStep _voiceoverStep;
-        private readonly GeminiPlaywrightSceneBreakdownStep _sceneBreakdownStep;
+        private readonly SceneSegmentationStep _sceneSegmentationStep;
+        private readonly ImagePromptGenerationStep _imagePromptStep;
         private readonly BatchImageGenService _batchImageGenService;
         private readonly GeminiTopicResearchStep _topicResearchStep;
         private readonly SceneImageBatchStep _imageBatchStep;
@@ -38,40 +40,45 @@ namespace AssetAutomator.Application.Services
 
         private readonly int _maxDeepResearch;
         private readonly int _maxVoiceover;
-        private readonly int _maxSceneCreator;
+        private readonly int _maxSceneSegmentation;
+        private readonly int _maxImagePromptGen;
         private readonly int _maxImageGen;
 
         public PipelineOrchestrator(
             GeminiApiService geminiApiService,
             IConfigService configService,
             VoiceoverGenerationStep voiceoverStep,
-            GeminiPlaywrightSceneBreakdownStep sceneBreakdownStep,
+            SceneSegmentationStep sceneSegmentationStep,
+            ImagePromptGenerationStep imagePromptStep,
             BatchImageGenService batchImageGenService,
             GeminiTopicResearchStep topicResearchStep,
             SceneImageBatchStep imageBatchStep,
             HistoryService? historyService = null,
             int maxDeepResearch = 1,
             int maxVoiceover = 1,
-            int maxSceneCreator = 1,
+            int maxSceneSegmentation = 1,
+            int maxImagePromptGen = 1,
             int maxImageGen = 1)
         {
             _geminiApiService = geminiApiService;
             _configService = configService;
             _voiceoverStep = voiceoverStep;
-            _sceneBreakdownStep = sceneBreakdownStep;
+            _sceneSegmentationStep = sceneSegmentationStep;
+            _imagePromptStep = imagePromptStep;
             _batchImageGenService = batchImageGenService;
             _topicResearchStep = topicResearchStep;
             _imageBatchStep = imageBatchStep;
             _historyService = historyService;
             _maxDeepResearch = Math.Max(1, maxDeepResearch);
             _maxVoiceover = Math.Max(1, maxVoiceover);
-            _maxSceneCreator = Math.Max(1, maxSceneCreator);
+            _maxSceneSegmentation = Math.Max(1, maxSceneSegmentation);
+            _maxImagePromptGen = Math.Max(1, maxImagePromptGen);
             _maxImageGen = Math.Max(1, maxImageGen);
         }
 
         /// <summary>
         /// Thực thi batch Gemini tasks với ma trận pipeline.
-        /// Tất cả task khởi động cùng lúc, mỗi task tự đi qua 4 stage với semaphore riêng.
+        /// Tất cả task khởi động cùng lúc, mỗi task tự đi qua 6 stage với semaphore riêng.
         /// Callback logTask được gọi từ thread pool — caller phải tự Dispatch nếu cần cập nhật UI.
         /// </summary>
         public async Task<PipelineBatchResult> ExecuteBatchAsync(
@@ -84,7 +91,8 @@ namespace AssetAutomator.Application.Services
 
             using var deepResearchSem = new SemaphoreSlim(_maxDeepResearch, _maxDeepResearch);
             using var voiceoverSem = new SemaphoreSlim(_maxVoiceover, _maxVoiceover);
-            using var sceneCreatorSem = new SemaphoreSlim(_maxSceneCreator, _maxSceneCreator);
+            using var sceneSegSem = new SemaphoreSlim(_maxSceneSegmentation, _maxSceneSegmentation);
+            using var imagePromptSem = new SemaphoreSlim(_maxImagePromptGen, _maxImagePromptGen);
             using var imageGenSem = new SemaphoreSlim(_maxImageGen, _maxImageGen);
 
             // ── Ma trận: mỗi task là 1 hàng, chạy song song ──
@@ -93,7 +101,8 @@ namespace AssetAutomator.Application.Services
                     taskModel,
                     deepResearchSem,
                     voiceoverSem,
-                    sceneCreatorSem,
+                    sceneSegSem,
+                    imagePromptSem,
                     imageGenSem,
                     logTask,
                     cancellationToken
@@ -109,13 +118,14 @@ namespace AssetAutomator.Application.Services
         }
 
         /// <summary>
-        /// Xử lý MỘT task qua toàn bộ pipeline 4 stage với slot giới hạn từng stage.
+        /// Xử lý MỘT task qua toàn bộ pipeline 6 stage với slot giới hạn từng stage.
         /// </summary>
         private async Task ProcessOneTaskThroughPipelineAsync(
             GeminiTaskModel taskModel,
             SemaphoreSlim deepResearchSem,
             SemaphoreSlim voiceoverSem,
-            SemaphoreSlim sceneCreatorSem,
+            SemaphoreSlim sceneSegSem,
+            SemaphoreSlim imagePromptSem,
             SemaphoreSlim imageGenSem,
             Action<GeminiTaskModel, string> logTask,
             CancellationToken ct)
@@ -215,40 +225,62 @@ namespace AssetAutomator.Application.Services
                 ct.ThrowIfCancellationRequested();
 
                 // ═══════════════════════════════════════════════
-                // STAGE C: Scene Creator (max 4)
+                // STAGE C: Scene Segmentation (max 4)
                 // ═══════════════════════════════════════════════
-                await sceneCreatorSem.WaitAsync(ct);
+                await sceneSegSem.WaitAsync(ct);
                 try
                 {
-                    int used = _maxSceneCreator - sceneCreatorSem.CurrentCount;
-                    logTask(taskModel, $"[STAGE-C] 🎬 Bắt đầu Scene Creator... (slot {used}/{_maxSceneCreator})");
+                    int used = _maxSceneSegmentation - sceneSegSem.CurrentCount;
+                    logTask(taskModel, $"[STAGE-C] 🎬 Bắt đầu Scene Segmentation... (slot {used}/{_maxSceneSegmentation})");
                     taskModel.Step3Status = NodeStatus.Running;
-                    taskModel.CurrentStepInfo = $"Stage C: Scene Creator ({used}/{_maxSceneCreator})";
+                    taskModel.CurrentStepInfo = $"Stage C: Scene Segmentation ({used}/{_maxSceneSegmentation})";
 
-                    await RunStageSceneCreatorAsync(internalTask, taskModel, internalLog);
+                    await RunStageSceneSegmentationAsync(internalTask, taskModel, internalLog);
                     taskModel.Step3Status = NodeStatus.Success;
-                    logTask(taskModel, $"[STAGE-C] ✅ Scene Creator hoàn thành.");
+                    logTask(taskModel, $"[STAGE-C] ✅ Scene Segmentation hoàn thành.");
                 }
                 finally
                 {
-                    sceneCreatorSem.Release();
+                    sceneSegSem.Release();
                 }
 
                 ct.ThrowIfCancellationRequested();
 
                 // ═══════════════════════════════════════════════
-                // STAGE D: Image Generation (max 1 — tuần tự)
+                // STAGE D: Image Prompt Generation (max 4)
+                // ═══════════════════════════════════════════════
+                await imagePromptSem.WaitAsync(ct);
+                try
+                {
+                    int used = _maxImagePromptGen - imagePromptSem.CurrentCount;
+                    logTask(taskModel, $"[STAGE-D] 🎨 Bắt đầu Image Prompt Generation... (slot {used}/{_maxImagePromptGen})");
+                    taskModel.Step4Status = NodeStatus.Running;
+                    taskModel.CurrentStepInfo = $"Stage D: Image Prompt ({used}/{_maxImagePromptGen})";
+
+                    await RunStageImagePromptGenAsync(internalTask, taskModel, internalLog);
+                    taskModel.Step4Status = NodeStatus.Success;
+                    logTask(taskModel, $"[STAGE-D] ✅ Image Prompt Generation hoàn thành.");
+                }
+                finally
+                {
+                    imagePromptSem.Release();
+                }
+
+                ct.ThrowIfCancellationRequested();
+
+                // ═══════════════════════════════════════════════
+                // STAGE E: Image Generation (max 1 — tuần tự)
                 // ═══════════════════════════════════════════════
                 await imageGenSem.WaitAsync(ct);
                 try
                 {
-                    logTask(taskModel, $"[STAGE-D] 🖼️ Bắt đầu Image Generation... (1/1 slot)");
-                    taskModel.Step4Status = NodeStatus.Running;
-                    taskModel.CurrentStepInfo = "Stage D: Image Gen (1/1)";
+                    logTask(taskModel, $"[STAGE-E] 🖼️ Bắt đầu Image Generation... (1/1 slot)");
+                    taskModel.Step5Status = NodeStatus.Running;
+                    taskModel.CurrentStepInfo = "Stage E: Image Gen (1/1)";
 
                     await RunStageImageGenAsync(internalTask, taskModel, internalLog);
-                    taskModel.Step4Status = NodeStatus.Success;
-                    logTask(taskModel, $"[STAGE-D] ✅ Image Generation hoàn thành.");
+                    taskModel.Step5Status = NodeStatus.Success;
+                    logTask(taskModel, $"[STAGE-E] ✅ Image Generation hoàn thành.");
                 }
                 finally
                 {
@@ -417,17 +449,17 @@ namespace AssetAutomator.Application.Services
             );
         }
 
-        private async Task RunStageSceneCreatorAsync(
+        private async Task RunStageSceneSegmentationAsync(
             AutomationTask task, GeminiTaskModel taskModel,
             Action<AutomationTask, string> log)
         {
             string outputDir = task.OutputDir;
-            string scenesPath = Path.Combine(outputDir, "scenes.json");
+            string scenesRawPath = Path.Combine(outputDir, "scenes_raw.json");
 
-            // Strict primary-folder check only — do NOT skip when scenes.json only exists in a sibling folder.
-            if (File.Exists(scenesPath) && new FileInfo(scenesPath).Length > 50 && IsValidScenesJson(scenesPath))
+            // Check if scenes_raw.json already exists
+            if (File.Exists(scenesRawPath) && new FileInfo(scenesRawPath).Length > 50 && IsValidScenesRawJson(scenesRawPath))
             {
-                log(task, $"[STAGE-C] ⏭️ scenes.json hợp lệ đã tồn tại trong folder hiện tại, bỏ qua Scene Creator.");
+                log(task, $"[STAGE-C] ⏭️ scenes_raw.json hợp lệ đã tồn tại trong folder hiện tại, bỏ qua Scene Segmentation.");
                 task.Step3Status = "Done";
                 return;
             }
@@ -436,20 +468,71 @@ namespace AssetAutomator.Application.Services
             string gemName = taskModel.SelectedSceneCreatorGem?.Name ?? string.Empty;
             string model = GeminiApiService.ResolveModelName(taskModel.SceneCreatorModel);
 
-            // Routing: respect the per-task toggle so users can A/B test
-            // API Stream (fast, no Chrome) vs Playwright (real Web UI).
-            // Default = ApiStream because it mirrors test_gem_and_thinking.py
-            // and does not require a Chrome profile with an active session.
             var mode = taskModel.UseApiStreamForSceneCreator
-                ? GeminiPlaywrightSceneBreakdownStep.SceneBreakdownMode.ApiStream
-                : GeminiPlaywrightSceneBreakdownStep.SceneBreakdownMode.Playwright;
+                ? SceneSegmentationStep.SegmentationMode.ApiStream
+                : SceneSegmentationStep.SegmentationMode.Playwright;
 
-            // Auto-enable extended thinking when the resolved model name
-            // already carries the -thinking suffix (e.g. gemini-3-flash-thinking).
             bool enableThinking = model.Contains("thinking", StringComparison.OrdinalIgnoreCase) ||
                                   model.Contains("advanced", StringComparison.OrdinalIgnoreCase);
 
-            await _sceneBreakdownStep.ExecuteAsync(
+            await _sceneSegmentationStep.ExecuteAsync(
+                task: task,
+                logTask: log,
+                selectedModel: model,
+                outputDir: outputDir,
+                gemId: string.IsNullOrWhiteSpace(gemId) ? null : gemId,
+                sessionId: null,
+                gemName: gemName,
+                mode: mode,
+                enableExtendedThinking: enableThinking);
+        }
+
+        private async Task RunStageImagePromptGenAsync(
+            AutomationTask task, GeminiTaskModel taskModel,
+            Action<AutomationTask, string> log)
+        {
+            string outputDir = task.OutputDir;
+            string scenesPath = Path.Combine(outputDir, "scenes.json");
+
+            // Check if scenes.json already has image_prompts
+            if (taskModel.SkipImagePromptGen && File.Exists(scenesPath))
+            {
+                if (HasValidImagePrompts(scenesPath))
+                {
+                    log(task, $"[STAGE-D] ⏭️ scenes.json đã có image_prompts (SkipImagePromptGen=true), bỏ qua Image Prompt Generation.");
+                    task.Step4Status = "Done";
+                    return;
+                }
+            }
+
+            // Also check for valid scenes.json
+            if (File.Exists(scenesPath) && new FileInfo(scenesPath).Length > 50 && HasValidImagePrompts(scenesPath))
+            {
+                log(task, $"[STAGE-D] ⏭️ scenes.json hợp lệ đã tồn tại trong folder hiện tại, bỏ qua Image Prompt Generation.");
+                task.Step4Status = "Done";
+                return;
+            }
+
+            string scenesRawPath = Path.Combine(outputDir, "scenes_raw.json");
+            if (!File.Exists(scenesRawPath))
+            {
+                log(task, $"[STAGE-D] ⚠️ scenes_raw.json không tồn tại, bỏ qua Image Prompt Generation.");
+                task.Step4Status = "Done";
+                return;
+            }
+
+            string gemId = taskModel.SelectedImagePromptGem?.Id ?? string.Empty;
+            string gemName = taskModel.SelectedImagePromptGem?.Name ?? string.Empty;
+            string model = GeminiApiService.ResolveModelName(taskModel.ImagePromptModel);
+
+            var mode = taskModel.UseApiStreamForImagePrompt
+                ? ImagePromptGenerationStep.ImagePromptMode.ApiStream
+                : ImagePromptGenerationStep.ImagePromptMode.Playwright;
+
+            bool enableThinking = model.Contains("thinking", StringComparison.OrdinalIgnoreCase) ||
+                                  model.Contains("advanced", StringComparison.OrdinalIgnoreCase);
+
+            await _imagePromptStep.ExecuteAsync(
                 task: task,
                 logTask: log,
                 selectedModel: model,
@@ -546,9 +629,10 @@ namespace AssetAutomator.Application.Services
                 CharacterRef = taskModel.CharacterRef,
                 Step1 = false,
                 Step2 = true,   // Deep Research Transcript
-                Step3 = true,   // Scene Breakdown
-                Step4 = true,   // Voiceover
+                Step3 = true,   // Scene Segmentation (NEW)
+                Step4 = true,   // Image Prompt Generation (NEW)
                 Step5 = true,   // Batch Image Gen
+                Step6 = true,   // Legacy compatibility
                 StepSrt = true
             };
 
@@ -569,6 +653,39 @@ namespace AssetAutomator.Application.Services
                 var options = new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true };
                 var root = System.Text.Json.JsonSerializer.Deserialize<ScenesJsonRootModel>(json, options);
                 return root != null && root.scenes != null && root.scenes.Count > 0;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static bool IsValidScenesRawJson(string scenesRawPath)
+        {
+            try
+            {
+                string json = File.ReadAllText(scenesRawPath);
+                var options = new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+                var root = System.Text.Json.JsonSerializer.Deserialize<SceneSegmentationModel>(json, options);
+                return root != null && root.scenes != null && root.scenes.Count > 0;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static bool HasValidImagePrompts(string scenesPath)
+        {
+            try
+            {
+                string json = File.ReadAllText(scenesPath);
+                var options = new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+                var root = System.Text.Json.JsonSerializer.Deserialize<ScenesJsonRootModel>(json, options);
+                if (root?.scenes == null || root.scenes.Count == 0) return false;
+
+                // Check if at least one scene has an image_prompt
+                return root.scenes.Any(s => !string.IsNullOrWhiteSpace(s.image_prompt));
             }
             catch
             {

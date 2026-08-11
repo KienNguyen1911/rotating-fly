@@ -41,4 +41,28 @@ namespace AssetAutomator.Core.Models
         public string transcript { get; set; } = string.Empty;
         public string image_prompt { get; set; } = string.Empty;
     }
+
+    /// <summary>
+    /// Model cho scenes_raw.json - chỉ chứa scene segmentation (không có image_prompt).
+    /// Output từ Stage C: Scene Segmentation.
+    /// </summary>
+    public class SceneSegmentationModel
+    {
+        public string video_title { get; set; } = string.Empty;
+        public int scene_count { get; set; }
+        public List<SceneSegmentModel> scenes { get; set; } = new();
+    }
+
+    /// <summary>
+    /// Model cho từng scene trong scenes_raw.json.
+    /// KHÔNG có image_prompt - field này được thêm ở Stage D.
+    /// Output từ scenes-splitter.md gem: {"scene": 1, "id": "scene_001", ...}
+    /// </summary>
+    public class SceneSegmentModel
+    {
+        public int scene { get; set; }
+        public string id { get; set; } = string.Empty;
+        public SceneTimeModel? time { get; set; }
+        public string transcript { get; set; } = string.Empty;
+    }
 }
