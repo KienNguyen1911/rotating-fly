@@ -176,6 +176,7 @@ public sealed partial class GeminiPage : Page
             profileToEdit: null,
             ViewModel.AvailableScriptwriterGems,
             ViewModel.AvailableSceneCreatorGems,
+            ViewModel.AvailableImagePromptGems,
             ViewModel.AvailableAiModels,
             ViewModel.AvailableImageProviders)
         {
@@ -271,6 +272,7 @@ public sealed partial class GeminiPage : Page
                 null,
                 ViewModel.AvailableScriptwriterGems,
                 ViewModel.AvailableSceneCreatorGems,
+                ViewModel.AvailableImagePromptGems,
                 ViewModel.AvailableAiModels,
                 ViewModel.AvailableImageProviders) { XamlRoot = xamlRoot };
 
@@ -313,6 +315,7 @@ public sealed partial class GeminiPage : Page
                         captured,
                         ViewModel.AvailableScriptwriterGems,
                         ViewModel.AvailableSceneCreatorGems,
+                        ViewModel.AvailableImagePromptGems,
                         ViewModel.AvailableAiModels,
                         ViewModel.AvailableImageProviders) { XamlRoot = xamlRoot };
 
@@ -470,14 +473,18 @@ public sealed partial class GeminiPage : Page
         AddScriptwriterPanel(mainGrid, task, row: 0, col: 0);
         AddSceneCreatorPanel(mainGrid, task, row: 0, col: 1);
 
-        // ── Row 1: Voice | Provider | Character Ref (full width) ──
-        var voiceRowCard = AddVoiceProviderCharacterRow(mainGrid, task);
-        Grid.SetRow(voiceRowCard, 1);
-        Grid.SetColumnSpan(voiceRowCard, 2);
+        // ── Row 1: Image Prompt Gen (left) | Voice (right) ──
+        AddImagePromptPanel(mainGrid, task, row: 1, col: 0);
+        AddVoiceRow(mainGrid, task, row: 1, col: 1);
 
-        // ── Row 2: Actions row (full width) ──
+        // ── Row 2: Provider | Character Ref (full width) ──
+        var providerRowCard = AddProviderCharacterRow(mainGrid, task);
+        Grid.SetRow(providerRowCard, 2);
+        Grid.SetColumnSpan(providerRowCard, 2);
+
+        // ── Row 3: Actions row (full width) ──
         var actionsCard = AddActionsPanel(mainGrid, task);
-        Grid.SetRow(actionsCard, 2);
+        Grid.SetRow(actionsCard, 3);
         Grid.SetColumnSpan(actionsCard, 2);
 
         return mainGrid;
@@ -695,7 +702,7 @@ public sealed partial class GeminiPage : Page
         return card;
     }
 
-    private Border AddVoiceProviderCharacterRow(Grid parent, GeminiTaskModel task)
+    private Border AddProviderCharacterRow(Grid parent, GeminiTaskModel task)
     {
         var card = new Border
         {
@@ -709,11 +716,86 @@ public sealed partial class GeminiPage : Page
         var grid = new Grid { ColumnSpacing = 12 };
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
-        // Voice ID
-        var voiceStack = new StackPanel { Spacing = 4 };
-        voiceStack.Children.Add(new TextBlock { Text = "🎙️ Voice ID", FontSize = 11, Opacity = 0.7 });
+        // Provider
+        var provStack = new StackPanel { Spacing = 4 };
+        provStack.Children.Add(new TextBlock { Text = "🖼️ Provider", FontSize = 11, Opacity = 0.7 });
+        var provCombo = new ComboBox
+        {
+            ItemsSource = ViewModel.AvailableImageProviders,
+            SelectedItem = task.SelectedImageProvider,
+            HorizontalAlignment = HorizontalAlignment.Stretch
+        };
+        provCombo.SelectionChanged += (s, e) =>
+        {
+            if (provCombo.SelectedItem is string p)
+            {
+                task.SelectedImageProvider = p;
+            }
+        };
+        provStack.Children.Add(provCombo);
+        Grid.SetColumn(provStack, 0);
+        grid.Children.Add(provStack);
+
+        // Character Ref
+        var charStack = new StackPanel { Spacing = 4 };
+        charStack.Children.Add(new TextBlock { Text = "👤 Character Ref", FontSize = 11, Opacity = 0.7 });
+        var charRow = new Grid();
+        charRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        charRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        var charBox = new TextBox { Text = task.CharacterRef, PlaceholderText = "Đường dẫn ảnh nhân vật" };
+        charBox.TextChanged += (s, e) => task.CharacterRef = charBox.Text;
+        Grid.SetColumn(charBox, 0);
+
+        var charBtn = new Button { Content = "📁" };
+        ToolTipService.SetToolTip(charBtn, "Chọn file ảnh nhân vật mẫu");
+        charBtn.Click += async (s, e) =>
+        {
+            var picker = new FileOpenPicker();
+            picker.FileTypeFilter.Add(".png");
+            picker.FileTypeFilter.Add(".jpg");
+            picker.FileTypeFilter.Add(".jpeg");
+            picker.FileTypeFilter.Add(".webp");
+
+            if (App.MainWindowInstance != null)
+            {
+                var hwnd = WindowNative.GetWindowHandle(App.MainWindowInstance);
+                InitializeWithWindow.Initialize(picker, hwnd);
+            }
+
+            var file = await picker.PickSingleFileAsync();
+            if (file != null)
+            {
+                task.CharacterRef = file.Path;
+                charBox.Text = file.Path;
+            }
+        };
+        Grid.SetColumn(charBtn, 1);
+        charRow.Children.Add(charBox);
+        charRow.Children.Add(charBtn);
+        charStack.Children.Add(charRow);
+        Grid.SetColumn(charStack, 1);
+        grid.Children.Add(charStack);
+
+        card.Child = grid;
+        parent.Children.Add(card);
+        return card;
+    }
+
+    private Border AddVoiceRow(Grid parent, GeminiTaskModel task, int row, int col)
+    {
+        var card = new Border
+        {
+            Background = Microsoft.UI.Xaml.Application.Current.Resources["CardBackgroundFillColorDefaultBrush"] as Brush,
+            BorderBrush = Microsoft.UI.Xaml.Application.Current.Resources["CardStrokeColorDefaultBrush"] as Brush,
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(8),
+            Padding = new Thickness(12)
+        };
+
+        var stack = new StackPanel { Spacing = 4 };
+
+        stack.Children.Add(new TextBlock { Text = "🎙️ Voice ID", FontSize = 11, Opacity = 0.7 });
         var voiceRow = new Grid();
         voiceRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         voiceRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -754,71 +836,88 @@ public sealed partial class GeminiPage : Page
         Grid.SetColumn(browseBtn, 1);
         voiceRow.Children.Add(voiceBox);
         voiceRow.Children.Add(browseBtn);
-        voiceStack.Children.Add(voiceRow);
-        Grid.SetColumn(voiceStack, 0);
-        grid.Children.Add(voiceStack);
+        stack.Children.Add(voiceRow);
 
-        // Provider
-        var provStack = new StackPanel { Spacing = 4 };
-        provStack.Children.Add(new TextBlock { Text = "🖼️ Provider", FontSize = 11, Opacity = 0.7 });
-        var provCombo = new ComboBox
+        card.Child = stack;
+        Grid.SetRow(card, row);
+        Grid.SetColumn(card, col);
+        parent.Children.Add(card);
+        return card;
+    }
+
+    private Border AddImagePromptPanel(Grid parent, GeminiTaskModel task, int row, int col)
+    {
+        var card = new Border
         {
-            ItemsSource = ViewModel.AvailableImageProviders,
-            SelectedItem = task.SelectedImageProvider,
+            Background = Microsoft.UI.Xaml.Application.Current.Resources["CardBackgroundFillColorDefaultBrush"] as Brush,
+            BorderBrush = Microsoft.UI.Xaml.Application.Current.Resources["CardStrokeColorDefaultBrush"] as Brush,
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(8),
+            Padding = new Thickness(12)
+        };
+
+        var stack = new StackPanel { Spacing = 8 };
+
+        stack.Children.Add(new TextBlock
+        {
+            Text = "🎨 Image Prompt Gen",
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            FontSize = 13
+        });
+
+        stack.Children.Add(new TextBlock { Text = "Gem", FontSize = 11, Opacity = 0.7 });
+        var imagePromptGemCombo = new ComboBox
+        {
+            ItemsSource = ViewModel.AvailableImagePromptGems,
+            SelectedItem = task.SelectedImagePromptGem,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            PlaceholderText = "Chọn gem image prompt"
+        };
+        imagePromptGemCombo.SelectionChanged += (s, e) =>
+        {
+            if (imagePromptGemCombo.SelectedItem is GemOptionItem gem)
+            {
+                task.SelectedImagePromptGem = gem;
+            }
+        };
+        stack.Children.Add(imagePromptGemCombo);
+
+        stack.Children.Add(new TextBlock { Text = "Model", FontSize = 11, Opacity = 0.7 });
+        var imagePromptModelCombo = new ComboBox
+        {
+            ItemsSource = ViewModel.AvailableAiModels,
+            SelectedItem = task.ImagePromptModel,
             HorizontalAlignment = HorizontalAlignment.Stretch
         };
-        provCombo.SelectionChanged += (s, e) =>
+        imagePromptModelCombo.SelectionChanged += (s, e) =>
         {
-            if (provCombo.SelectedItem is string p)
+            if (imagePromptModelCombo.SelectedItem is string m)
             {
-                task.SelectedImageProvider = p;
+                task.ImagePromptModel = m;
             }
         };
-        provStack.Children.Add(provCombo);
-        Grid.SetColumn(provStack, 1);
-        grid.Children.Add(provStack);
+        stack.Children.Add(imagePromptModelCombo);
 
-        // Character Ref
-        var charStack = new StackPanel { Spacing = 4 };
-        charStack.Children.Add(new TextBlock { Text = "👤 Character Ref", FontSize = 11, Opacity = 0.7 });
-        var charRow = new Grid();
-        charRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        charRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        var charBox = new TextBox { Text = task.CharacterRef, PlaceholderText = "Đường dẫn ảnh nhân vật" };
-        charBox.TextChanged += (s, e) => task.CharacterRef = charBox.Text;
-        Grid.SetColumn(charBox, 0);
-
-        var charBtn = new Button { Content = "📁" };
-        ToolTipService.SetToolTip(charBtn, "Chọn file ảnh nhân vật mẫu");
-        charBtn.Click += async (s, e) =>
+        var skipCheck = new CheckBox
         {
-            var picker = new FileOpenPicker();
-            picker.FileTypeFilter.Add(".png");
-            picker.FileTypeFilter.Add(".jpg");
-            picker.FileTypeFilter.Add(".jpeg");
-            picker.FileTypeFilter.Add(".webp");
-
-            if (App.MainWindowInstance != null)
-            {
-                var hwnd = WindowNative.GetWindowHandle(App.MainWindowInstance);
-                InitializeWithWindow.Initialize(picker, hwnd);
-            }
-
-            var file = await picker.PickSingleFileAsync();
-            if (file != null)
-            {
-                task.CharacterRef = file.Path;
-                charBox.Text = file.Path;
-            }
+            Content = "Bỏ qua nếu đã có image_prompts",
+            IsChecked = task.SkipImagePromptGen,
+            FontSize = 11
         };
-        Grid.SetColumn(charBtn, 1);
-        charRow.Children.Add(charBox);
-        charRow.Children.Add(charBtn);
-        charStack.Children.Add(charRow);
-        Grid.SetColumn(charStack, 2);
-        grid.Children.Add(charStack);
+        skipCheck.Checked += (s, e) => task.SkipImagePromptGen = true;
+        skipCheck.Unchecked += (s, e) => task.SkipImagePromptGen = false;
+        stack.Children.Add(skipCheck);
 
-        card.Child = grid;
+        stack.Children.Add(new TextBlock
+        {
+            Text = "📡 API Stream (luôn bật)",
+            FontSize = 11,
+            Opacity = 0.8
+        });
+
+        card.Child = stack;
+        Grid.SetRow(card, row);
+        Grid.SetColumn(card, col);
         parent.Children.Add(card);
         return card;
     }

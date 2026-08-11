@@ -77,6 +77,32 @@ public class TaskProfile
     /// </summary>
     public bool UseApiStreamForSceneCreator { get; set; } = true;
 
+    // ── Image Prompt Generation (Stage D) ────────────────────
+    /// <summary>
+    /// The Gemini Gem id used for Image Prompt Generation.
+    /// </summary>
+    public string ImagePromptGemId { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Display name of the Image Prompt Gem (for UI only).
+    /// </summary>
+    public string ImagePromptGemName { get; set; } = string.Empty;
+
+    /// <summary>
+    /// AI model for the Image Prompt Generation step.
+    /// </summary>
+    public string ImagePromptModel { get; set; } = "gemini-3-flash-plus";
+
+    /// <summary>
+    /// When true, uses the Python REST API for image prompt generation.
+    /// </summary>
+    public bool UseApiStreamForImagePrompt { get; set; } = true;
+
+    /// <summary>
+    /// Skip Image Prompt Generation if scenes.json already has image_prompts.
+    /// </summary>
+    public bool SkipImagePromptGen { get; set; } = false;
+
     // ── Voiceover ─────────────────────────────────────────
     /// <summary>
     /// Voice ID for the AI84 TTS step (e.g. "en-US-Standard-A").
@@ -119,6 +145,15 @@ public class TaskProfile
 
         task.UseApiStreamForSceneCreator = UseApiStreamForSceneCreator;
 
+        if (!string.IsNullOrEmpty(ImagePromptGemId))
+            task.SelectedImagePromptGem = new GemOptionItem { Id = ImagePromptGemId, Name = ImagePromptGemName };
+
+        if (!string.IsNullOrEmpty(ImagePromptModel))
+            task.ImagePromptModel = ImagePromptModel;
+
+        task.UseApiStreamForImagePrompt = UseApiStreamForImagePrompt;
+        task.SkipImagePromptGen = SkipImagePromptGen;
+
         if (!string.IsNullOrEmpty(VoiceId))
             task.VoiceId = VoiceId;
 
@@ -152,6 +187,11 @@ public class TaskProfile
             SceneCreatorGemName = SceneCreatorGemName,
             SceneCreatorModel = SceneCreatorModel,
             UseApiStreamForSceneCreator = UseApiStreamForSceneCreator,
+            ImagePromptGemId = ImagePromptGemId,
+            ImagePromptGemName = ImagePromptGemName,
+            ImagePromptModel = ImagePromptModel,
+            UseApiStreamForImagePrompt = UseApiStreamForImagePrompt,
+            SkipImagePromptGen = SkipImagePromptGen,
             VoiceId = VoiceId,
             SelectedImageProvider = SelectedImageProvider,
             CharacterRef = CharacterRef,

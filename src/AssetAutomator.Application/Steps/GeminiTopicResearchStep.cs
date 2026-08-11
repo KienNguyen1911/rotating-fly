@@ -100,7 +100,7 @@ namespace AssetAutomator.Application.Steps
                 logTask(task, $"[STEP 2] Phase 2: Converting Research Session context to final spoken script transcript in {targetLangName} (Session ID: {currentSessionId})...");
 
                 string scriptPrompt = $$"""
-Write a complete, high-quality video script transcript in {{targetLangName}} about the topic: "{{topicOrUrl}}".
+Based on the research report generated above, write a complete, high-quality video script transcript in {{targetLangName}} about the topic: "{{topicOrUrl}}".
 
 STRICT WORD COUNT REQUIREMENT:
 - The total length of the final output MUST be strictly between {{scriptTargetWords}} words (target) and {{scriptMaxWords}} words (hard upper limit).
@@ -157,7 +157,7 @@ CRITICAL RULES FOR OUTPUT FORMAT (TTS OPTIMIZATION):
                 }
 
                 string prompt = $$"""
-Write a complete, high-quality video script transcript in {{targetLangName}} about the topic: "{{topicOrUrl}}".
+Based on the research report generated above, write a complete, high-quality video script transcript in {{targetLangName}} about the topic: "{{topicOrUrl}}".
 
 STRICT WORD COUNT REQUIREMENT:
 - The total length of the final output MUST be strictly between {{scriptTargetWords}} words (target) and {{scriptMaxWords}} words (hard upper limit).

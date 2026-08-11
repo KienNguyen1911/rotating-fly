@@ -19,6 +19,7 @@ public sealed partial class TaskProfileDialog : ContentDialog
     private readonly bool _isNew;
     private readonly ObservableCollection<GemOptionItem> _availableScriptwriterGems;
     private readonly ObservableCollection<GemOptionItem> _availableSceneCreatorGems;
+    private readonly ObservableCollection<GemOptionItem> _availableImagePromptGems;
     private readonly ObservableCollection<string> _availableAiModels;
     private readonly ObservableCollection<string> _availableImageProviders;
 
@@ -33,6 +34,7 @@ public sealed partial class TaskProfileDialog : ContentDialog
         TaskProfile? profileToEdit,
         ObservableCollection<GemOptionItem> availableScriptwriterGems,
         ObservableCollection<GemOptionItem> availableSceneCreatorGems,
+        ObservableCollection<GemOptionItem> availableImagePromptGems,
         ObservableCollection<string> availableAiModels,
         ObservableCollection<string> availableImageProviders)
     {
@@ -42,6 +44,7 @@ public sealed partial class TaskProfileDialog : ContentDialog
         _isNew = profileToEdit == null;
         _availableScriptwriterGems = availableScriptwriterGems;
         _availableSceneCreatorGems = availableSceneCreatorGems;
+        _availableImagePromptGems = availableImagePromptGems;
         _availableAiModels = availableAiModels;
         _availableImageProviders = availableImageProviders;
 
@@ -110,6 +113,30 @@ public sealed partial class TaskProfileDialog : ContentDialog
         // API Stream mode is hardcoded; no toggle UI anymore.
         _profile.UseApiStreamForSceneCreator = true;
 
+        // Image Prompt Generation
+        CmbImagePromptGem.ItemsSource = _availableImagePromptGems;
+        CmbImagePromptModel.ItemsSource = _availableAiModels;
+
+        if (_availableImagePromptGems.Count > 0)
+        {
+            var ipGem = _availableImagePromptGems.FirstOrDefault(g =>
+                string.Equals(g.Id, _profile.ImagePromptGemId, StringComparison.OrdinalIgnoreCase))
+                ?? (_availableImagePromptGems.FirstOrDefault());
+
+            if (ipGem != null)
+            {
+                CmbImagePromptGem.SelectedItem = ipGem;
+                _profile.ImagePromptGemId = ipGem.Id;
+                _profile.ImagePromptGemName = ipGem.Name;
+            }
+        }
+
+        CmbImagePromptModel.SelectedItem = _availableAiModels
+            .FirstOrDefault(m => string.Equals(m, _profile.ImagePromptModel, StringComparison.OrdinalIgnoreCase))
+            ?? _availableAiModels.FirstOrDefault();
+
+        ChkSkipImagePromptGen.IsChecked = _profile.SkipImagePromptGen;
+
         // Voice
         TxtVoiceId.Text = _profile.VoiceId;
 
@@ -158,6 +185,16 @@ public sealed partial class TaskProfileDialog : ContentDialog
 
         _profile.SceneCreatorModel = CmbSceneCreatorModel.SelectedItem as string ?? "gemini-3-flash-plus";
         _profile.UseApiStreamForSceneCreator = true; // Hardcoded — always API Stream.
+
+        if (CmbImagePromptGem.SelectedItem is GemOptionItem ipGem)
+        {
+            _profile.ImagePromptGemId = ipGem.Id;
+            _profile.ImagePromptGemName = ipGem.Name;
+        }
+
+        _profile.ImagePromptModel = CmbImagePromptModel.SelectedItem as string ?? "gemini-3-flash-plus";
+        _profile.SkipImagePromptGen = ChkSkipImagePromptGen.IsChecked == true;
+        _profile.UseApiStreamForImagePrompt = true; // Hardcoded — always API Stream.
 
         _profile.VoiceId = TxtVoiceId.Text?.Trim() ?? string.Empty;
         _profile.SelectedImageProvider = CmbImageProvider.SelectedItem as string ?? "flow_local";

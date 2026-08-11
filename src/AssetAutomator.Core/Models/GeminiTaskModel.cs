@@ -24,6 +24,7 @@ namespace AssetAutomator.Core.Models
         private NodeStatus _step3Status = NodeStatus.Idle;
         private NodeStatus _step4Status = NodeStatus.Idle;
         private NodeStatus _step5Status = NodeStatus.Idle;
+        private NodeStatus _step6Status = NodeStatus.Idle;
 
         public string Id { get; set; } = Guid.NewGuid().ToString("N");
         public DateTime CreatedAt { get; set; } = DateTime.Now;
@@ -72,12 +73,18 @@ namespace AssetAutomator.Core.Models
             get => _step5Status;
             set { if (_step5Status != value) { _step5Status = value; OnPropertyChanged(); OnPropertyChanged(nameof(ProgressPercent)); OnPropertyChanged(nameof(ProgressText)); OnPropertyChanged(nameof(ActiveStep)); } }
         }
+        public NodeStatus Step6Status
+        {
+            get => _step6Status;
+            set { if (_step6Status != value) { _step6Status = value; OnPropertyChanged(); OnPropertyChanged(nameof(ProgressPercent)); OnPropertyChanged(nameof(ProgressText)); OnPropertyChanged(nameof(ActiveStep)); } }
+        }
 
         private string _step1Logs = "";
         private string _step2Logs = "";
         private string _step3Logs = "";
         private string _step4Logs = "";
         private string _step5Logs = "";
+        private string _step6Logs = "";
 
         public string Step1Logs
         {
@@ -103,6 +110,11 @@ namespace AssetAutomator.Core.Models
         {
             get => _step5Logs;
             set { if (_step5Logs != value) { _step5Logs = value; OnPropertyChanged(); } }
+        }
+        public string Step6Logs
+        {
+            get => _step6Logs;
+            set { if (_step6Logs != value) { _step6Logs = value; OnPropertyChanged(); } }
         }
 
         public bool IsSelected
@@ -189,6 +201,46 @@ namespace AssetAutomator.Core.Models
             get => _useApiStreamForSceneCreator;
             set { if (_useApiStreamForSceneCreator != value) { _useApiStreamForSceneCreator = value; OnPropertyChanged(); } }
         }
+
+        // ── Image Prompt Generation Gem (Stage D) ──
+        private GemOptionItem? _selectedImagePromptGem;
+        public GemOptionItem? SelectedImagePromptGem
+        {
+            get => _selectedImagePromptGem;
+            set { if (_selectedImagePromptGem != value) { _selectedImagePromptGem = value; OnPropertyChanged(); OnPropertyChanged(nameof(ImagePromptSummary)); } }
+        }
+
+        private string _imagePromptModel = "gemini-3-flash";
+        /// <summary>
+        /// AI Model for Image Prompt Generation Gem.
+        /// </summary>
+        public string ImagePromptModel
+        {
+            get => _imagePromptModel;
+            set { if (_imagePromptModel != value) { _imagePromptModel = value ?? "gemini-3-flash"; OnPropertyChanged(); OnPropertyChanged(nameof(ImagePromptSummary)); } }
+        }
+
+        private bool _useApiStreamForImagePrompt = true;
+        public bool UseApiStreamForImagePrompt
+        {
+            get => _useApiStreamForImagePrompt;
+            set { if (_useApiStreamForImagePrompt != value) { _useApiStreamForImagePrompt = value; OnPropertyChanged(); OnPropertyChanged(nameof(ImagePromptSummary)); } }
+        }
+
+        /// <summary>
+        /// Skip Image Prompt Generation if scenes.json already has image_prompts.
+        /// </summary>
+        private bool _skipImagePromptGen = false;
+        public bool SkipImagePromptGen
+        {
+            get => _skipImagePromptGen;
+            set { if (_skipImagePromptGen != value) { _skipImagePromptGen = value; OnPropertyChanged(); } }
+        }
+
+        public string ImagePromptSummary =>
+            $"{(SelectedImagePromptGem?.Name ?? "Mặc Định")} · {ImagePromptModel}" +
+            (ImagePromptModel.Contains("pro", StringComparison.OrdinalIgnoreCase) ? " 🧠" : "") +
+            (UseApiStreamForImagePrompt ? " 📡" : " 🎭");
 
         private string _characterRef = "";
 
@@ -283,7 +335,7 @@ namespace AssetAutomator.Core.Models
         }
 
         /// <summary>
-        /// Progress percentage: 0–100 based on completed steps (1-5).
+        /// Progress percentage: 0–100 based on completed steps (1-6).
         /// </summary>
         public int ProgressPercent
         {
@@ -295,7 +347,8 @@ namespace AssetAutomator.Core.Models
                 if (Step3Status == NodeStatus.Success) done++;
                 if (Step4Status == NodeStatus.Success) done++;
                 if (Step5Status == NodeStatus.Success) done++;
-                return done * 20;
+                if (Step6Status == NodeStatus.Success) done++;
+                return done * 16; // 100/6 ≈ 16%
             }
         }
 
@@ -308,12 +361,13 @@ namespace AssetAutomator.Core.Models
                 if (Step3Status == NodeStatus.Running) return 3;
                 if (Step4Status == NodeStatus.Running) return 4;
                 if (Step5Status == NodeStatus.Running) return 5;
-                if (Status == NodeStatus.Success) return 5;
+                if (Step6Status == NodeStatus.Running) return 6;
+                if (Status == NodeStatus.Success) return 6;
                 return 0;
             }
         }
 
-        public string ProgressText => $"{ProgressPercent}%" + (ActiveStep > 0 ? $" (Bước {ActiveStep}/5)" : "");
+        public string ProgressText => $"{ProgressPercent}%" + (ActiveStep > 0 ? $" (Bước {ActiveStep}/6)" : "");
 
         /// <summary>
         /// Quick config summary: "GemName · Model 🧠"

@@ -54,6 +54,7 @@ namespace AssetAutomator.Application.Services
         public async Task LoadGeminiGemsAsync(
             ObservableCollection<GemOptionItem> scriptwriterCollection,
             ObservableCollection<GemOptionItem> sceneCreatorCollection,
+            ObservableCollection<GemOptionItem> imagePromptCollection,
             ObservableCollection<GeminiTaskModel> taskCollection,
             Action<string>? onStatus = null)
         {
@@ -69,17 +70,21 @@ namespace AssetAutomator.Application.Services
                 {
                     Task = t,
                     ScriptwriterId = t.SelectedScriptwriterGem?.Id ?? string.Empty,
-                    SceneCreatorId = t.SelectedSceneCreatorGem?.Id ?? string.Empty
+                    SceneCreatorId = t.SelectedSceneCreatorGem?.Id ?? string.Empty,
+                    ImagePromptId = t.SelectedImagePromptGem?.Id ?? string.Empty
                 }).ToList();
 
                 // Ensure default options exist
                 EnsureDefaultGemOption(scriptwriterCollection, "-- Gemini Mặc Định --");
                 EnsureDefaultGemOption(sceneCreatorCollection, "-- Gemini Mặc Định --");
+                EnsureDefaultGemOption(imagePromptCollection, "-- Gemini Mặc Định --");
 
                 var defaultScriptwriter = scriptwriterCollection[0];
                 var defaultSceneCreator = sceneCreatorCollection[0];
+                var defaultImagePrompt = imagePromptCollection[0];
                 GemOptionItem? configScriptwriter = defaultScriptwriter;
                 GemOptionItem? configSceneCreator = defaultSceneCreator;
+                GemOptionItem? configImagePrompt = defaultImagePrompt;
 
                 // Filter only Custom Gems (predefined == false)
                 var customGems = gems.Where(g => !g.predefined).ToList();
@@ -88,6 +93,7 @@ namespace AssetAutomator.Application.Services
                 {
                     AddOrUpdateGemOption(scriptwriterCollection, gem.id, gem.name);
                     AddOrUpdateGemOption(sceneCreatorCollection, gem.id, gem.name);
+                    AddOrUpdateGemOption(imagePromptCollection, gem.id, gem.name);
 
                     // Auto-select based on config or naming convention
                     if (gem.id.Equals(_configService.CurrentSettings.ScriptwriterGemId, StringComparison.OrdinalIgnoreCase) ||
@@ -107,6 +113,16 @@ namespace AssetAutomator.Application.Services
                     {
                         configSceneCreator = sceneCreatorCollection.First(g => g.Id == gem.id);
                     }
+
+                    // Image Prompt Gem - look for image-related or prompt-related gems
+                    if (gem.id.Equals(_configService.CurrentSettings.ImagePromptGemId, StringComparison.OrdinalIgnoreCase) ||
+                        (configImagePrompt == defaultImagePrompt &&
+                         (gem.name.Contains("image", StringComparison.OrdinalIgnoreCase) ||
+                          gem.name.Contains("prompt", StringComparison.OrdinalIgnoreCase) ||
+                          gem.name.Contains("visual", StringComparison.OrdinalIgnoreCase))))
+                    {
+                        configImagePrompt = imagePromptCollection.First(g => g.Id == gem.id);
+                    }
                 }
 
                 // Restore selections for existing tasks
@@ -123,6 +139,12 @@ namespace AssetAutomator.Application.Services
                                                           ?? configSceneCreator;
                     else if (sel.Task.SelectedSceneCreatorGem == null)
                         sel.Task.SelectedSceneCreatorGem = configSceneCreator;
+
+                    if (!string.IsNullOrEmpty(sel.ImagePromptId))
+                        sel.Task.SelectedImagePromptGem = imagePromptCollection.FirstOrDefault(g => g.Id.Equals(sel.ImagePromptId, StringComparison.OrdinalIgnoreCase))
+                                                         ?? configImagePrompt;
+                    else if (sel.Task.SelectedImagePromptGem == null)
+                        sel.Task.SelectedImagePromptGem = configImagePrompt;
                 }
 
                 _log.Success(LogCategory.GeminiCreator, $"Loaded {customGems.Count} custom Gems successfully.");
@@ -536,6 +558,7 @@ namespace AssetAutomator.Application.Services
         public GeminiTaskModel CreateDefaultTask(
             ObservableCollection<GemOptionItem> scriptwriterGems,
             ObservableCollection<GemOptionItem> sceneCreatorGems,
+            ObservableCollection<GemOptionItem> imagePromptGems,
             string? topic = null)
         {
             return new GeminiTaskModel
@@ -543,6 +566,7 @@ namespace AssetAutomator.Application.Services
                 Topic = topic ?? "",
                 SelectedScriptwriterGem = scriptwriterGems.FirstOrDefault(),
                 SelectedSceneCreatorGem = sceneCreatorGems.FirstOrDefault(),
+                SelectedImagePromptGem = imagePromptGems.FirstOrDefault(),
                 EnableDeepResearch = true,
                 VoiceId = "",
                 SelectedImageProvider = "flow_local",

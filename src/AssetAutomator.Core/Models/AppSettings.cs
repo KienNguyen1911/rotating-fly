@@ -60,6 +60,7 @@ namespace AssetAutomator.Core.Models
         public string GeminiApiBaseUrl { get; set; } = "http://localhost:8000";
         public string ScriptwriterGemId { get; set; } = string.Empty;
         public string SceneCreatorGemId { get; set; } = string.Empty;
+        public string ImagePromptGemId { get; set; } = string.Empty;
 
         /// <summary>
         /// Always <c>flow_local</c>. Kept for backward-compat with existing

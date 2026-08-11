@@ -129,7 +129,7 @@
                     CornerRadius="8"
                     Padding="12">
                 <StackPanel Spacing="8">
-                    <TextBlock Text="🎭 Scene Creator" FontWeight="SemiBold" FontSize="12" />
+                    <TextBlock Text="🎭 Scene Creator (Stage C)" FontWeight="SemiBold" FontSize="12" />
 
                     <Grid ColumnSpacing="8">
                         <Grid.ColumnDefinitions>
@@ -150,6 +150,48 @@
                                       HorizontalAlignment="Stretch" />
                         </StackPanel>
                     </Grid>
+
+                    <StackPanel Spacing="4">
+                        <TextBlock Text="Chế độ" FontSize="11" Opacity="0.7" />
+                        <TextBlock Text="📡 API Stream (luôn bật — không cần Chrome)"
+                                   FontSize="11"
+                                   Opacity="0.8" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <!-- ── 3b. Image Prompt Generation ── -->
+            <Border Background="{ThemeResource LayerFillColorDefaultBrush}"
+                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                    BorderThickness="1"
+                    CornerRadius="8"
+                    Padding="12">
+                <StackPanel Spacing="8">
+                    <TextBlock Text="🎨 Image Prompt Gen (Stage D)" FontWeight="SemiBold" FontSize="12" />
+
+                    <Grid ColumnSpacing="8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel Grid.Column="0" Spacing="4">
+                            <TextBlock Text="Gem" FontSize="11" Opacity="0.7" />
+                            <ComboBox x:Name="CmbImagePromptGem"
+                                      PlaceholderText="Chọn gem..."
+                                      HorizontalAlignment="Stretch" />
+                        </StackPanel>
+
+                        <StackPanel Grid.Column="1" Spacing="4">
+                            <TextBlock Text="Model" FontSize="11" Opacity="0.7" />
+                            <ComboBox x:Name="CmbImagePromptModel"
+                                      HorizontalAlignment="Stretch" />
+                        </StackPanel>
+                    </Grid>
+
+                    <CheckBox x:Name="ChkSkipImagePromptGen"
+                              Content="Bỏ qua nếu scenes.json đã có image_prompts"
+                              FontSize="11" />
 
                     <StackPanel Spacing="4">
                         <TextBlock Text="Chế độ" FontSize="11" Opacity="0.7" />

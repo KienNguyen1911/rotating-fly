@@ -50,6 +50,7 @@ public partial class GeminiViewModel : ObservableObject
     public ObservableCollection<GeminiTaskModel> GeminiTasks { get; } = new();
     public ObservableCollection<GemOptionItem> AvailableScriptwriterGems { get; } = new();
     public ObservableCollection<GemOptionItem> AvailableSceneCreatorGems { get; } = new();
+    public ObservableCollection<GemOptionItem> AvailableImagePromptGems { get; } = new();
     public ObservableCollection<string> AvailableImageProviders { get; } = new() { "flow_local" };
     public ObservableCollection<TaskProfile> TaskProfiles { get; } = new();
 
@@ -276,6 +277,7 @@ public partial class GeminiViewModel : ObservableObject
             GeminiTasks.Add(_geminiCreatorService.CreateDefaultTask(
                 AvailableScriptwriterGems,
                 AvailableSceneCreatorGems,
+                AvailableImagePromptGems,
                 $"Chủ đề video mới #{GeminiTasks.Count + 1}"));
         }
 
@@ -434,6 +436,7 @@ public partial class GeminiViewModel : ObservableObject
         var newTask = _geminiCreatorService.CreateDefaultTask(
             AvailableScriptwriterGems,
             AvailableSceneCreatorGems,
+            AvailableImagePromptGems,
             $"Chủ đề video mới #{GeminiTasks.Count + 1}");
         GeminiTasks.Add(newTask);
         SelectedTask = newTask;
@@ -548,6 +551,7 @@ public partial class GeminiViewModel : ObservableObject
             await _geminiCreatorService.LoadGeminiGemsAsync(
                 AvailableScriptwriterGems,
                 AvailableSceneCreatorGems,
+                AvailableImagePromptGems,
                 GeminiTasks,
                 onStatus: msg => _dispatcherQueue.TryEnqueue(() => StatusLog = msg));
             StatusLog = $"[GEMS] ✅ Đã nạp {AvailableScriptwriterGems.Count} Gems.";

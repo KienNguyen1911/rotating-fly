@@ -185,7 +185,8 @@ public partial class App : Microsoft.UI.Xaml.Application
 
                 // Pipeline Steps
                 services.AddSingleton<VoiceoverGenerationStep>();
-                services.AddSingleton<GeminiPlaywrightSceneBreakdownStep>();
+                services.AddSingleton<SceneSegmentationStep>();
+                services.AddSingleton<ImagePromptGenerationStep>();
                 services.AddSingleton<GeminiTopicResearchStep>();
                 // SceneImageBatchStep now takes an optional WatermarkRemovalQueue
                 // so the pipeline path can enqueue watermark removal AFTER the
@@ -202,7 +203,8 @@ public partial class App : Microsoft.UI.Xaml.Application
                     sp.GetRequiredService<GeminiApiService>(),
                     sp.GetRequiredService<IConfigService>(),
                     sp.GetRequiredService<VoiceoverGenerationStep>(),
-                    sp.GetRequiredService<GeminiPlaywrightSceneBreakdownStep>(),
+                    sp.GetRequiredService<SceneSegmentationStep>(),
+                    sp.GetRequiredService<ImagePromptGenerationStep>(),
                     sp.GetRequiredService<BatchImageGenService>(),
                     sp.GetRequiredService<GeminiTopicResearchStep>(),
                     sp.GetRequiredService<SceneImageBatchStep>(),
