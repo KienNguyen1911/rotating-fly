@@ -208,8 +208,18 @@ public partial class App : Microsoft.UI.Xaml.Application
                     sp.GetRequiredService<BatchImageGenService>(),
                     sp.GetRequiredService<GeminiTopicResearchStep>(),
                     sp.GetRequiredService<SceneImageBatchStep>(),
-                    sp.GetRequiredService<HistoryService>()
-                ));
+                    sp.GetRequiredService<HistoryService>(),
+                    maxDeepResearch: 1,
+                    maxVoiceover: 1,
+                    maxSceneSegmentation: 1,
+                    maxImagePromptGen: 1,
+                    maxImageGen: 1,
+                    maxGeminiConcurrency: 1));
+                // ↑ Shared Gemini gate (capacity=1). Python Gemini WebAPI server chỉ có
+                // 1 browser session cookies, nếu 2 task cùng gọi song song sẽ dính race
+                // condition state machine ("Should be at HandleFailure or HandleSuccess",
+                // "Has unexcepted state at final"). Capacity=1 đảm bảo serialize tuyệt
+                // đối mọi call Gemini, hy sinh throughput nhưng tránh crash task.
 
                 // ViewModels
                 services.AddSingleton<ViewModels.SidebarViewModel>();

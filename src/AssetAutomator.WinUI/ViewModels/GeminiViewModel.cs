@@ -1055,85 +1055,62 @@ public partial class GeminiViewModel : ObservableObject
         return sb.ToString();
     }
 
+    /// <summary>
+    /// Routes log messages to the appropriate step log based on stage prefix.
+    /// Status is now set DIRECTLY by PipelineOrchestrator - this method ONLY routes logs.
+    /// DO NOT infer status from message content here.
+    /// </summary>
     private void UpdateTaskStepInfoFromLog(GeminiTaskModel taskItem, string msg)
     {
-        bool isSuccess = msg.Contains("Success", StringComparison.OrdinalIgnoreCase) ||
-                         msg.Contains("⏭️", StringComparison.OrdinalIgnoreCase) ||
-                         msg.Contains("Completed", StringComparison.OrdinalIgnoreCase) ||
-                         msg.Contains("Hoàn thành", StringComparison.OrdinalIgnoreCase);
+        // Route logs to the currently active step based on message prefix
+        // Status updates are handled DIRECTLY by PipelineOrchestrator in catch/finally blocks
 
-        if (msg.Contains("DEEP-RESEARCH-POLL", StringComparison.OrdinalIgnoreCase))
+        if (msg.Contains("[STAGE-A]", StringComparison.OrdinalIgnoreCase))
         {
-            taskItem.Step1Status = NodeStatus.Running;
-            int elapsedIdx = msg.IndexOf("Elapsed:", StringComparison.OrdinalIgnoreCase);
-            taskItem.CurrentStepInfo = elapsedIdx >= 0
-                ? $"Step 1: Deep Research ({msg.Substring(elapsedIdx).Trim()})"
-                : "Step 1: Deep Research (Đang nghiên cứu...)";
             taskItem.Step1Logs += $"[{DateTime.Now:HH:mm:ss}] {msg}\n";
         }
-        else if (msg.Contains("STEP 1 & 2", StringComparison.OrdinalIgnoreCase) ||
-                 msg.Contains("[STEP 2]", StringComparison.OrdinalIgnoreCase) ||
-                 msg.Contains("STEP 1", StringComparison.OrdinalIgnoreCase) ||
-                 msg.Contains("Deep Research", StringComparison.OrdinalIgnoreCase) ||
-                 msg.Contains("research_report", StringComparison.OrdinalIgnoreCase) ||
-                 msg.Contains("transcript.txt", StringComparison.OrdinalIgnoreCase) ||
-                 msg.Contains("Transcript", StringComparison.OrdinalIgnoreCase) ||
-                 msg.Contains("script", StringComparison.OrdinalIgnoreCase))
+        else if (msg.Contains("[STAGE-B]", StringComparison.OrdinalIgnoreCase))
         {
-            taskItem.Step1Status = isSuccess ? NodeStatus.Success : NodeStatus.Running;
-            taskItem.CurrentStepInfo = isSuccess ? "Step 1: ✔️ Done" : "Step 1: Deep Research & Transcript";
-            taskItem.Step1Logs += $"[{DateTime.Now:HH:mm:ss}] {msg}\n";
-        }
-        else if (msg.Contains("STEP 3", StringComparison.OrdinalIgnoreCase) ||
-                 msg.Contains("VOICEOVER", StringComparison.OrdinalIgnoreCase) ||
-                 msg.Contains("Voiceover", StringComparison.OrdinalIgnoreCase) ||
-                 msg.Contains("SRT", StringComparison.OrdinalIgnoreCase) ||
-                 msg.Contains("AI84", StringComparison.OrdinalIgnoreCase) ||
-                 msg.Contains("transcriptUrl", StringComparison.OrdinalIgnoreCase) ||
-                 msg.Contains("text-to-speech", StringComparison.OrdinalIgnoreCase) ||
-                 msg.Contains("TTS Job", StringComparison.OrdinalIgnoreCase) ||
-                 msg.Contains("voiceover.mp3", StringComparison.OrdinalIgnoreCase) ||
-                 msg.Contains("voiceover.srt", StringComparison.OrdinalIgnoreCase) ||
-                 msg.Contains("voiceover.wav", StringComparison.OrdinalIgnoreCase))
-        {
-            taskItem.Step2Status = isSuccess ? NodeStatus.Success : NodeStatus.Running;
-            taskItem.CurrentStepInfo = isSuccess ? "Step 2: ✔️ Done" : "Step 2: Voiceover & SRT";
             taskItem.Step2Logs += $"[{DateTime.Now:HH:mm:ss}] {msg}\n";
         }
-        else if (msg.Contains("[STEP 4]", StringComparison.OrdinalIgnoreCase) ||
-                 msg.Contains("Scene Creator", StringComparison.OrdinalIgnoreCase) ||
-                 msg.Contains("Scene Breakdown", StringComparison.OrdinalIgnoreCase) ||
-                 msg.Contains("scenes.json", StringComparison.OrdinalIgnoreCase) ||
-                 msg.Contains("scene_count", StringComparison.OrdinalIgnoreCase))
+        else if (msg.Contains("[STAGE-C]", StringComparison.OrdinalIgnoreCase))
         {
-            taskItem.Step3Status = isSuccess ? NodeStatus.Success : NodeStatus.Running;
-            taskItem.CurrentStepInfo = isSuccess ? "Step 3: ✔️ Done" : "Step 3: Scene Breakdown & Prompts";
             taskItem.Step3Logs += $"[{DateTime.Now:HH:mm:ss}] {msg}\n";
         }
-        else if (msg.Contains("[STEP 5]", StringComparison.OrdinalIgnoreCase) ||
-                 msg.Contains("Batch Image", StringComparison.OrdinalIgnoreCase) ||
-                 msg.Contains("Image Generation", StringComparison.OrdinalIgnoreCase) ||
-                 msg.Contains("scene_", StringComparison.OrdinalIgnoreCase))
+        else if (msg.Contains("[STAGE-D]", StringComparison.OrdinalIgnoreCase))
         {
-            taskItem.Step4Status = isSuccess ? NodeStatus.Success : NodeStatus.Running;
-            taskItem.CurrentStepInfo = isSuccess ? "Step 4: ✔️ Done" : "Step 4: Image Generation";
             taskItem.Step4Logs += $"[{DateTime.Now:HH:mm:ss}] {msg}\n";
+        }
+        else if (msg.Contains("[STAGE-E]", StringComparison.OrdinalIgnoreCase))
+        {
+            taskItem.Step5Logs += $"[{DateTime.Now:HH:mm:ss}] {msg}\n";
         }
         else
         {
-            // General pipeline logs fall through to whichever step is currently running
-            if (taskItem.Step4Status == NodeStatus.Running) taskItem.Step4Logs += $"[{DateTime.Now:HH:mm:ss}] {msg}\n";
+            // Fallback: route to whichever step is currently running
+            if (taskItem.Step5Status == NodeStatus.Running) taskItem.Step5Logs += $"[{DateTime.Now:HH:mm:ss}] {msg}\n";
+            else if (taskItem.Step4Status == NodeStatus.Running) taskItem.Step4Logs += $"[{DateTime.Now:HH:mm:ss}] {msg}\n";
             else if (taskItem.Step3Status == NodeStatus.Running) taskItem.Step3Logs += $"[{DateTime.Now:HH:mm:ss}] {msg}\n";
             else if (taskItem.Step2Status == NodeStatus.Running) taskItem.Step2Logs += $"[{DateTime.Now:HH:mm:ss}] {msg}\n";
             else taskItem.Step1Logs += $"[{DateTime.Now:HH:mm:ss}] {msg}\n";
         }
 
-        if (taskItem.Step1Logs.Length > 50000) taskItem.Step1Logs = taskItem.Step1Logs.Substring(taskItem.Step1Logs.Length - 50000);
-        if (taskItem.Step2Logs.Length > 50000) taskItem.Step2Logs = taskItem.Step2Logs.Substring(taskItem.Step2Logs.Length - 50000);
-        if (taskItem.Step3Logs.Length > 50000) taskItem.Step3Logs = taskItem.Step3Logs.Substring(taskItem.Step3Logs.Length - 50000);
-        if (taskItem.Step4Logs.Length > 50000) taskItem.Step4Logs = taskItem.Step4Logs.Substring(taskItem.Step4Logs.Length - 50000);
+        // Truncate logs if too long (prevents memory issues)
+        TruncateStepLogsIfNeeded(taskItem);
+    }
 
-        _hasTaskStatusChanged = true;
+    /// <summary>
+    /// Truncates step logs to prevent memory issues.
+    /// Keeps the last 50KB of each step's log.
+    /// </summary>
+    private static void TruncateStepLogsIfNeeded(GeminiTaskModel taskItem)
+    {
+        const int maxLength = 50000;
+        if (taskItem.Step1Logs.Length > maxLength) taskItem.Step1Logs = taskItem.Step1Logs[^maxLength..];
+        if (taskItem.Step2Logs.Length > maxLength) taskItem.Step2Logs = taskItem.Step2Logs[^maxLength..];
+        if (taskItem.Step3Logs.Length > maxLength) taskItem.Step3Logs = taskItem.Step3Logs[^maxLength..];
+        if (taskItem.Step4Logs.Length > maxLength) taskItem.Step4Logs = taskItem.Step4Logs[^maxLength..];
+        if (taskItem.Step5Logs.Length > maxLength) taskItem.Step5Logs = taskItem.Step5Logs[^maxLength..];
     }
 
     // ─────────────────────────────────────────────────────

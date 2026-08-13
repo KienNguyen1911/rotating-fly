@@ -182,20 +182,42 @@ namespace AssetAutomator.Application.Steps
 
             try
             {
-                // Image Prompt Gemini returns simple format: {"001": "prompt1", "002": "prompt2"...}
-                // We need to parse this and merge into scenes_raw.json
+                // v4.0 DRY format: Gemini returns {"image_prompt_postfix": "...", "scenes": {"001": "...", "002": "..."}}
+                // We need to parse this, extract postfix, and merge content + postfix into scenes
                 var optionsJson = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
-                var imagePromptsDict = JsonSerializer.Deserialize<Dictionary<string, string>>(jsonText, optionsJson);
+                var imagePromptResponse = JsonSerializer.Deserialize<ImagePromptResponseModel>(jsonText, optionsJson);
+
+                if (imagePromptResponse == null)
+                {
+                    throw new InvalidOperationException("Image prompt response is null.");
+                }
+
+                string postfix = imagePromptResponse.image_prompt_postfix ?? string.Empty;
+                var imagePromptsDict = imagePromptResponse.scenes;
 
                 if (imagePromptsDict == null || imagePromptsDict.Count == 0)
                 {
-                    throw new InvalidOperationException("Image prompt response contains 0 entries.");
+                    throw new InvalidOperationException("Image prompt response contains 0 scene entries.");
                 }
 
-                logTask(task, $"[STAGE-D] 📦 Parsed {imagePromptsDict.Count} image prompts from Gemini response.");
+                if (!string.IsNullOrWhiteSpace(postfix))
+                {
+                    logTask(task, $"[STAGE-D] 📦 Parsed v4.0 DRY format: {imagePromptsDict.Count} scenes + postfix ({postfix.Length} chars)");
+                }
+                else
+                {
+                    logTask(task, $"[STAGE-D] ⚠️ No image_prompt_postfix found (v4.0 format). Falling back to simple format.");
+                    // Fallback: treat entire response as simple dict
+                    var simpleDict = JsonSerializer.Deserialize<Dictionary<string, string>>(jsonText, optionsJson);
+                    if (simpleDict != null)
+                    {
+                        imagePromptsDict = simpleDict;
+                        postfix = string.Empty;
+                    }
+                }
 
-                // Merge image prompts into the raw scenes
-                await MergeImagePromptsAsync(rawModel, imagePromptsDict, outputDir, logTask, task);
+                // Merge image prompts (with postfix) into the raw scenes
+                await MergeImagePromptsAsync(rawModel, imagePromptsDict, postfix, outputDir, logTask, task);
             }
             catch (Exception ex)
             {
@@ -211,10 +233,12 @@ namespace AssetAutomator.Application.Steps
 
         /// <summary>
         /// Merges image prompts (keyed by scene number) into scenes_raw.json and writes final scenes.json.
+        /// v4.0 DRY: If postfix is provided, it will be appended to each scene's image_prompt.
         /// </summary>
         private async Task MergeImagePromptsAsync(
             SceneSegmentationModel rawModel,
             Dictionary<string, string> imagePrompts,
+            string postfix,
             string outputDir,
             Action<AutomationTask, string> logTask,
             AutomationTask task)
@@ -237,8 +261,14 @@ namespace AssetAutomator.Application.Steps
                 string key = segment.scene.ToString("D3");
                 if (imagePrompts.TryGetValue(key, out var prompt) && !string.IsNullOrWhiteSpace(prompt))
                 {
-                    entry.image_prompt = prompt.Trim();
-                    logTask(task, $"[STAGE-D] ✅ Scene {key}: assigned image_prompt ({prompt.Length} chars)");
+                    // v4.0 DRY: Append postfix if available
+                    string finalPrompt = prompt.Trim();
+                    if (!string.IsNullOrWhiteSpace(postfix))
+                    {
+                        finalPrompt = $"{finalPrompt}, {postfix}";
+                    }
+                    entry.image_prompt = finalPrompt;
+                    logTask(task, $"[STAGE-D] ✅ Scene {key}: assigned image_prompt ({prompt.Length} chars + postfix {postfix.Length} chars)");
                 }
                 else
                 {
@@ -248,11 +278,12 @@ namespace AssetAutomator.Application.Steps
                 finalScenes.Add(entry);
             }
 
-            // Build final root model
+            // Build final root model with postfix for reference
             var rootData = new ScenesJsonRootModel
             {
                 video_title = rawModel.video_title,
                 scene_count = finalScenes.Count,
+                image_prompt_postfix = string.IsNullOrWhiteSpace(postfix) ? null : postfix,
                 scenes = finalScenes
             };
 
@@ -263,12 +294,23 @@ namespace AssetAutomator.Application.Steps
         /// Builds the prompt for Gemini to generate image prompts for each scene.
         /// Note: The Gemini Gem has its own system instructions (image-prompt-creator.md).
         /// scenes_raw.json is already attached as a file, so we only need minimal instruction.
+        /// v4.0: Instructs Gemini to use DRY format with separate postfix.
         /// </summary>
         private string BuildImagePromptRequest(SceneSegmentationModel rawModel)
         {
             return $"Generate image prompts for video: {rawModel.video_title}\n\n" +
-                   "Read the attached scenes_raw.json file and generate one image prompt per scene.\n" +
-                   "Return JSON format: {\"001\": \"prompt for scene 1\", \"002\": \"prompt for scene 2\", ...}";
+                   "Read the attached scenes_raw.json file and generate one image prompt per scene.\n\n" +
+                   "IMPORTANT: Use v4.0 DRY format with SEPARATE postfix:\n" +
+                   "{\n" +
+                   "  \"image_prompt_postfix\": \"style signature + negative prompt + aspect ratio (COMMON for all scenes)\",\n" +
+                   "  \"scenes\": {\n" +
+                   "    \"001\": \"scene content WITHOUT postfix (background + mascot + action + props)\",\n" +
+                   "    \"002\": \"scene content WITHOUT postfix...\",\n" +
+                   "    ...\n" +
+                   "  }\n" +
+                   "}\n\n" +
+                   "The final prompt will be constructed as: scene_content + \", \" + image_prompt_postfix\n\n" +
+                   "Return JSON ONLY wrapped in ```json ... ```, no commentary.";
         }
 
         /// <summary>

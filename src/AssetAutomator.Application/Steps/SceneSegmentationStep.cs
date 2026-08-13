@@ -242,12 +242,27 @@ namespace AssetAutomator.Application.Steps
 
         private static string ExtractJsonContent(string text)
         {
-            var match = Regex.Match(text, @"```(?:json)?\s*([\s\S]*?)\s*```", RegexOptions.IgnoreCase);
-            if (match.Success)
+            // First, try to find a ```json``` code block specifically (preferred)
+            var jsonBlockMatch = Regex.Match(text, @"```json\s*([\s\S]*?)\s*```", RegexOptions.IgnoreCase);
+            if (jsonBlockMatch.Success)
             {
-                return match.Groups[1].Value.Trim();
+                return jsonBlockMatch.Groups[1].Value.Trim();
             }
 
+            // Fallback: find ANY code block (```...```) and extract content
+            // This handles cases where the model wraps output in code fences without language tag
+            var anyBlockMatch = Regex.Match(text, @"```\s*([\s\S]*?)\s*```", RegexOptions.IgnoreCase);
+            if (anyBlockMatch.Success)
+            {
+                string extracted = anyBlockMatch.Groups[1].Value.Trim();
+                // If the extracted content looks like JSON (starts with { or [), return it
+                if (extracted.StartsWith("{") || extracted.StartsWith("["))
+                {
+                    return extracted;
+                }
+            }
+
+            // Last resort: find first '{' and last '}'
             int firstBrace = text.IndexOf('{');
             int lastBrace = text.LastIndexOf('}');
             if (firstBrace >= 0 && lastBrace > firstBrace)

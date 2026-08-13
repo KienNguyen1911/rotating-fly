@@ -43,6 +43,7 @@ namespace AssetAutomator.Application.Services
         private readonly int _maxSceneSegmentation;
         private readonly int _maxImagePromptGen;
         private readonly int _maxImageGen;
+        private readonly int _maxGeminiConcurrency;
 
         public PipelineOrchestrator(
             GeminiApiService geminiApiService,
@@ -58,7 +59,8 @@ namespace AssetAutomator.Application.Services
             int maxVoiceover = 1,
             int maxSceneSegmentation = 1,
             int maxImagePromptGen = 1,
-            int maxImageGen = 1)
+            int maxImageGen = 1,
+            int maxGeminiConcurrency = 2)
         {
             _geminiApiService = geminiApiService;
             _configService = configService;
@@ -74,6 +76,7 @@ namespace AssetAutomator.Application.Services
             _maxSceneSegmentation = Math.Max(1, maxSceneSegmentation);
             _maxImagePromptGen = Math.Max(1, maxImagePromptGen);
             _maxImageGen = Math.Max(1, maxImageGen);
+            _maxGeminiConcurrency = Math.Max(1, maxGeminiConcurrency);
         }
 
         /// <summary>
@@ -94,6 +97,11 @@ namespace AssetAutomator.Application.Services
             using var sceneSegSem = new SemaphoreSlim(_maxSceneSegmentation, _maxSceneSegmentation);
             using var imagePromptSem = new SemaphoreSlim(_maxImagePromptGen, _maxImagePromptGen);
             using var imageGenSem = new SemaphoreSlim(_maxImageGen, _maxImageGen);
+            // Shared Gemini gate — caps the number of in-flight calls to any Gemini
+            // endpoint (Deep Research / Scene Seg / Image Prompt). Capacity is
+            // intentionally shared across stages so 3+ tasks still finish without
+            // tripping 429 even though per-stage concurrency may be higher.
+            using var geminiConcurrencySem = new SemaphoreSlim(_maxGeminiConcurrency, _maxGeminiConcurrency);
 
             // ── Ma trận: mỗi task là 1 hàng, chạy song song ──
             var taskRunners = taskModels.Select(taskModel =>
@@ -104,6 +112,7 @@ namespace AssetAutomator.Application.Services
                     sceneSegSem,
                     imagePromptSem,
                     imageGenSem,
+                    geminiConcurrencySem,
                     logTask,
                     cancellationToken
                 ));
@@ -127,6 +136,7 @@ namespace AssetAutomator.Application.Services
             SemaphoreSlim sceneSegSem,
             SemaphoreSlim imagePromptSem,
             SemaphoreSlim imageGenSem,
+            SemaphoreSlim geminiConcurrencySem,
             Action<GeminiTaskModel, string> logTask,
             CancellationToken ct)
         {
@@ -191,13 +201,39 @@ namespace AssetAutomator.Application.Services
                     taskModel.Step1Status = NodeStatus.Running;
                     taskModel.CurrentStepInfo = $"Stage A: Deep Research ({used}/{_maxDeepResearch})";
 
-                    await RunStageDeepResearchAsync(internalTask, taskModel, internalLog);
-                    taskModel.Step1Status = NodeStatus.Success;
-                    logTask(taskModel, $"[STAGE-A] ✅ Deep Research hoàn thành.");
+                    // Shared Gemini gate — chỉ chờ slot ở bước này nếu stage thực sự
+                    // sẽ gọi Gemini API (skip-check nằm trong RunStageDeepResearchAsync,
+                    // nên task có transcript.txt sẵn sẽ thoát nhanh không chiếm slot).
+                    int gemUsed = _maxGeminiConcurrency - geminiConcurrencySem.CurrentCount;
+                    if (gemUsed >= _maxGeminiConcurrency)
+                    {
+                        logTask(taskModel, $"[GEMINI-GATE] 🎫 Stage A đang chờ slot Gemini ({gemUsed}/{_maxGeminiConcurrency})...");
+                    }
+                    await geminiConcurrencySem.WaitAsync(ct);
+                    try
+                    {
+                        await RunStageDeepResearchAsync(internalTask, taskModel, internalLog);
+                    }
+                    finally
+                    {
+                        geminiConcurrencySem.Release();
+                    }
+                }
+                catch (Exception ex)
+                {
+                    taskModel.Step1Status = NodeStatus.Failed;
+                    taskModel.CurrentStepInfo = $"❌ Stage A Lỗi: {ex.Message}";
+                    logTask(taskModel, $"[ERROR] [STAGE-A] Deep Research thất bại: {ex.Message}");
+                    throw;
                 }
                 finally
                 {
                     deepResearchSem.Release();
+                    if (taskModel.Step1Status == NodeStatus.Running)
+                    {
+                        taskModel.Step1Status = NodeStatus.Success;
+                        logTask(taskModel, $"[STAGE-A] ✅ Deep Research hoàn thành.");
+                    }
                 }
 
                 ct.ThrowIfCancellationRequested();
@@ -214,12 +250,22 @@ namespace AssetAutomator.Application.Services
                     taskModel.CurrentStepInfo = $"Stage B: Voiceover AI84 ({used}/{_maxVoiceover})";
 
                     await RunStageVoiceoverAsync(internalTask, taskModel, internalLog);
-                    taskModel.Step2Status = NodeStatus.Success;
-                    logTask(taskModel, $"[STAGE-B] ✅ Voiceover hoàn thành.");
+                }
+                catch (Exception ex)
+                {
+                    taskModel.Step2Status = NodeStatus.Failed;
+                    taskModel.CurrentStepInfo = $"❌ Stage B Lỗi: {ex.Message}";
+                    logTask(taskModel, $"[ERROR] [STAGE-B] Voiceover thất bại: {ex.Message}");
+                    throw;
                 }
                 finally
                 {
                     voiceoverSem.Release();
+                    if (taskModel.Step2Status == NodeStatus.Running)
+                    {
+                        taskModel.Step2Status = NodeStatus.Success;
+                        logTask(taskModel, $"[STAGE-B] ✅ Voiceover hoàn thành.");
+                    }
                 }
 
                 ct.ThrowIfCancellationRequested();
@@ -235,13 +281,38 @@ namespace AssetAutomator.Application.Services
                     taskModel.Step3Status = NodeStatus.Running;
                     taskModel.CurrentStepInfo = $"Stage C: Scene Segmentation ({used}/{_maxSceneSegmentation})";
 
-                    await RunStageSceneSegmentationAsync(internalTask, taskModel, internalLog);
-                    taskModel.Step3Status = NodeStatus.Success;
-                    logTask(taskModel, $"[STAGE-C] ✅ Scene Segmentation hoàn thành.");
+                    int gemUsed = _maxGeminiConcurrency - geminiConcurrencySem.CurrentCount;
+                    if (gemUsed >= _maxGeminiConcurrency)
+                    {
+                        logTask(taskModel, $"[GEMINI-GATE] 🎫 Stage C đang chờ slot Gemini ({gemUsed}/{_maxGeminiConcurrency})...");
+                    }
+                    await geminiConcurrencySem.WaitAsync(ct);
+                    try
+                    {
+                        await RunStageSceneSegmentationAsync(internalTask, taskModel, internalLog);
+                    }
+                    finally
+                    {
+                        geminiConcurrencySem.Release();
+                    }
+                }
+                catch (Exception ex)
+                {
+                    // Set Step3Status to Failed immediately when error occurs
+                    taskModel.Step3Status = NodeStatus.Failed;
+                    taskModel.CurrentStepInfo = $"❌ Stage C Lỗi: {ex.Message}";
+                    logTask(taskModel, $"[ERROR] [STAGE-C] Scene Segmentation thất bại: {ex.Message}");
+                    throw; // Re-throw to let outer handler deal with it
                 }
                 finally
                 {
                     sceneSegSem.Release();
+                    // Only mark Success if it wasn't already set to Failed by catch
+                    if (taskModel.Step3Status == NodeStatus.Running)
+                    {
+                        taskModel.Step3Status = NodeStatus.Success;
+                        logTask(taskModel, $"[STAGE-C] ✅ Scene Segmentation hoàn thành.");
+                    }
                 }
 
                 ct.ThrowIfCancellationRequested();
@@ -257,13 +328,36 @@ namespace AssetAutomator.Application.Services
                     taskModel.Step4Status = NodeStatus.Running;
                     taskModel.CurrentStepInfo = $"Stage D: Image Prompt ({used}/{_maxImagePromptGen})";
 
-                    await RunStageImagePromptGenAsync(internalTask, taskModel, internalLog);
-                    taskModel.Step4Status = NodeStatus.Success;
-                    logTask(taskModel, $"[STAGE-D] ✅ Image Prompt Generation hoàn thành.");
+                    int gemUsed = _maxGeminiConcurrency - geminiConcurrencySem.CurrentCount;
+                    if (gemUsed >= _maxGeminiConcurrency)
+                    {
+                        logTask(taskModel, $"[GEMINI-GATE] 🎫 Stage D đang chờ slot Gemini ({gemUsed}/{_maxGeminiConcurrency})...");
+                    }
+                    await geminiConcurrencySem.WaitAsync(ct);
+                    try
+                    {
+                        await RunStageImagePromptGenAsync(internalTask, taskModel, internalLog);
+                    }
+                    finally
+                    {
+                        geminiConcurrencySem.Release();
+                    }
+                }
+                catch (Exception ex)
+                {
+                    taskModel.Step4Status = NodeStatus.Failed;
+                    taskModel.CurrentStepInfo = $"❌ Stage D Lỗi: {ex.Message}";
+                    logTask(taskModel, $"[ERROR] [STAGE-D] Image Prompt Generation thất bại: {ex.Message}");
+                    throw;
                 }
                 finally
                 {
                     imagePromptSem.Release();
+                    if (taskModel.Step4Status == NodeStatus.Running)
+                    {
+                        taskModel.Step4Status = NodeStatus.Success;
+                        logTask(taskModel, $"[STAGE-D] ✅ Image Prompt Generation hoàn thành.");
+                    }
                 }
 
                 ct.ThrowIfCancellationRequested();
@@ -279,12 +373,22 @@ namespace AssetAutomator.Application.Services
                     taskModel.CurrentStepInfo = "Stage E: Image Gen (1/1)";
 
                     await RunStageImageGenAsync(internalTask, taskModel, internalLog);
-                    taskModel.Step5Status = NodeStatus.Success;
-                    logTask(taskModel, $"[STAGE-E] ✅ Image Generation hoàn thành.");
+                }
+                catch (Exception ex)
+                {
+                    taskModel.Step5Status = NodeStatus.Failed;
+                    taskModel.CurrentStepInfo = $"❌ Stage E Lỗi: {ex.Message}";
+                    logTask(taskModel, $"[ERROR] [STAGE-E] Image Generation thất bại: {ex.Message}");
+                    throw;
                 }
                 finally
                 {
                     imageGenSem.Release();
+                    if (taskModel.Step5Status == NodeStatus.Running)
+                    {
+                        taskModel.Step5Status = NodeStatus.Success;
+                        logTask(taskModel, $"[STAGE-E] ✅ Image Generation hoàn thành.");
+                    }
                 }
 
                 // ── Hoàn thành ──

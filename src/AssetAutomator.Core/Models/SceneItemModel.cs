@@ -30,6 +30,11 @@ namespace AssetAutomator.Core.Models
     {
         public string video_title { get; set; } = string.Empty;
         public int scene_count { get; set; }
+        /// <summary>
+        /// v4.0 DRY: Style signature + negative prompt + aspect ratio.
+        /// Dùng chung cho mọi scene. Ghép vào mỗi scene khi generate final prompt.
+        /// </summary>
+        public string? image_prompt_postfix { get; set; }
         public List<SceneJsonEntryModel> scenes { get; set; } = new List<SceneJsonEntryModel>();
     }
 
@@ -40,6 +45,17 @@ namespace AssetAutomator.Core.Models
         public SceneTimeModel? time { get; set; }
         public string transcript { get; set; } = string.Empty;
         public string image_prompt { get; set; } = string.Empty;
+    }
+
+    /// <summary>
+    /// v4.0 DRY format response từ Image Prompt Gemini.
+    /// image_prompt_postfix chứa style signature + negative prompt + aspect ratio (dùng chung cho mọi scene).
+    /// scenes dict chỉ chứa content riêng cho từng scene (KHÔNG có postfix).
+    /// </summary>
+    public class ImagePromptResponseModel
+    {
+        public string image_prompt_postfix { get; set; } = string.Empty;
+        public Dictionary<string, string> scenes { get; set; } = new();
     }
 
     /// <summary>
