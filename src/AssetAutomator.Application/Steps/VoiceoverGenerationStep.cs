@@ -75,7 +75,7 @@ namespace AssetAutomator.Application.Steps
             {
                 text = scriptText,
                 voice_id = voiceId,
-                model_id = "eleven_multilingual_v2",
+                model_id = "eleven_v3",
                 with_transcript = withTranscript
             };
 

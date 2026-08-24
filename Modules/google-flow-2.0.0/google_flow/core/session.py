@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, Any
 
-from google_flow.exceptions import FlowAuthError
+from google_flow.exceptions import FlowAuthError, FlowSessionRefreshNeededError
 from google_flow.logging import get_logger
 from google_flow.types import TokenInfo
 
@@ -85,7 +85,27 @@ class SessionManager:
         """Update token state from an ST→AT API response.
 
         Returns the new access token.
+
+        Raises
+        ------
+        FlowSessionRefreshNeededError
+            If the Labs ``/auth/session`` endpoint returns
+            ``error: ACCESS_TOKEN_REFRESH_NEEDED``. This signals that the
+            cached Session Token can no longer mint a working AT and the
+            user must re-login via the browser. Returning such an expired
+            AT would just cause downstream 401s, so we bail out early.
         """
+        session_error = data.get("error")
+        if session_error == "ACCESS_TOKEN_REFRESH_NEEDED":
+            self.token.at = ""
+            self.token.at_expires = ""
+            self.save()
+            raise FlowSessionRefreshNeededError(
+                "Google Labs reports ACCESS_TOKEN_REFRESH_NEEDED. "
+                "Session Token (ST) is no longer valid — please re-login.",
+                detail=session_error,
+            )
+
         self.token.at = data.get("access_token", "")
         self.token.at_expires = data.get("expires", "")
         if "user" in data:

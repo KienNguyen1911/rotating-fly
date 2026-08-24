@@ -28,6 +28,16 @@ class FlowTokenExpiredError(FlowAuthError):
     """The access token has expired and needs to be refreshed."""
 
 
+class FlowSessionRefreshNeededError(FlowAuthError):
+    """Google Labs requires a fresh Session Token (re-login).
+
+    Raised when ``/auth/session`` returns ``error: ACCESS_TOKEN_REFRESH_NEEDED``
+    — the cached ST can no longer mint a working AT and the user must
+    re-login via the browser. This is **not** retryable: no number of
+    ST→AT calls will succeed until the user signs in again.
+    """
+
+
 # ── Rate Limiting ───────────────────────────────────────────────────
 
 class FlowRateLimitError(FlowError):

@@ -18,6 +18,7 @@ from google_flow.exceptions import (
     FlowGenerationError,
     FlowRateLimitError,
     FlowServerError,
+    FlowSessionRefreshNeededError,
     FlowTokenExpiredError,
     FlowUpscaleError,
 )
@@ -98,15 +99,6 @@ class ImageGenerator:
             return datetime.now(timezone.utc) >= exp
         except (TypeError, ValueError):
             return False
-
-    async def refresh_access_token(self) -> str:
-        """Force-refresh the AT."""
-        st = self.session.require_session_token()
-        logger.info("Refreshing Access Token …")
-        data = await self.client.st_to_at(st)
-        at = self.session.update_from_session_response(data)
-        logger.info("Access Token refreshed")
-        return at
 
     async def ensure_project(self) -> str:
         """Return the project ID, creating one if needed."""
@@ -280,6 +272,10 @@ class ImageGenerator:
 
         async def _on_retry(attempt: int, exc: BaseException, delay: float) -> None:
             nonlocal current_at
+            if isinstance(exc, FlowSessionRefreshNeededError):
+                # ST can no longer mint a working AT — propagate so caller
+                # can prompt the user to re-login instead of looping.
+                raise exc
             if isinstance(exc, FlowTokenExpiredError):
                 logger.warning("  Access Token expired, refreshing …")
                 current_at = await self.refresh_access_token()
@@ -315,6 +311,8 @@ class ImageGenerator:
 
         async def _on_retry(attempt: int, exc: BaseException, delay: float) -> None:
             nonlocal current_at
+            if isinstance(exc, FlowSessionRefreshNeededError):
+                raise exc
             if isinstance(exc, FlowTokenExpiredError):
                 logger.warning("  Access Token expired, refreshing …")
                 current_at = await self.refresh_access_token()
@@ -322,6 +320,25 @@ class ImageGenerator:
         return await execute_with_retry(
             _attempt, policy=self._retry_policy, on_retry=_on_retry
         )
+
+    # ── Token Refresh ────────────────────────────────────────────
+
+    async def refresh_access_token(self) -> str:
+        """Force-refresh the AT.
+
+        Raises
+        ------
+        FlowSessionRefreshNeededError
+            If Labs reports the ST can no longer mint a working AT. The
+            caller should propagate this so the user is prompted to
+            re-login (retrying is futile).
+        """
+        st = self.session.require_session_token()
+        logger.info("Refreshing Access Token …")
+        data = await self.client.st_to_at(st)
+        at = self.session.update_from_session_response(data)
+        logger.info("Access Token refreshed")
+        return at
 
     # ── Credits ─────────────────────────────────────────────────────
 

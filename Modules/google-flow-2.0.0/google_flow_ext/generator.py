@@ -20,6 +20,7 @@ from google_flow.exceptions import (
     FlowGenerationError,
     FlowRateLimitError,
     FlowServerError,
+    FlowSessionRefreshNeededError,
     FlowTokenExpiredError,
     FlowUpscaleError,
 )
@@ -252,6 +253,10 @@ class ExtendedImageGenerator(ImageGenerator):
 
         async def _on_retry(attempt: int, exc: BaseException, delay: float) -> None:
             nonlocal current_at
+            if isinstance(exc, FlowSessionRefreshNeededError):
+                # ST can no longer mint a working AT — re-raising lets the
+                # caller surface this to the user instead of looping.
+                raise exc
             if isinstance(exc, FlowTokenExpiredError):
                 logger.warning("  Access Token expired during generate, refreshing …")
                 current_at = await self.refresh_access_token()
@@ -286,6 +291,8 @@ class ExtendedImageGenerator(ImageGenerator):
 
         async def _on_retry(attempt: int, exc: BaseException, delay: float) -> None:
             nonlocal current_at
+            if isinstance(exc, FlowSessionRefreshNeededError):
+                raise exc
             if isinstance(exc, FlowTokenExpiredError):
                 logger.warning("  Access Token expired during upscale, refreshing …")
                 current_at = await self.refresh_access_token()
